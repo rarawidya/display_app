@@ -37,9 +37,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.data.sharing.ShareHelper
 import com.example.displayapp.presentation.state.TripDetailUiState
 import com.example.displayapp.presentation.ui.common.GlassCard
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.logs.components.StaticTelemetryChart
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
@@ -112,7 +114,7 @@ private fun TripDetailContent(
                     ShareHelper.shareFile(
                         context = context,
                         file = File(state.exportedFilePath),
-                        subject = "EV Trip ${state.dateLabel}"
+                        subject = "EV Trip ${Formatters.shortDate(state.startMs)}"
                     )
                 }
                 onExportConsumed()
@@ -133,8 +135,10 @@ private fun TripDetailContent(
                     .padding(top = Dim.screenTop, bottom = Dim.xxl),
                 verticalArrangement = Arrangement.spacedBy(Dim.md)
             ) {
+                val app = LocalAppSettings.current
+                val dateLabel = if (state.startMs > 0) Formatters.longDateTime(state.startMs, app.timeFormat) else ""
                 DetailTopBar(
-                    title = if (state.notFound) "Trip not found" else state.dateLabel.ifBlank { "Trip" },
+                    title = if (state.notFound) "Trip not found" else dateLabel.ifBlank { "Trip" },
                     isActive = state.isActive,
                     canActOnTrip = !state.loading && !state.notFound,
                     exportInProgress = state.exportInProgress,
@@ -276,12 +280,13 @@ private fun NotFoundBlock() {
 
 @Composable
 private fun DetailBody(state: TripDetailUiState) {
+    val app = LocalAppSettings.current
     HeroSummaryCard(state = state)
 
     StaticTelemetryChart(
         title = "Speed",
-        unit = "km/h",
-        series = state.speedSeries,
+        unit = app.speedUnit.suffix,
+        series = state.speedSeries.map { app.speedUnit.convertFromKmh(it) }.toFloatArray(),
         color = EvBlue,
         latestFormat = "%.0f"
     )
@@ -301,8 +306,8 @@ private fun DetailBody(state: TripDetailUiState) {
     )
     StaticTelemetryChart(
         title = "Temperature",
-        unit = "°C",
-        series = state.temperatureSeries,
+        unit = app.temperatureUnit.suffix,
+        series = state.temperatureSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
         color = EvRed,
         latestFormat = "%.0f"
     )
@@ -310,6 +315,14 @@ private fun DetailBody(state: TripDetailUiState) {
 
 @Composable
 private fun HeroSummaryCard(state: TripDetailUiState) {
+    val app = LocalAppSettings.current
+    val distanceLabel = app.speedUnit.formatDistance(state.distanceMeters)
+    val durationLabel = formatDuration(state.durationSec)
+    val avgSpeedLabel = app.speedUnit.formatSpeed(state.avgSpeedKmh10 / 10f)
+    val maxSpeedLabel = app.speedUnit.formatSpeed(state.maxSpeedKmh10 / 10f)
+    val batteryLabel = "${state.startBattery}% → ${state.endBattery?.toString() ?: "—"}%"
+    val energyLabel = if (state.energyKwh > 0f) "≈ %.1f kWh".format(state.energyKwh) else "—"
+
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
@@ -326,7 +339,7 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = state.distanceLabel,
+                        text = distanceLabel,
                         style = MaterialTheme.typography.displaySmall.copy(
                             fontSize = 38.sp,
                             fontWeight = FontWeight.Bold
@@ -334,7 +347,7 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = state.durationLabel,
+                        text = durationLabel,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -359,13 +372,20 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
 
             // Pairs of metrics — keeps the card compact while showing everything.
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat(label = "AVG", value = state.avgSpeedLabel, accent = EvBlue)
-                Stat(label = "MAX", value = state.maxSpeedLabel, accent = EvLime)
-                Stat(label = "BATT", value = state.batteryDeltaLabel, accent = EvAmber)
-                Stat(label = "ENERGY", value = state.energyLabel, accent = EvGreen)
+                Stat(label = "AVG", value = avgSpeedLabel, accent = EvBlue)
+                Stat(label = "MAX", value = maxSpeedLabel, accent = EvLime)
+                Stat(label = "BATT", value = batteryLabel, accent = EvAmber)
+                Stat(label = "ENERGY", value = energyLabel, accent = EvGreen)
             }
         }
     }
+}
+
+private fun formatDuration(sec: Long): String {
+    val h = sec / 3600
+    val m = (sec % 3600) / 60
+    val s = sec % 60
+    return if (h > 0) "%dh %02dm".format(h, m) else "%dm %02ds".format(m, s)
 }
 
 @Composable

@@ -16,9 +16,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Owns the Trip Detail screen state.
@@ -100,14 +97,12 @@ class TripDetailViewModel(
 
     private fun buildState(trip: TripEntity, samples: List<TelemetryEntity>): TripDetailUiState {
         val durationSec = ((trip.endTime ?: System.currentTimeMillis()) - trip.startTime) / 1000L
-        val distKm = trip.distanceMeters / 1000f
-        val avgSpd = trip.avgSpeedKmh10 / 10f
-        val maxSpd = trip.maxSpeedKmh10 / 10f
         val battStart = trip.startBattery
         val battEnd   = trip.endBattery ?: battStart
         val deltaBatt = (battStart - battEnd).coerceAtLeast(0)
         val energyKwh = deltaBatt / 10f * 0.6f  // same heuristic as Logs row
 
+        // Chart series stay in SI units; the UI converts at the label site.
         val speedSeries = FloatArray(samples.size) { samples[it].speed / 10f }
         val voltageSeries = FloatArray(samples.size) { samples[it].voltage / 100f }
         val currentSeries = FloatArray(samples.size) { samples[it].current / 100f }
@@ -117,13 +112,14 @@ class TripDetailViewModel(
             loading = false,
             notFound = false,
             tripId = trip.id,
-            dateLabel = DATE_FMT.format(Date(trip.startTime)),
-            durationLabel = formatDuration(durationSec),
-            distanceLabel = "%.1f km".format(distKm),
-            avgSpeedLabel = "%.0f km/h".format(avgSpd),
-            maxSpeedLabel = "%.0f km/h".format(maxSpd),
-            batteryDeltaLabel = "$battStart% → ${trip.endBattery ?: '—'}%",
-            energyLabel = if (energyKwh > 0f) "≈ %.1f kWh".format(energyKwh) else "—",
+            startMs = trip.startTime,
+            durationSec = durationSec,
+            distanceMeters = trip.distanceMeters,
+            avgSpeedKmh10 = trip.avgSpeedKmh10,
+            maxSpeedKmh10 = trip.maxSpeedKmh10,
+            startBattery = battStart,
+            endBattery = trip.endBattery,
+            energyKwh = energyKwh,
             sampleCount = trip.sampleCount,
             isActive = trip.endTime == null,
             speedSeries = speedSeries,
@@ -131,17 +127,6 @@ class TripDetailViewModel(
             currentSeries = currentSeries,
             temperatureSeries = temperatureSeries
         )
-    }
-
-    private fun formatDuration(sec: Long): String {
-        val h = sec / 3600
-        val m = (sec % 3600) / 60
-        val s = sec % 60
-        return if (h > 0) "%dh %02dm".format(h, m) else "%dm %02ds".format(m, s)
-    }
-
-    private companion object {
-        val DATE_FMT: SimpleDateFormat = SimpleDateFormat("MMM d, yyyy · HH:mm", Locale.getDefault())
     }
 }
 

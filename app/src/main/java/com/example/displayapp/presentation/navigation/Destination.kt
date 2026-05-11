@@ -19,6 +19,10 @@ sealed class Destination(val route: String) {
     /** Theme & app preferences. Reached from the Drive top-bar gear icon. */
     data object Settings : Destination("settings")
 
+    /** Hidden developer/diagnostics surface. Unlocked by tapping the Settings
+     *  version row 7 times — then reachable from a row added to About. */
+    data object Developer : Destination("developer")
+
     /** Fullscreen map + navigation. Reached from the Drive mini-map card. */
     data object Navigation : Destination("navigation")
 

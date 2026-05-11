@@ -18,9 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.presentation.state.TripRow
 import com.example.displayapp.presentation.ui.common.GlassCard
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.common.StatusChip
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.logs.components.MiniSparkline
@@ -31,11 +33,6 @@ import com.example.displayapp.ui.theme.EvGreen
 import com.example.displayapp.ui.theme.EvLime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-private val dateFmt = SimpleDateFormat("MMM d · HH:mm", Locale.getDefault())
 
 /**
  * Trip list row.
@@ -59,6 +56,13 @@ fun TripCard(
     onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val app = LocalAppSettings.current
+    // Re-format labels from raw values using the live unit prefs.
+    val dateLabel = Formatters.dateTime(row.startMs, app.timeFormat)
+    val distanceLabel = app.speedUnit.formatDistance(row.distanceMeters)
+    val avgSpeedLabel = app.speedUnit.formatSpeed(row.avgSpeedKmh10 / 10f)
+    val maxSpeedLabel = app.speedUnit.formatSpeed(row.maxSpeedKmh10 / 10f)
+
     GlassCard(
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         interactive = true,
@@ -72,13 +76,13 @@ fun TripCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = dateFmt.format(Date(row.startMs)),
+                        text = dateLabel,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "${row.distanceLabel}  ·  ${row.durationLabel}",
+                        text = "$distanceLabel  ·  ${row.durationLabel}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -120,8 +124,8 @@ fun TripCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MiniStat("AVG", row.avgSpeedLabel, EvBlue)
-                MiniStat("MAX", row.maxSpeedLabel, EvLime)
+                MiniStat("AVG", avgSpeedLabel, EvBlue)
+                MiniStat("MAX", maxSpeedLabel, EvLime)
                 MiniStat("BATT", row.batteryLabel, EvAmber)
                 MiniStat("ENERGY", row.energyLabel, EvGreen)
             }

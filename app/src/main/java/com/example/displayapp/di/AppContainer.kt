@@ -1,12 +1,17 @@
 package com.example.displayapp.di
 
 import android.content.Context
+import android.content.pm.PackageManager
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
+import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.location.FusedLocationRepository
+import com.example.displayapp.data.permissions.PermissionStatusProvider
+import com.example.displayapp.data.preferences.AppPreferences
 import com.example.displayapp.data.preferences.DevicePreferences
 import com.example.displayapp.data.preferences.ThemePreferences
 import com.example.displayapp.data.bluetooth.SppDataSource
 import com.example.displayapp.data.persistence.RetentionPolicy
+import com.example.displayapp.data.persistence.StorageInfoProvider
 import com.example.displayapp.data.persistence.TelemetryDatabase
 import com.example.displayapp.data.persistence.TelemetryLogger
 import com.example.displayapp.data.persistence.TelemetryReplaySource
@@ -14,6 +19,7 @@ import com.example.displayapp.data.persistence.TripSessionManager
 import com.example.displayapp.data.persistence.export.CsvExporter
 import com.example.displayapp.data.protocol.TelemetryMapper
 import com.example.displayapp.data.replay.RoomTripReplaySource
+import com.example.displayapp.data.repository.AppPreferencesRepositoryImpl
 import com.example.displayapp.data.repository.ThemeRepositoryImpl
 import com.example.displayapp.data.repository.TripRepositoryImpl
 import com.example.displayapp.data.repository.VehicleRepositoryImpl
@@ -21,6 +27,7 @@ import com.example.displayapp.data.system.WifiStateMonitor
 import com.example.displayapp.data.simulator.SimulatedDataSource
 import com.example.displayapp.data.simulator.TelemetryScenario
 import com.example.displayapp.domain.replay.TripReplaySource
+import com.example.displayapp.domain.repository.AppPreferencesRepository
 import com.example.displayapp.domain.repository.LocationRepository
 import com.example.displayapp.domain.repository.ThemeRepository
 import com.example.displayapp.domain.repository.TripRepository
@@ -42,6 +49,39 @@ class AppContainer(private val context: Context) {
 
     val themeRepository: ThemeRepository by lazy {
         ThemeRepositoryImpl(themePreferences)
+    }
+
+    private val appPreferences: AppPreferences by lazy { AppPreferences(context) }
+
+    val appPreferencesRepository: AppPreferencesRepository by lazy {
+        AppPreferencesRepositoryImpl(appPreferences)
+    }
+
+    val diagnosticsRepository: DiagnosticsRepository by lazy { DiagnosticsRepository() }
+
+    val permissionStatusProvider: PermissionStatusProvider by lazy {
+        PermissionStatusProvider(context)
+    }
+
+    val storageInfoProvider: StorageInfoProvider by lazy {
+        StorageInfoProvider(context, tripDao, telemetryDao)
+    }
+
+    fun versionInfo(): Pair<String, String> {
+        val pm = context.packageManager
+        return try {
+            @Suppress("DEPRECATION")
+            val info = pm.getPackageInfo(context.packageName, 0)
+            val versionName = info.versionName ?: ""
+            val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                info.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION") info.versionCode.toString()
+            }
+            versionName to versionCode
+        } catch (_: PackageManager.NameNotFoundException) {
+            "" to ""
+        }
     }
 
     val wifiStateMonitor: WifiStateMonitor by lazy {
@@ -119,5 +159,15 @@ class AppContainer(private val context: Context) {
         _dataSource?.close()
         _dataSource = null
         useSimulator = simulator
+    }
+
+    /**
+     * Force-restart the current data source — used when the simulator scenario
+     * changes and the running SimulatedDataSource needs to be replaced.
+     */
+    fun restartDataSource() {
+        _dataSource?.close()
+        _dataSource = null
+        // Next read of bluetoothDataSource lazy-creates with the current useSimulator + simulatorScenario.
     }
 }

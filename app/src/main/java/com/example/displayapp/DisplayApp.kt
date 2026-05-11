@@ -5,6 +5,7 @@ import com.example.displayapp.di.AppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -22,9 +23,13 @@ class DisplayApp : Application() {
         }
         appContainer = AppContainer(this)
 
-        // Run retention policy on startup
+        // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
-            appContainer.retentionPolicy.enforce()
+            val retentionDays = appContainer.appPreferencesRepository.settings
+                .first()
+                .retention
+                .days
+            appContainer.retentionPolicy.enforce(overrideDays = retentionDays)
         }
     }
 }

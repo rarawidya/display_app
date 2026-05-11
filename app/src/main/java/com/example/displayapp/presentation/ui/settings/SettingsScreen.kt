@@ -1,14 +1,10 @@
 package com.example.displayapp.presentation.ui.settings
 
-import android.os.Build
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -16,383 +12,518 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.displayapp.data.permissions.AppPermission
+import com.example.displayapp.data.permissions.PermissionState
+import com.example.displayapp.data.permissions.PermissionStatusProvider
+import com.example.displayapp.data.persistence.StorageInfo
+import com.example.displayapp.data.preferences.SavedDevice
+import com.example.displayapp.domain.model.AppSettings
+import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.RetentionPeriod
+import com.example.displayapp.domain.model.SpeedUnit
+import com.example.displayapp.domain.model.TemperatureUnit
 import com.example.displayapp.domain.model.ThemeMode
-import com.example.displayapp.domain.model.ThemeSettings
-import com.example.displayapp.presentation.ui.common.GlassCard
-import com.example.displayapp.presentation.ui.common.SectionHeader
+import com.example.displayapp.domain.model.TimeFormat
+import com.example.displayapp.presentation.state.SettingsUiState
 import com.example.displayapp.presentation.ui.icons.EvIcons
-import com.example.displayapp.presentation.viewmodel.ThemeViewModel
+import com.example.displayapp.presentation.ui.settings.components.ActionRow
+import com.example.displayapp.presentation.ui.settings.components.ChoiceRow
+import com.example.displayapp.presentation.ui.settings.components.ConfirmDialog
+import com.example.displayapp.presentation.ui.settings.components.PermissionRow
+import com.example.displayapp.presentation.ui.settings.components.PreferenceRow
+import com.example.displayapp.presentation.ui.settings.components.SectionDivider
+import com.example.displayapp.presentation.ui.settings.components.SettingsSection
+import com.example.displayapp.presentation.ui.settings.components.SwitchRow
+import com.example.displayapp.presentation.ui.settings.components.ValueRow
+import com.example.displayapp.presentation.viewmodel.SettingsViewModel
 import com.example.displayapp.ui.theme.Dim
+import com.example.displayapp.ui.theme.EvAmber
+import com.example.displayapp.ui.theme.EvGreen
+import com.example.displayapp.ui.theme.EvRed
+import kotlinx.coroutines.launch
 
-/**
- * Settings screen — primarily a theme picker today, extensible for future preferences.
- *
- * Architecture:
- * - Stateless [SettingsContent] for previews; [SettingsScreen] is the VM-bound entry.
- * - Theme preview cards render miniature dashboard mocks in each candidate scheme
- *   so users see what they're picking before committing.
- * - Dynamic Color (Material You) is gated to Android 12+ and hidden below.
- */
 @Composable
 fun SettingsScreen(
-    viewModel: ThemeViewModel,
-    onBack: () -> Unit
+    viewModel: SettingsViewModel,
+    permissionProvider: PermissionStatusProvider,
+    onBack: () -> Unit,
+    onOpenDeveloper: () -> Unit
 ) {
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshPermissions()
+                viewModel.refreshStorage()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     SettingsContent(
-        settings = settings,
-        onModeSelected = viewModel::setMode,
-        onDynamicColorToggle = viewModel::setDynamicColor,
-        onBack = onBack
+        state = state,
+        onBack = onBack,
+        onThemeMode = viewModel::setThemeMode,
+        onSpeedUnit = viewModel::setSpeedUnit,
+        onTempUnit  = viewModel::setTemperatureUnit,
+        onTimeFormat = viewModel::setTimeFormat,
+        onRetention  = viewModel::setRetention,
+        onAutoConnect = viewModel::setAutoConnect,
+        onForgetDevice = viewModel::forgetDevice,
+        onSimulatorMode = viewModel::setSimulatorMode,
+        onClearTrips = viewModel::clearTripHistory,
+        onClearCache = viewModel::clearExportsCache,
+        onUnlockDeveloper = viewModel::unlockDeveloperMode,
+        onOpenDeveloper = onOpenDeveloper,
+        onManagePermissions = {
+            context.startActivity(permissionProvider.appDetailsIntent())
+        }
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsContent(
-    settings: ThemeSettings,
-    onModeSelected: (ThemeMode) -> Unit,
-    onDynamicColorToggle: (Boolean) -> Unit,
-    onBack: () -> Unit
+    state: SettingsUiState,
+    onBack: () -> Unit,
+    onThemeMode: (ThemeMode) -> Unit,
+    onSpeedUnit: (SpeedUnit) -> Unit,
+    onTempUnit: (TemperatureUnit) -> Unit,
+    onTimeFormat: (TimeFormat) -> Unit,
+    onRetention: (RetentionPeriod) -> Unit,
+    onAutoConnect: (Boolean) -> Unit,
+    onForgetDevice: () -> Unit,
+    onSimulatorMode: (Boolean) -> Unit,
+    onClearTrips: () -> Unit,
+    onClearCache: () -> Unit,
+    onUnlockDeveloper: () -> Unit,
+    onOpenDeveloper: () -> Unit,
+    onManagePermissions: () -> Unit
 ) {
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { SettingsTopBar(onBack = onBack) },
-        // Outer AppNavHost Scaffold already supplied the system-bar insets.
-        // Leaving this at the default (WindowInsets.systemBars) would re-add them.
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "Settings",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            EvIcons.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                windowInsets = WindowInsets(0, 0, 0, 0)
+            )
+        },
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { inner ->
-        SettingsBody(
-            settings = settings,
-            onModeSelected = onModeSelected,
-            onDynamicColorToggle = onDynamicColorToggle,
-            contentPadding = inner
+        Box(Modifier.fillMaxSize().padding(inner)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Dim.screenGutter)
+                    .padding(bottom = Dim.xxl),
+                verticalArrangement = Arrangement.spacedBy(Dim.lg)
+            ) {
+                AppearanceSection(theme = state.theme, onThemeMode = onThemeMode)
+                ConnectionSection(
+                    connection = state.connectionState,
+                    savedDevice = state.savedDevice,
+                    app = state.app,
+                    onAutoConnect = onAutoConnect,
+                    onForgetDevice = onForgetDevice,
+                    onSimulatorMode = onSimulatorMode
+                )
+                UnitsSection(
+                    app = state.app,
+                    onSpeedUnit = onSpeedUnit,
+                    onTempUnit = onTempUnit,
+                    onTimeFormat = onTimeFormat
+                )
+                HistorySection(app = state.app, onRetention = onRetention)
+                StorageSection(
+                    storage = state.storage,
+                    onClearTrips = onClearTrips,
+                    onClearCache = onClearCache
+                )
+                PermissionsSection(state = state, onManage = onManagePermissions)
+                AboutSection(
+                    state = state,
+                    devUnlocked = state.app.devModeUnlocked,
+                    onUnlock = {
+                        onUnlockDeveloper()
+                        scope.launch { snackbar.showSnackbar("Developer mode unlocked") }
+                    },
+                    onOpenDeveloper = onOpenDeveloper
+                )
+            }
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(Dim.lg)
+            ) { data -> Snackbar(snackbarData = data) }
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  1. Appearance                                                              */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun AppearanceSection(
+    theme: com.example.displayapp.domain.model.ThemeSettings,
+    onThemeMode: (ThemeMode) -> Unit
+) {
+    SettingsSection(title = "Appearance") {
+        ChoiceRow(
+            title = "Theme",
+            options = ThemeMode.entries,
+            selected = theme.mode,
+            onSelected = onThemeMode,
+            labelFor = { themeLabel(it) },
+            descriptionFor = { themeDescription(it) }
+        )
+    }
+}
+
+private fun themeLabel(mode: ThemeMode) = when (mode) {
+    ThemeMode.LIGHT  -> "Light"
+    ThemeMode.DARK   -> "Dark"
+    ThemeMode.SYSTEM -> "Follow system"
+}
+private fun themeDescription(mode: ThemeMode): String? = when (mode) {
+    ThemeMode.LIGHT  -> "Bright cockpit · daytime"
+    ThemeMode.DARK   -> "Carbon cockpit · night driving"
+    ThemeMode.SYSTEM -> "Switches with your phone's mode"
+}
+
+/* -------------------------------------------------------------------------- */
+/*  2. Connection                                                              */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun ConnectionSection(
+    connection: ConnectionState,
+    savedDevice: SavedDevice?,
+    app: AppSettings,
+    onAutoConnect: (Boolean) -> Unit,
+    onForgetDevice: () -> Unit,
+    onSimulatorMode: (Boolean) -> Unit
+) {
+    SettingsSection(title = "Connection") {
+        val (statusColor, statusLabel) = when (connection) {
+            ConnectionState.CONNECTED    -> EvGreen to "Connected"
+            ConnectionState.DISCONNECTED -> EvRed   to "Disconnected"
+            else                          -> EvAmber to connection.name.lowercase()
+                .replaceFirstChar { it.uppercase() }
+        }
+        ValueRow(
+            title = "Status",
+            value = statusLabel,
+            leadingIcon = EvIcons.Bluetooth,
+            valueColor = statusColor
+        )
+        SectionDivider()
+
+        if (savedDevice != null) {
+            PreferenceRow(
+                title = savedDevice.name,
+                subtitle = savedDevice.address,
+                leadingIcon = EvIcons.Bluetooth
+            )
+            SectionDivider()
+            ActionRow(
+                title = "Forget device",
+                subtitle = "Clears paired Bluetooth metadata",
+                leadingTint = EvRed,
+                onClick = onForgetDevice
+            )
+            SectionDivider()
+        } else {
+            ValueRow(
+                title = "Paired device",
+                value = "—",
+                subtitle = "No device saved · pair from the Drive screen"
+            )
+            SectionDivider()
+        }
+
+        SwitchRow(
+            title = "Auto-connect on launch",
+            subtitle = "Reconnect to the last paired device automatically",
+            checked = app.autoConnect,
+            onCheckedChange = onAutoConnect
+        )
+        SectionDivider()
+        SwitchRow(
+            title = "Simulator mode",
+            subtitle = "Use generated telemetry instead of a real device",
+            checked = app.simulatorMode,
+            onCheckedChange = onSimulatorMode
         )
     }
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Top bar                                                                   */
-/* -------------------------------------------------------------------------- */
-
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsTopBar(onBack: () -> Unit) {
-    TopAppBar(
-        title = {
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = EvIcons.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent
-        ),
-        // The outer AppNavHost Scaffold already consumed the status-bar inset.
-        // TopAppBar's default windowInsets would re-add it here — kill it.
-        windowInsets = WindowInsets(0, 0, 0, 0)
-    )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Body                                                                      */
+/*  3. Units                                                                   */
 /* -------------------------------------------------------------------------- */
 
 @Composable
-private fun SettingsBody(
-    settings: ThemeSettings,
-    onModeSelected: (ThemeMode) -> Unit,
-    onDynamicColorToggle: (Boolean) -> Unit,
-    contentPadding: PaddingValues
+private fun UnitsSection(
+    app: AppSettings,
+    onSpeedUnit: (SpeedUnit) -> Unit,
+    onTempUnit: (TemperatureUnit) -> Unit,
+    onTimeFormat: (TimeFormat) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Dim.screenGutter, vertical = Dim.md),
-        verticalArrangement = Arrangement.spacedBy(Dim.lg)
-    ) {
-        // ----- Appearance section -----
-        SectionHeader(title = "Appearance")
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(Dim.md)) {
-                Text(
-                    text = "Theme",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Choose how the cockpit looks. System follows your device's day/night setting.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Dim.sm)
-                ) {
-                    ThemeOptions.forEach { option ->
-                        ThemePreviewCard(
-                            option = option,
-                            selected = settings.mode == option.mode,
-                            onClick = { onModeSelected(option.mode) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // ----- Dynamic color (Android 12+) -----
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            SectionHeader(title = "Material You")
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Dynamic color",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "Derive colors from your wallpaper. Overrides the EV-blue brand palette.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = settings.useDynamicColor,
-                        onCheckedChange = onDynamicColorToggle
-                    )
-                }
-            }
-        }
-
-        // ----- About -----
-        SectionHeader(title = "About")
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
-            Column(verticalArrangement = Arrangement.spacedBy(Dim.xs)) {
-                Text(
-                    text = "DisplayApp",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "EV telemetry cockpit",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(Modifier.height(Dim.lg))
+    SettingsSection(title = "Units") {
+        ChoiceRow(
+            title = "Speed & distance",
+            options = SpeedUnit.entries,
+            selected = app.speedUnit,
+            onSelected = onSpeedUnit,
+            labelFor = { it.label }
+        )
+        SectionDivider()
+        ChoiceRow(
+            title = "Temperature",
+            options = TemperatureUnit.entries,
+            selected = app.temperatureUnit,
+            onSelected = onTempUnit,
+            labelFor = { it.label }
+        )
+        SectionDivider()
+        ChoiceRow(
+            title = "Time format",
+            options = TimeFormat.entries,
+            selected = app.timeFormat,
+            onSelected = onTimeFormat,
+            labelFor = { it.label }
+        )
     }
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Theme preview card                                                        */
+/*  4. History (retention)                                                     */
 /* -------------------------------------------------------------------------- */
 
-private data class ThemeOption(
-    val mode: ThemeMode,
-    val label: String,
-    val swatchBg: Color,
-    val swatchSurface: Color,
-    val swatchPrimary: Color,
-    val swatchOnSurface: Color
-)
-
-// Stable preview swatches — purposely hard-coded so each card always looks
-// like that theme, regardless of the *active* MaterialTheme.
-private val ThemeOptions = listOf(
-    ThemeOption(
-        mode = ThemeMode.LIGHT,
-        label = "Light",
-        swatchBg = Color(0xFFF3F6FB),
-        swatchSurface = Color(0xFFFFFFFF),
-        swatchPrimary = Color(0xFF1E5BD8),
-        swatchOnSurface = Color(0xFF0A0F1F)
-    ),
-    ThemeOption(
-        mode = ThemeMode.DARK,
-        label = "Dark",
-        swatchBg = Color(0xFF05070A),
-        swatchSurface = Color(0xFF161B23),
-        swatchPrimary = Color(0xFF4FA3FF),
-        swatchOnSurface = Color(0xFFE6EDF3)
-    ),
-    ThemeOption(
-        mode = ThemeMode.SYSTEM,
-        label = "System",
-        // Half-and-half swatch communicates "follows device"
-        swatchBg = Color(0xFF05070A),
-        swatchSurface = Color(0xFFFFFFFF),
-        swatchPrimary = Color(0xFF4FA3FF),
-        swatchOnSurface = Color(0xFFE6EDF3)
-    )
-)
-
 @Composable
-private fun ThemePreviewCard(
-    option: ThemeOption,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Animated border highlights the active selection without re-laying-out
-    val borderColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary
-                      else MaterialTheme.colorScheme.outlineVariant,
-        label = "theme-border"
-    )
-    val borderWidth = if (selected) 2.dp else 1.dp
-
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(Dim.cardCorner))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(Dim.cardCorner),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(borderWidth, borderColor),
-        tonalElevation = if (selected) 6.dp else 2.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(Dim.md),
-            verticalArrangement = Arrangement.spacedBy(Dim.sm)
-        ) {
-            ThemeMiniature(option = option)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = option.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (selected) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                    )
+private fun HistorySection(app: AppSettings, onRetention: (RetentionPeriod) -> Unit) {
+    SettingsSection(title = "History") {
+        ChoiceRow(
+            title = "Trip retention",
+            options = RetentionPeriod.entries,
+            selected = app.retention,
+            onSelected = onRetention,
+            labelFor = { it.label },
+            descriptionFor = {
+                when (it) {
+                    RetentionPeriod.FOREVER -> "Trips are never deleted automatically"
+                    else -> "Trips older than ${it.label} are removed on app launch"
                 }
             }
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  5. Storage                                                                 */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun StorageSection(
+    storage: StorageInfo?,
+    onClearTrips: () -> Unit,
+    onClearCache: () -> Unit
+) {
+    var confirmTrips by remember { mutableStateOf(false) }
+    var confirmCache by remember { mutableStateOf(false) }
+
+    SettingsSection(title = "Storage") {
+        ValueRow(
+            title = "Database",
+            value = storage?.let { it.format(it.databaseBytes) } ?: "—",
+            subtitle = storage?.let { "${it.tripCount} trips · ${it.telemetrySampleCount} samples" }
+        )
+        SectionDivider()
+        ValueRow(
+            title = "Exported CSVs",
+            value = storage?.let { it.format(it.exportsBytes) } ?: "—"
+        )
+        SectionDivider()
+        ActionRow(
+            title = "Clear trip history",
+            subtitle = "Removes all trips and telemetry — cannot be undone",
+            leadingTint = EvRed,
+            onClick = { confirmTrips = true }
+        )
+        SectionDivider()
+        ActionRow(
+            title = "Clear exports cache",
+            subtitle = "Removes generated CSV files",
+            onClick = { confirmCache = true }
+        )
+    }
+
+    if (confirmTrips) {
+        ConfirmDialog(
+            title = "Clear all trip history?",
+            message = "This permanently deletes every recorded trip and its telemetry. " +
+                "Already-exported CSVs are kept.",
+            confirmLabel = "Delete",
+            onDismiss = { confirmTrips = false },
+            onConfirm = onClearTrips
+        )
+    }
+    if (confirmCache) {
+        ConfirmDialog(
+            title = "Clear exports cache?",
+            message = "Deletes generated CSV files. Your trip data stays intact.",
+            confirmLabel = "Delete",
+            onDismiss = { confirmCache = false },
+            onConfirm = onClearCache
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  6. Permissions                                                             */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun PermissionsSection(state: SettingsUiState, onManage: () -> Unit) {
+    SettingsSection(title = "Permissions") {
+        state.permissions.forEachIndexed { index, perm ->
+            if (index > 0) SectionDivider()
+            PermissionRow(
+                name = perm.key.displayName,
+                rationale = perm.key.rationale,
+                granted = perm.state == PermissionState.GRANTED,
+                notApplicable = perm.state == PermissionState.NOT_APPLICABLE,
+                onManage = onManage
+            )
         }
     }
 }
 
-/**
- * Miniature dashboard mock — background bar + speedometer dot + two metric pills.
- * Uses the option's *fixed* swatch colors so each preview always shows that mode.
- *
- * For SYSTEM, splits the miniature diagonally so users can tell at a glance
- * that this option follows device settings.
- */
+/* -------------------------------------------------------------------------- */
+/*  7. About                                                                   */
+/* -------------------------------------------------------------------------- */
+
 @Composable
-private fun ThemeMiniature(option: ThemeOption) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(72.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (option.mode == ThemeMode.SYSTEM) {
-                    Brush.horizontalGradient(
-                        0f to Color(0xFFF3F6FB),
-                        0.49f to Color(0xFFF3F6FB),
-                        0.51f to Color(0xFF05070A),
-                        1f to Color(0xFF05070A)
-                    )
-                } else {
-                    Brush.verticalGradient(listOf(option.swatchBg, option.swatchSurface))
-                }
-            )
-    ) {
-        Column(
+private fun AboutSection(
+    state: SettingsUiState,
+    devUnlocked: Boolean,
+    onUnlock: () -> Unit,
+    onOpenDeveloper: () -> Unit
+) {
+    // Tap-7 unlock counter — resets after a short window if the user pauses.
+    var tapCount by remember { mutableIntStateOf(0) }
+    val unlockThreshold = 7
+    LaunchedEffect(tapCount) {
+        if (tapCount in 1 until unlockThreshold) {
+            kotlinx.coroutines.delay(2_000L)
+            tapCount = 0
+        }
+    }
+
+    SettingsSection(title = "About") {
+        // Version row is the tap-7 unlock target. Locked → counts taps;
+        // unlocked → just a value row (no further behavior).
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Top: faux status line
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(
-                    Modifier
-                        .height(4.dp)
-                        .width(20.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(option.swatchPrimary)
-                )
-                Box(
-                    Modifier
-                        .height(4.dp)
-                        .width(12.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(option.swatchOnSurface.copy(alpha = 0.4f))
-                )
-            }
-            // Bottom: speedometer-like dot
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(option.swatchPrimary.copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        Modifier
-                            .size(14.dp)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(option.swatchPrimary)
-                    )
+                .fillMaxWidth()
+                .clickable(enabled = !devUnlocked) {
+                    val next = tapCount + 1
+                    tapCount = next
+                    if (next >= unlockThreshold) {
+                        tapCount = 0
+                        onUnlock()
+                    }
                 }
-            }
+        ) {
+            ValueRow(title = "Version", value = state.appVersion.ifBlank { "—" })
         }
+        SectionDivider()
+        ValueRow(title = "Build", value = state.appBuildNumber.ifBlank { "—" })
+
+        if (devUnlocked) {
+            SectionDivider()
+            ActionRow(
+                title = "Developer options",
+                subtitle = "Advanced diagnostics, simulator, experimental",
+                onClick = onOpenDeveloper
+            )
+        }
+    }
+    Spacer(Modifier.height(Dim.md))
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "EV cockpit · made for night drives",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
     }
 }

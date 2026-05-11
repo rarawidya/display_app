@@ -12,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +33,7 @@ import com.example.displayapp.presentation.ui.device.DeviceScanScreen
 import com.example.displayapp.presentation.ui.logs.LogsScreen
 import com.example.displayapp.presentation.ui.logs.TripDetailScreen
 import com.example.displayapp.presentation.ui.maps.NavigationScreen
+import com.example.displayapp.presentation.ui.settings.DeveloperScreen
 import com.example.displayapp.presentation.ui.settings.SettingsScreen
 import com.example.displayapp.presentation.viewmodel.ChartsViewModel
 import com.example.displayapp.presentation.viewmodel.ChartsViewModelFactory
@@ -43,6 +45,8 @@ import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.presentation.viewmodel.LogsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.MapsViewModel
 import com.example.displayapp.presentation.viewmodel.MapsViewModelFactory
+import com.example.displayapp.presentation.viewmodel.SettingsViewModel
+import com.example.displayapp.presentation.viewmodel.SettingsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.ThemeViewModel
 import com.example.displayapp.presentation.viewmodel.ThemeViewModelFactory
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
@@ -197,11 +201,64 @@ private fun AppNavGraph(
         }
 
         composable(Destination.Settings.route) {
-            val themeVm: ThemeViewModel = viewModel(
-                factory = ThemeViewModelFactory(container.themeRepository)
+            val versionInfo = androidx.compose.runtime.remember { container.versionInfo() }
+            val versionName = versionInfo.first
+            val buildNumber = versionInfo.second
+            val settingsVm: SettingsViewModel = viewModel(
+                factory = SettingsViewModelFactory(
+                    themeRepository = container.themeRepository,
+                    appPreferences = container.appPreferencesRepository,
+                    devicePreferences = container.devicePreferences,
+                    vehicleRepository = container.vehicleRepository,
+                    diagnosticsRepository = container.diagnosticsRepository,
+                    storageProvider = container.storageInfoProvider,
+                    permissionProvider = container.permissionStatusProvider,
+                    onSimulatorModeChange = { useSim -> container.switchDataSource(simulator = useSim) },
+                    onSimulatorScenarioChange = { scenario ->
+                        container.simulatorScenario = scenario
+                        container.restartDataSource()
+                    },
+                    appVersion = versionName,
+                    appBuildNumber = buildNumber
+                )
             )
             SettingsScreen(
-                viewModel = themeVm,
+                viewModel = settingsVm,
+                permissionProvider = container.permissionStatusProvider,
+                onBack = { navController.popBackStack() },
+                onOpenDeveloper = {
+                    navController.navigate(Destination.Developer.route) {
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
+
+        composable(Destination.Developer.route) {
+            val devVersionInfo = remember { container.versionInfo() }
+            val versionName = devVersionInfo.first
+            val buildNumber = devVersionInfo.second
+            val settingsVm: SettingsViewModel = viewModel(
+                key = "settings-vm",
+                factory = SettingsViewModelFactory(
+                    themeRepository = container.themeRepository,
+                    appPreferences = container.appPreferencesRepository,
+                    devicePreferences = container.devicePreferences,
+                    vehicleRepository = container.vehicleRepository,
+                    diagnosticsRepository = container.diagnosticsRepository,
+                    storageProvider = container.storageInfoProvider,
+                    permissionProvider = container.permissionStatusProvider,
+                    onSimulatorModeChange = { useSim -> container.switchDataSource(simulator = useSim) },
+                    onSimulatorScenarioChange = { scenario ->
+                        container.simulatorScenario = scenario
+                        container.restartDataSource()
+                    },
+                    appVersion = versionName,
+                    appBuildNumber = buildNumber
+                )
+            )
+            DeveloperScreen(
+                viewModel = settingsVm,
                 onBack = { navController.popBackStack() }
             )
         }

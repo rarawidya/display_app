@@ -30,10 +30,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.displayapp.domain.model.AppSettings
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TimeRange
 import com.example.displayapp.presentation.ui.common.GlassCard
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.common.StatusChip
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.viewmodel.ChartsViewModel
@@ -154,10 +156,35 @@ private fun TelemetryCard(
     }
 }
 
+/**
+ * Converts the raw latest value into the user's chosen unit + supplies the
+ * matching suffix. Voltage / Current / Battery are unit-invariant.
+ */
+private fun displayLatest(
+    metric: TelemetryMetric,
+    latest: Float?,
+    app: AppSettings
+): Pair<String, String> {
+    if (latest == null) return "—" to metric.unit
+    return when (metric) {
+        TelemetryMetric.Speed -> {
+            val v = app.speedUnit.convertFromKmh(latest)
+            metric.format.format(v) to app.speedUnit.suffix
+        }
+        TelemetryMetric.Temperature -> {
+            val v = app.temperatureUnit.convertFromCelsius(latest)
+            metric.format.format(v) to app.temperatureUnit.suffix
+        }
+        else -> metric.format.format(latest) to metric.unit
+    }
+}
+
 @Composable
 private fun FocusedMetricRow(state: ChartsUiState, onExpand: () -> Unit) {
     val metric  = state.focusedMetric
     val latest  = state.latestFor(metric)
+    val app = LocalAppSettings.current
+    val (latestText, unitText) = displayLatest(metric, latest, app)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -192,12 +219,12 @@ private fun FocusedMetricRow(state: ChartsUiState, onExpand: () -> Unit) {
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = if (latest != null) metric.format.format(latest) else "—",
+                    text = latestText,
                     style = MaterialTheme.typography.headlineSmall,
                     color = metric.color
                 )
                 Text(
-                    text = metric.unit,
+                    text = unitText,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

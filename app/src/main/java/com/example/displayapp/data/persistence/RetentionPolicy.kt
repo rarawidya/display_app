@@ -32,13 +32,26 @@ class RetentionPolicy(
     /**
      * Deletes data older than the configured retention periods.
      * Returns a summary of what was deleted.
+     *
+     * @param overrideDays if non-null, overrides the configured retention for
+     * all categories (used by the Settings → Retention preference). A value of
+     * `-1` means "keep forever" and skips the prune entirely.
      */
-    suspend fun enforce(): RetentionResult = withContext(Dispatchers.IO) {
+    suspend fun enforce(overrideDays: Int? = null): RetentionResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
 
-        val telemetryCutoff = now - telemetryRetentionDays * DAY_MS
-        val tripCutoff = now - tripRetentionDays * DAY_MS
-        val faultCutoff = now - faultRetentionDays * DAY_MS
+        // "Forever" preference short-circuits the prune so no rows are touched.
+        if (overrideDays != null && overrideDays < 0) {
+            return@withContext RetentionResult(0, 0, 0)
+        }
+
+        val telemetryDays = overrideDays ?: telemetryRetentionDays
+        val tripDays = overrideDays ?: tripRetentionDays
+        val faultDays = overrideDays ?: faultRetentionDays
+
+        val telemetryCutoff = now - telemetryDays * DAY_MS
+        val tripCutoff = now - tripDays * DAY_MS
+        val faultCutoff = now - faultDays * DAY_MS
 
         val telemetryDeleted = telemetryDao.deleteOlderThan(telemetryCutoff)
         val tripsDeleted = tripDao.deleteOlderThan(tripCutoff)

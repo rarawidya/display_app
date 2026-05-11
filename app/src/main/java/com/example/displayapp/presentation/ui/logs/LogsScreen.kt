@@ -61,6 +61,7 @@ import com.example.displayapp.presentation.state.SortBy
 import com.example.displayapp.presentation.state.TripFilter
 import com.example.displayapp.presentation.ui.common.EmptyState
 import com.example.displayapp.presentation.ui.common.GlassCard
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.ui.theme.Dim
@@ -273,15 +274,20 @@ private fun Header(visibleCount: Int, totalCount: Int) {
 
 @Composable
 private fun SummaryBand(summary: LogsSummary) {
+    val app = LocalAppSettings.current
+    val distanceLabel = app.speedUnit.formatDistance(summary.totalDistanceMeters)
+    val avgSpeedLabel = app.speedUnit.formatSpeed(summary.avgSpeedKmh10 / 10f)
+    val energyLabel = if (summary.totalEnergyKwh > 0f) "%.1f kWh".format(summary.totalEnergyKwh) else "—"
+
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             SummaryStat("Trips", summary.tripCount.toString(), EvBlue)
-            SummaryStat("Distance", summary.totalDistanceLabel, EvLime)
-            SummaryStat("Avg speed", summary.avgSpeedLabel, EvBlue)
-            SummaryStat("Energy", summary.totalEnergyLabel, EvGreen)
+            SummaryStat("Distance", distanceLabel, EvLime)
+            SummaryStat("Avg speed", avgSpeedLabel, EvBlue)
+            SummaryStat("Energy", energyLabel, EvGreen)
         }
     }
 }

@@ -15,14 +15,16 @@ data class TripDetailUiState(
     val notFound: Boolean = false,
     val tripId: Long = -1L,
 
-    // Hero summary
-    val dateLabel: String = "",
-    val durationLabel: String = "",
-    val distanceLabel: String = "",
-    val avgSpeedLabel: String = "",
-    val maxSpeedLabel: String = "",
-    val batteryDeltaLabel: String = "",
-    val energyLabel: String = "",
+    // Raw values — UI formats with LocalAppSettings so unit toggles take effect instantly.
+    val startMs: Long = 0L,
+    val durationSec: Long = 0L,
+    val distanceMeters: Long = 0L,
+    val avgSpeedKmh10: Int = 0,
+    val maxSpeedKmh10: Int = 0,
+    val startBattery: Int = 0,
+    val endBattery: Int? = null,
+    val energyKwh: Float = 0f,
+
     val sampleCount: Long = 0L,
     val isActive: Boolean = false,
 
@@ -49,13 +51,14 @@ data class TripDetailUiState(
         return loading == other.loading &&
             notFound == other.notFound &&
             tripId == other.tripId &&
-            dateLabel == other.dateLabel &&
-            durationLabel == other.durationLabel &&
-            distanceLabel == other.distanceLabel &&
-            avgSpeedLabel == other.avgSpeedLabel &&
-            maxSpeedLabel == other.maxSpeedLabel &&
-            batteryDeltaLabel == other.batteryDeltaLabel &&
-            energyLabel == other.energyLabel &&
+            startMs == other.startMs &&
+            durationSec == other.durationSec &&
+            distanceMeters == other.distanceMeters &&
+            avgSpeedKmh10 == other.avgSpeedKmh10 &&
+            maxSpeedKmh10 == other.maxSpeedKmh10 &&
+            startBattery == other.startBattery &&
+            endBattery == other.endBattery &&
+            energyKwh == other.energyKwh &&
             sampleCount == other.sampleCount &&
             isActive == other.isActive &&
             speedSeries.size == other.speedSeries.size &&
@@ -71,13 +74,14 @@ data class TripDetailUiState(
         var h = loading.hashCode()
         h = 31 * h + notFound.hashCode()
         h = 31 * h + tripId.hashCode()
-        h = 31 * h + dateLabel.hashCode()
-        h = 31 * h + durationLabel.hashCode()
-        h = 31 * h + distanceLabel.hashCode()
-        h = 31 * h + avgSpeedLabel.hashCode()
-        h = 31 * h + maxSpeedLabel.hashCode()
-        h = 31 * h + batteryDeltaLabel.hashCode()
-        h = 31 * h + energyLabel.hashCode()
+        h = 31 * h + startMs.hashCode()
+        h = 31 * h + durationSec.hashCode()
+        h = 31 * h + distanceMeters.hashCode()
+        h = 31 * h + avgSpeedKmh10
+        h = 31 * h + maxSpeedKmh10
+        h = 31 * h + startBattery
+        h = 31 * h + (endBattery ?: 0)
+        h = 31 * h + energyKwh.hashCode()
         h = 31 * h + sampleCount.hashCode()
         h = 31 * h + isActive.hashCode()
         h = 31 * h + speedSeries.size

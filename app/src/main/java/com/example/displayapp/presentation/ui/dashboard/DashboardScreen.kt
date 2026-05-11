@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.domain.model.VehicleMode
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.temperatureAlertLevel
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.components.DiagnosticsOverlay
 import com.example.displayapp.presentation.ui.components.PremiumMetricTile
 import com.example.displayapp.presentation.ui.components.SpeedometerGauge
@@ -226,16 +227,19 @@ private fun DashboardLandscape(
 
 @Composable
 private fun SpeedometerSection(state: DashboardUiState) {
-    // Domain model has no RPM channel — derive a representative value from speed
-    // using a 100:1 ratio (matches typical EV mid-drive at the mockup's 60 km/h ↔ 6000 RPM).
+    val app = LocalAppSettings.current
+    // RPM is rotational and not affected by display unit choice.
     val derivedRpm = state.speed * 100
     val progress = if (state.maxSpeed > 0) state.speed.toFloat() / state.maxSpeed else 0f
+
+    // Secondary readout honors the user's speed-unit preference (km/h ↔ mph).
+    val secondary = app.speedUnit.formatSpeed(state.speed.toFloat()).uppercase()
 
     SpeedometerGauge(
         heroValue = derivedRpm,
         heroUnit = "RPM",
         progressFraction = progress,
-        secondaryText = "${state.speed} KM/H",
+        secondaryText = secondary,
         modifier = Modifier.fillMaxWidth()
     )
 }
@@ -250,9 +254,16 @@ private fun SpeedometerSection(state: DashboardUiState) {
 
 @Composable
 private fun TelemetryGrid(state: DashboardUiState) {
+    val app = LocalAppSettings.current
     val voltage = state.voltage.toFloatOrNull() ?: 0f
     val current = state.current.toFloatOrNull() ?: 0f
     val power   = voltage * current  // derived — no direct power channel yet
+
+    // Convert telemetry's °C readings to whatever unit the user picked.
+    val engineTemp     = app.temperatureUnit.convertFromCelsius(state.temperature.toFloat())
+    val batteryTemp    = app.temperatureUnit.convertFromCelsius(state.batteryTemperature.toFloat())
+    val controllerTemp = app.temperatureUnit.convertFromCelsius(state.controllerTemperature.toFloat())
+    val tempUnit       = app.temperatureUnit.suffix
 
     // Each tile uses `Modifier.weight(1f).fillMaxHeight()`:
     //   - weight equalizes widths across siblings in the row,
@@ -296,8 +307,8 @@ private fun TelemetryGrid(state: DashboardUiState) {
             PremiumMetricTile(
                 icon = EvIcons.Thermo,
                 label = "Engine Temp",
-                value = state.temperature.toFloat(),
-                unit = "°C",
+                value = engineTemp,
+                unit = tempUnit,
                 level = temperatureAlertLevel(state.temperature),
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
@@ -309,16 +320,16 @@ private fun TelemetryGrid(state: DashboardUiState) {
             PremiumMetricTile(
                 icon = EvIcons.Battery,
                 label = "Battery Temp",
-                value = state.batteryTemperature.toFloat(),
-                unit = "°C",
+                value = batteryTemp,
+                unit = tempUnit,
                 level = temperatureAlertLevel(state.batteryTemperature),
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             PremiumMetricTile(
                 icon = EvIcons.Thermo,
                 label = "Controller Temp",
-                value = state.controllerTemperature.toFloat(),
-                unit = "°C",
+                value = controllerTemp,
+                unit = tempUnit,
                 level = temperatureAlertLevel(state.controllerTemperature),
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )

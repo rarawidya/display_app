@@ -110,21 +110,20 @@ data class LogsUiState(
             return sorted.toList()
         }
 
-    /** Aggregates over the *visible* trips — drives the summary band. */
+    /**
+     * Aggregates over the *visible* trips — drives the summary band. Returned
+     * in raw units; the UI formats with [com.example.displayapp.presentation.ui.common.LocalAppSettings]
+     * so unit toggles take effect without re-collecting the flow.
+     */
     val summary: LogsSummary
         get() {
             val list = visibleTrips
             if (list.isEmpty()) return LogsSummary()
-            val totalDistanceKm = list.sumOf { it.distanceMeters } / 1000f
-            val totalEnergyKwh  = list.sumOf { it.energyKwh.toDouble() }.toFloat()
-            val avgKmh = if (list.isNotEmpty()) {
-                list.sumOf { it.avgSpeedKmh10.toLong() }.toFloat() / list.size / 10f
-            } else 0f
             return LogsSummary(
                 tripCount = list.size,
-                totalDistanceLabel = "%.1f km".format(totalDistanceKm),
-                totalEnergyLabel = if (totalEnergyKwh > 0f) "%.1f kWh".format(totalEnergyKwh) else "—",
-                avgSpeedLabel = "%.0f km/h".format(avgKmh)
+                totalDistanceMeters = list.sumOf { it.distanceMeters },
+                totalEnergyKwh = list.sumOf { it.energyKwh.toDouble() }.toFloat(),
+                avgSpeedKmh10 = list.sumOf { it.avgSpeedKmh10.toLong() } / list.size
             )
         }
 
@@ -149,9 +148,10 @@ data class LogsUiState(
 @Immutable
 data class LogsSummary(
     val tripCount: Int = 0,
-    val totalDistanceLabel: String = "0.0 km",
-    val totalEnergyLabel: String = "—",
-    val avgSpeedLabel: String = "0 km/h"
+    val totalDistanceMeters: Long = 0L,
+    val totalEnergyKwh: Float = 0f,
+    /** Average speed in km/h × 10 (matches TripEntity's units). */
+    val avgSpeedKmh10: Long = 0L
 )
 
 enum class TripFilter(val label: String) { ALL("All"), ACTIVE("Active"), LONG(">5km") }
