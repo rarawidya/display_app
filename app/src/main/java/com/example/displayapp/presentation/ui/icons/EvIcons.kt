@@ -1,0 +1,418 @@
+package com.example.displayapp.presentation.ui.icons
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
+
+/**
+ * Self-contained icon set so we don't depend on material-icons-extended (~22 MB).
+ * Each icon is a 24×24 viewport drawn in pure path data — tinted by the caller.
+ */
+object EvIcons {
+
+    val Drive: ImageVector by lazy { vec("Drive") {
+        // Speedometer dial silhouette
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 4f)
+            arcToRelative(8f, 8f, 0f, false, false, -7.07f, 11.74f)
+            lineToRelative(1.78f, -1f)
+            arcTo(6f, 6f, 0f, true, true, 17.29f, 14.74f)
+            lineToRelative(1.78f, 1f)
+            arcTo(8f, 8f, 0f, false, false, 12f, 4f)
+            close()
+            // Needle
+            moveTo(11.5f, 9f)
+            lineToRelative(1f, 0f)
+            lineToRelative(.4f, 4.4f)
+            arcToRelative(.9f, .9f, 0f, true, true, -1.8f, 0f)
+            close()
+        }
+    } }
+
+    val Charts: ImageVector by lazy { vec("Charts") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 19f); lineTo(20f, 19f); lineTo(20f, 21f); lineTo(4f, 21f); close()
+            moveTo(5f, 17f); lineTo(5f, 11f); lineTo(8f, 11f); lineTo(8f, 17f); close()
+            moveTo(10.5f, 17f); lineTo(10.5f, 7f); lineTo(13.5f, 7f); lineTo(13.5f, 17f); close()
+            moveTo(16f, 17f); lineTo(16f, 13f); lineTo(19f, 13f); lineTo(19f, 17f); close()
+        }
+    } }
+
+    val Logs: ImageVector by lazy { vec("Logs") {
+        path(fill = SolidColor(Color.White)) {
+            // Clock-list hybrid
+            moveTo(12f, 3f)
+            arcToRelative(9f, 9f, 0f, true, false, 9f, 9f)
+            lineToRelative(-2f, 0f)
+            arcToRelative(7f, 7f, 0f, true, true, -7f, -7f)
+            close()
+            moveTo(11f, 7f); lineTo(13f, 7f); lineTo(13f, 12.4f); lineTo(17f, 14.7f); lineTo(16f, 16.4f); lineTo(11f, 13.5f); close()
+        }
+    } }
+
+    // ------------------------------------------------------------------
+    // Bluetooth / Wi-Fi — path data sourced from Google's open-source
+    // Material Icons (Apache 2.0). Translated 1:1 from the official 24×24
+    // SVGs at github.com/google/material-design-icons.
+    // ------------------------------------------------------------------
+
+    val Bluetooth: ImageVector by lazy { vec("Bluetooth") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(17.71f, 7.71f)
+            lineTo(12f, 2f)
+            horizontalLineToRelative(-1f)
+            verticalLineToRelative(7.59f)
+            lineTo(6.41f, 5f)
+            lineTo(5f, 6.41f)
+            lineTo(10.59f, 12f)
+            lineTo(5f, 17.59f)
+            lineTo(6.41f, 19f)
+            lineTo(11f, 14.41f)
+            verticalLineTo(22f)
+            horizontalLineToRelative(1f)
+            lineToRelative(5.71f, -5.71f)
+            lineToRelative(-4.3f, -4.29f)
+            lineToRelative(4.3f, -4.29f)
+            close()
+            moveTo(13f, 5.83f)
+            lineToRelative(1.88f, 1.88f)
+            lineTo(13f, 9.59f)
+            verticalLineTo(5.83f)
+            close()
+            moveToRelative(1.88f, 10.46f)
+            lineTo(13f, 18.17f)
+            verticalLineToRelative(-3.76f)
+            lineToRelative(1.88f, 1.88f)
+            close()
+        }
+    } }
+
+    /** Official Material "bluetooth_disabled" — fragmented glyph, no slash. */
+    val BluetoothOff: ImageVector by lazy { vec("BluetoothOff") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(13f, 5.83f)
+            lineToRelative(1.88f, 1.88f)
+            lineToRelative(-1.6f, 1.6f)
+            lineToRelative(1.41f, 1.41f)
+            lineToRelative(3.02f, -3.02f)
+            lineTo(12f, 2f)
+            horizontalLineToRelative(-1f)
+            verticalLineToRelative(5.03f)
+            lineToRelative(2f, 2f)
+            verticalLineToRelative(-3.2f)
+            close()
+            moveTo(5.41f, 4f)
+            lineTo(4f, 5.41f)
+            lineTo(10.59f, 12f)
+            lineTo(5f, 17.59f)
+            lineTo(6.41f, 19f)
+            lineTo(11f, 14.41f)
+            verticalLineTo(22f)
+            horizontalLineToRelative(1f)
+            lineToRelative(4.29f, -4.29f)
+            lineToRelative(2.3f, 2.29f)
+            lineTo(20f, 18.59f)
+            lineTo(5.41f, 4f)
+            close()
+            moveTo(13f, 18.17f)
+            verticalLineToRelative(-3.76f)
+            lineToRelative(1.88f, 1.88f)
+            lineTo(13f, 18.17f)
+            close()
+        }
+    } }
+
+    val Wifi: ImageVector by lazy { vec("Wifi") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(1f, 9f)
+            lineToRelative(2f, 2f)
+            curveToRelative(4.97f, -4.97f, 13.03f, -4.97f, 18f, 0f)
+            lineToRelative(2f, -2f)
+            curveTo(16.93f, 2.93f, 7.08f, 2.93f, 1f, 9f)
+            close()
+            moveToRelative(8f, 8f)
+            lineToRelative(3f, 3f)
+            lineToRelative(3f, -3f)
+            curveToRelative(-1.65f, -1.66f, -4.34f, -1.66f, -6f, 0f)
+            close()
+            moveToRelative(-4f, -4f)
+            lineToRelative(2f, 2f)
+            curveToRelative(2.76f, -2.76f, 7.24f, -2.76f, 10f, 0f)
+            lineToRelative(2f, -2f)
+            curveTo(15.14f, 9.14f, 8.87f, 9.14f, 5f, 13f)
+            close()
+        }
+    } }
+
+    val WifiOff: ImageVector by lazy { vec("WifiOff") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(22.99f, 9f)
+            curveTo(19.15f, 5.16f, 13.8f, 3.76f, 8.84f, 4.78f)
+            lineToRelative(2.52f, 2.52f)
+            curveToRelative(3.47f, -0.17f, 6.99f, 1.05f, 9.63f, 3.7f)
+            lineToRelative(2f, -2f)
+            close()
+            moveToRelative(-4f, 4f)
+            curveToRelative(-1.29f, -1.29f, -2.84f, -2.13f, -4.49f, -2.56f)
+            lineToRelative(3.53f, 3.53f)
+            lineToRelative(0.96f, -0.97f)
+            close()
+            moveTo(2f, 3.05f)
+            lineTo(5.07f, 6.1f)
+            curveTo(3.6f, 6.82f, 2.22f, 7.78f, 1f, 9f)
+            lineToRelative(1.99f, 2f)
+            curveToRelative(1.24f, -1.24f, 2.67f, -2.16f, 4.2f, -2.77f)
+            lineToRelative(2.24f, 2.24f)
+            curveTo(7.81f, 10.89f, 6.27f, 11.73f, 5f, 13f)
+            verticalLineToRelative(0.01f)
+            lineTo(6.99f, 15f)
+            curveToRelative(1.36f, -1.36f, 3.14f, -2.04f, 4.92f, -2.06f)
+            lineTo(18.98f, 20f)
+            lineToRelative(1.27f, -1.26f)
+            lineTo(3.29f, 1.79f)
+            lineTo(2f, 3.05f)
+            close()
+            moveTo(9f, 17f)
+            lineToRelative(3f, 3f)
+            lineToRelative(3f, -3f)
+            curveToRelative(-1.65f, -1.66f, -4.34f, -1.66f, -6f, 0f)
+            close()
+        }
+    } }
+
+    val Search: ImageVector by lazy { vec("Search") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(15.5f, 14f)
+            lineToRelative(-.79f, 0f)
+            lineToRelative(-.28f, -.27f)
+            arcToRelative(6.5f, 6.5f, 0f, true, false, -.7f, .7f)
+            lineToRelative(.27f, .28f)
+            lineToRelative(0f, .79f)
+            lineToRelative(5f, 4.99f)
+            lineTo(20.49f, 19f)
+            close()
+            moveTo(9.5f, 14f)
+            arcTo(4.5f, 4.5f, 0f, true, true, 14f, 9.5f)
+            arcTo(4.5f, 4.5f, 0f, false, true, 9.5f, 14f)
+            close()
+        }
+    } }
+
+    val Download: ImageVector by lazy { vec("Download") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(11f, 3f); lineTo(13f, 3f); lineTo(13f, 13.17f); lineTo(16.59f, 9.59f); lineTo(18f, 11f); lineTo(12f, 17f); lineTo(6f, 11f); lineTo(7.41f, 9.59f); lineTo(11f, 13.17f); close()
+            moveTo(5f, 19f); lineTo(19f, 19f); lineTo(19f, 21f); lineTo(5f, 21f); close()
+        }
+    } }
+
+    val MoreVert: ImageVector by lazy { vec("MoreVert") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 8f); arcToRelative(2f, 2f, 0f, true, true, 0f, -4f); arcToRelative(2f, 2f, 0f, true, true, 0f, 4f); close()
+            moveTo(12f, 14f); arcToRelative(2f, 2f, 0f, true, true, 0f, -4f); arcToRelative(2f, 2f, 0f, true, true, 0f, 4f); close()
+            moveTo(12f, 20f); arcToRelative(2f, 2f, 0f, true, true, 0f, -4f); arcToRelative(2f, 2f, 0f, true, true, 0f, 4f); close()
+        }
+    } }
+
+    val ArrowBack: ImageVector by lazy { vec("ArrowBack") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(20f, 11f); lineTo(20f, 13f); lineTo(7.83f, 13f); lineTo(13.41f, 18.59f); lineTo(12f, 20f); lineTo(4f, 12f); lineTo(12f, 4f); lineTo(13.41f, 5.41f); lineTo(7.83f, 11f); close()
+        }
+    } }
+
+    val Bolt: ImageVector by lazy { vec("Bolt") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(13f, 2f); lineTo(4f, 14f); lineTo(11f, 14f); lineTo(10f, 22f); lineTo(20f, 9f); lineTo(13f, 9f); close()
+        }
+    } }
+
+    val Thermo: ImageVector by lazy { vec("Thermo") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(13f, 14.59f); lineTo(13f, 5f)
+            arcToRelative(1f, 1f, 0f, false, false, -2f, 0f)
+            lineTo(11f, 14.59f)
+            arcToRelative(3.5f, 3.5f, 0f, true, false, 2f, 0f)
+            close()
+        }
+    } }
+
+    val Settings: ImageVector by lazy { vec("Settings") {
+        // Gear / cog — 8-tooth, centered ring
+        path(fill = SolidColor(Color.White)) {
+            moveTo(19.14f, 12.94f)
+            arcToRelative(7.49f, 7.49f, 0f, false, false, 0.05f, -0.94f)
+            arcToRelative(7.49f, 7.49f, 0f, false, false, -0.05f, -0.94f)
+            lineToRelative(2.03f, -1.58f)
+            arcToRelative(.5f, .5f, 0f, false, false, .12f, -.64f)
+            lineToRelative(-1.92f, -3.32f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.61f, -.22f)
+            lineToRelative(-2.39f, .96f)
+            arcToRelative(7.03f, 7.03f, 0f, false, false, -1.62f, -.94f)
+            lineToRelative(-.36f, -2.54f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.5f, -.42f)
+            lineToRelative(-3.84f, 0f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.5f, .42f)
+            lineToRelative(-.36f, 2.54f)
+            arcToRelative(7.03f, 7.03f, 0f, false, false, -1.62f, .94f)
+            lineToRelative(-2.39f, -.96f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.61f, .22f)
+            lineToRelative(-1.92f, 3.32f)
+            arcToRelative(.5f, .5f, 0f, false, false, .12f, .64f)
+            lineToRelative(2.03f, 1.58f)
+            arcToRelative(7.49f, 7.49f, 0f, false, false, -.05f, .94f)
+            arcToRelative(7.49f, 7.49f, 0f, false, false, .05f, .94f)
+            lineToRelative(-2.03f, 1.58f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.12f, .64f)
+            lineToRelative(1.92f, 3.32f)
+            arcToRelative(.5f, .5f, 0f, false, false, .61f, .22f)
+            lineToRelative(2.39f, -.96f)
+            arcToRelative(7.03f, 7.03f, 0f, false, false, 1.62f, .94f)
+            lineToRelative(.36f, 2.54f)
+            arcToRelative(.5f, .5f, 0f, false, false, .5f, .42f)
+            lineToRelative(3.84f, 0f)
+            arcToRelative(.5f, .5f, 0f, false, false, .5f, -.42f)
+            lineToRelative(.36f, -2.54f)
+            arcToRelative(7.03f, 7.03f, 0f, false, false, 1.62f, -.94f)
+            lineToRelative(2.39f, .96f)
+            arcToRelative(.5f, .5f, 0f, false, false, .61f, -.22f)
+            lineToRelative(1.92f, -3.32f)
+            arcToRelative(.5f, .5f, 0f, false, false, -.12f, -.64f)
+            close()
+            // Inner hub cutout
+            moveTo(12f, 15.5f)
+            arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, -7f)
+            arcToRelative(3.5f, 3.5f, 0f, true, true, 0f, 7f)
+            close()
+        }
+    } }
+
+    val Home: ImageVector by lazy { vec("Home") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 3.5f); lineTo(3f, 11f); lineTo(5f, 11f); lineTo(5f, 20f)
+            lineTo(10f, 20f); lineTo(10f, 14f); lineTo(14f, 14f); lineTo(14f, 20f)
+            lineTo(19f, 20f); lineTo(19f, 11f); lineTo(21f, 11f); close()
+        }
+    } }
+
+    val Chart: ImageVector by lazy { vec("Chart") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 19f); lineTo(20f, 19f); lineTo(20f, 21f); lineTo(4f, 21f); close()
+            moveTo(5.5f, 17f); lineTo(5.5f, 11f); lineTo(8.5f, 11f); lineTo(8.5f, 17f); close()
+            moveTo(10.5f, 17f); lineTo(10.5f, 7f); lineTo(13.5f, 7f); lineTo(13.5f, 17f); close()
+            moveTo(15.5f, 17f); lineTo(15.5f, 13f); lineTo(18.5f, 13f); lineTo(18.5f, 17f); close()
+        }
+    } }
+
+    val Data: ImageVector by lazy { vec("Data") {
+        // Stack of horizontal rows (table rows silhouette)
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 5f); lineTo(20f, 5f); lineTo(20f, 7.5f); lineTo(4f, 7.5f); close()
+            moveTo(4f, 9.5f); lineTo(20f, 9.5f); lineTo(20f, 12f); lineTo(4f, 12f); close()
+            moveTo(4f, 14f); lineTo(20f, 14f); lineTo(20f, 16.5f); lineTo(4f, 16.5f); close()
+            moveTo(4f, 18.5f); lineTo(20f, 18.5f); lineTo(20f, 21f); lineTo(4f, 21f); close()
+        }
+    } }
+
+    val Grid: ImageVector by lazy { vec("Grid") {
+        // 2x2 squares (settings/menu)
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 4f); lineTo(10.5f, 4f); lineTo(10.5f, 10.5f); lineTo(4f, 10.5f); close()
+            moveTo(13.5f, 4f); lineTo(20f, 4f); lineTo(20f, 10.5f); lineTo(13.5f, 10.5f); close()
+            moveTo(4f, 13.5f); lineTo(10.5f, 13.5f); lineTo(10.5f, 20f); lineTo(4f, 20f); close()
+            moveTo(13.5f, 13.5f); lineTo(20f, 13.5f); lineTo(20f, 20f); lineTo(13.5f, 20f); close()
+        }
+    } }
+
+    val Motorcycle: ImageVector by lazy { vec("Motorcycle") {
+        // Simplified bike silhouette: two wheels + body line
+        path(fill = SolidColor(Color.White)) {
+            // Rear wheel
+            moveTo(5.5f, 17.5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
+            close()
+            // Front wheel
+            moveTo(18.5f, 17.5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
+            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
+            close()
+        }
+        path(fill = SolidColor(Color.White)) {
+            // Frame body
+            moveTo(7f, 14f); lineTo(11f, 14f); lineTo(13f, 10f); lineTo(17f, 10f); lineTo(17f, 12f); lineTo(14f, 12f); lineTo(12.5f, 15f); lineTo(7f, 15f); close()
+            // Handlebar accent
+            moveTo(15f, 8f); lineTo(19f, 8f); lineTo(19f, 9.5f); lineTo(15f, 9.5f); close()
+        }
+    } }
+
+    val Battery: ImageVector by lazy { vec("Battery") {
+        // Solid vertical battery silhouette (cap + body)
+        path(fill = SolidColor(Color.White)) {
+            // Cap
+            moveTo(10f, 2f); lineTo(14f, 2f); lineTo(14f, 4f); lineTo(10f, 4f); close()
+            // Body
+            moveTo(8f, 4.5f); lineTo(16f, 4.5f); lineTo(16f, 21.5f); lineTo(8f, 21.5f); close()
+        }
+    } }
+
+    val Plug: ImageVector by lazy { vec("Plug") {
+        // EU-style plug head + cable
+        path(fill = SolidColor(Color.White)) {
+            // Prongs
+            moveTo(9f, 2f); lineTo(11f, 2f); lineTo(11f, 6f); lineTo(9f, 6f); close()
+            moveTo(13f, 2f); lineTo(15f, 2f); lineTo(15f, 6f); lineTo(13f, 6f); close()
+            // Body
+            moveTo(7f, 7f); lineTo(17f, 7f); lineTo(17f, 12f)
+            arcToRelative(5f, 5f, 0f, false, true, -3f, 4.58f)
+            lineTo(14f, 22f); lineTo(10f, 22f); lineTo(10f, 16.58f)
+            arcToRelative(5f, 5f, 0f, false, true, -3f, -4.58f)
+            close()
+        }
+    } }
+
+    val InfoOutline: ImageVector by lazy { vec("InfoOutline") {
+        // Simple "i" glyph rendered as a dot + stem; the surrounding ring is drawn
+        // separately by the caller (info-button background), keeping this icon tint-safe.
+        path(fill = SolidColor(Color.White)) {
+            // dot
+            moveTo(10.75f, 6.5f); lineTo(13.25f, 6.5f); lineTo(13.25f, 9f); lineTo(10.75f, 9f); close()
+            // stem
+            moveTo(10.75f, 10.5f); lineTo(13.25f, 10.5f); lineTo(13.25f, 18f); lineTo(10.75f, 18f); close()
+        }
+    } }
+
+    val ChevronRight: ImageVector by lazy { vec("ChevronRight") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(9.3f, 6f); lineTo(15.3f, 12f); lineTo(9.3f, 18f); lineTo(7.9f, 16.6f); lineTo(12.5f, 12f); lineTo(7.9f, 7.4f); close()
+        }
+    } }
+
+    val Speed: ImageVector by lazy { vec("Speed") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 16f)
+            arcToRelative(2f, 2f, 0f, true, false, -2f, -2f)
+            arcToRelative(2f, 2f, 0f, false, false, 2f, 2f)
+            close()
+            moveTo(15.04f, 8.95f); lineToRelative(1.42f, 1.42f); lineToRelative(-3.54f, 3.54f); lineToRelative(-1.42f, -1.42f); close()
+            moveTo(12f, 4f)
+            arcToRelative(8f, 8f, 0f, false, false, -7.07f, 11.74f)
+            lineToRelative(1.78f, -1f)
+            arcTo(6f, 6f, 0f, true, true, 17.29f, 14.74f)
+            lineToRelative(1.78f, 1f)
+            arcTo(8f, 8f, 0f, false, false, 12f, 4f)
+            close()
+        }
+    } }
+}
+
+private inline fun vec(
+    name: String,
+    block: ImageVector.Builder.() -> Unit
+): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).apply(block).build()
