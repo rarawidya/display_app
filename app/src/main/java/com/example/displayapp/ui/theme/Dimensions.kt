@@ -20,6 +20,14 @@ object Dim {
     val screenGutter   = 16.dp
     val screenGutterLg = 24.dp
 
+    /**
+     * Top breathing room used by every top-level page (Drive / Chart / Logs /
+     * Settings). Applied *on top of* the Scaffold's status-bar inset — so the
+     * page header sits 9 dp below the status bar across the app. Keep all
+     * screens reading from this one token so they stay aligned visually.
+     */
+    val screenTop = 9.dp
+
     // Card defaults
     val cardCorner = 20.dp
     val cardElev   = 0.dp        // glass cards rely on tint+stroke, not shadow

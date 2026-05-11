@@ -22,8 +22,9 @@ data class DashboardUiState(
     val batteryPercent: Int = 0,
     val voltage: String = "0.0",
     val current: String = "0.0",
-    val temperature: Int = 0,                    // motor temperature (deg C)
+    val temperature: Int = 0,                    // engine / motor temperature (deg C)
     val controllerTemperature: Int = 0,          // controller temperature (deg C)
+    val batteryTemperature: Int = 0,             // battery-pack temperature (deg C)
     val odometer: String = "0.0",
     val vehicleMode: VehicleMode = VehicleMode.PARK,
     val leftIndicator: Boolean = false,

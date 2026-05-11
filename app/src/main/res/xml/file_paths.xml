@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider paths for sharing exported trip CSVs to other apps.
+  CsvExporter writes into context.getExternalFilesDir(null)/exports/, which
+  maps to <external-files-path name="exports" path="exports/" /> below.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path
+        name="exports"
+        path="exports/" />
+</paths>

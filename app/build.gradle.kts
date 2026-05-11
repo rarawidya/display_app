@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+// Pull the Google Maps API key from local.properties (gitignored) so it never
+// lands in version control. Falls back to an empty string so the app still
+// builds — the UI shows a "key required" gate at runtime in that case.
+val mapsApiKey: String = run {
+    val props = Properties()
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(props::load)
+    (props.getProperty("MAPS_API_KEY") ?: "").trim()
 }
 
 android {
@@ -20,6 +32,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Substituted into AndroidManifest.xml's com.google.android.geo.API_KEY
+        // meta-data so the Maps SDK can authenticate. Also exposed via BuildConfig
+        // so the UI layer can detect "no key configured" and degrade gracefully.
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "MAPS_API_KEY", "\"${mapsApiKey}\"")
     }
 
     buildTypes {
@@ -59,6 +77,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.maps.compose)
+    implementation(libs.play.services.maps)
+    implementation(libs.play.services.location)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

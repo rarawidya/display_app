@@ -51,6 +51,7 @@ fun VehicleRowCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Icon(

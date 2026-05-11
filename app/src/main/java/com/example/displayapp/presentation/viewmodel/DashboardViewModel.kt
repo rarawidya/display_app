@@ -81,12 +81,13 @@ class DashboardViewModel(private val repository: VehicleRepository) : ViewModel(
         connectionState: ConnectionState,
         fps: Int
     ): DashboardUiState {
-        // Until the wire schema separates motor and controller temperatures,
-        // approximate the controller as "motor − 7°C" (controllers are typically
-        // a touch cooler than the motor in steady-state). This keeps the UI
-        // surface honest about being two distinct readings without breaking the
-        // protocol — the mapping can be replaced when the schema gains a field.
+        // Until the wire schema separates motor / controller / battery temps,
+        // approximate them from the single reported temperature value using
+        // steady-state offsets (controllers and battery packs run cooler than
+        // the motor). Honest about being three distinct readings while keeping
+        // the protocol unchanged — replace these when the schema gains fields.
         val controllerTemp = (data.temperature - 7).coerceAtLeast(0)
+        val batteryTemp    = (data.temperature - 12).coerceAtLeast(0)
 
         val durationSec = if (sessionStartMs > 0) {
             ((System.currentTimeMillis() - sessionStartMs) / 1000L).coerceAtLeast(0)
@@ -103,6 +104,7 @@ class DashboardViewModel(private val repository: VehicleRepository) : ViewModel(
             current = "%.1f".format(data.current),
             temperature = data.temperature,
             controllerTemperature = controllerTemp,
+            batteryTemperature = batteryTemp,
             odometer = "%.1f".format(data.odometer),
             vehicleMode = data.vehicleMode,
             leftIndicator = data.leftIndicator,

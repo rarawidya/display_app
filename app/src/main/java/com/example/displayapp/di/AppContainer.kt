@@ -2,6 +2,7 @@ package com.example.displayapp.di
 
 import android.content.Context
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
+import com.example.displayapp.data.location.FusedLocationRepository
 import com.example.displayapp.data.preferences.DevicePreferences
 import com.example.displayapp.data.preferences.ThemePreferences
 import com.example.displayapp.data.bluetooth.SppDataSource
@@ -12,12 +13,17 @@ import com.example.displayapp.data.persistence.TelemetryReplaySource
 import com.example.displayapp.data.persistence.TripSessionManager
 import com.example.displayapp.data.persistence.export.CsvExporter
 import com.example.displayapp.data.protocol.TelemetryMapper
+import com.example.displayapp.data.replay.RoomTripReplaySource
 import com.example.displayapp.data.repository.ThemeRepositoryImpl
+import com.example.displayapp.data.repository.TripRepositoryImpl
 import com.example.displayapp.data.repository.VehicleRepositoryImpl
 import com.example.displayapp.data.system.WifiStateMonitor
 import com.example.displayapp.data.simulator.SimulatedDataSource
 import com.example.displayapp.data.simulator.TelemetryScenario
+import com.example.displayapp.domain.replay.TripReplaySource
+import com.example.displayapp.domain.repository.LocationRepository
 import com.example.displayapp.domain.repository.ThemeRepository
+import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.domain.repository.VehicleRepository
 
 class AppContainer(private val context: Context) {
@@ -42,13 +48,27 @@ class AppContainer(private val context: Context) {
         WifiStateMonitor(context)
     }
 
+    val locationRepository: LocationRepository by lazy {
+        FusedLocationRepository(context)
+    }
+
+    val tripRepository: TripRepository by lazy {
+        TripRepositoryImpl(tripDao, telemetryDao)
+    }
+
+    val tripReplaySource: TripReplaySource by lazy {
+        RoomTripReplaySource(telemetryDao)
+    }
+
     // Database
     private val database: TelemetryDatabase by lazy {
         TelemetryDatabase.getInstance(context)
     }
 
     // DAOs
-    private val telemetryDao by lazy { database.telemetryDao() }
+    // Was private; surfaced to package level so TripRepository / RoomTripReplaySource
+    // can read telemetry rows without going through another wrapper.
+    internal val telemetryDao by lazy { database.telemetryDao() }
     val tripDao by lazy { database.tripDao() }
     private val faultEventDao by lazy { database.faultEventDao() }
 

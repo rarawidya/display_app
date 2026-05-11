@@ -11,12 +11,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,7 +81,10 @@ fun SettingsContent(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { SettingsTopBar(onBack = onBack) }
+        topBar = { SettingsTopBar(onBack = onBack) },
+        // Outer AppNavHost Scaffold already supplied the system-bar insets.
+        // Leaving this at the default (WindowInsets.systemBars) would re-add them.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { inner ->
         SettingsBody(
             settings = settings,
@@ -119,7 +122,9 @@ private fun SettingsTopBar(onBack: () -> Unit) {
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent
         ),
-        modifier = Modifier.statusBarsPadding()
+        // The outer AppNavHost Scaffold already consumed the status-bar inset.
+        // TopAppBar's default windowInsets would re-add it here — kill it.
+        windowInsets = WindowInsets(0, 0, 0, 0)
     )
 }
 

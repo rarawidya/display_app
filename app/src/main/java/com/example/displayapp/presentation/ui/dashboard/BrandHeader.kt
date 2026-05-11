@@ -153,9 +153,11 @@ private fun StatusIcon(
         else MaterialTheme.colorScheme.onSurfaceVariant
     val tint by animateColorAsState(targetValue = target, label = "status-tint")
 
+    // Tight 30dp hit target — keeps the whole header row close to the height of
+    // the wordmark itself, so there's no apparent gap above the text.
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(30.dp)
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -164,7 +166,7 @@ private fun StatusIcon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(20.dp)
         )
     }
 }

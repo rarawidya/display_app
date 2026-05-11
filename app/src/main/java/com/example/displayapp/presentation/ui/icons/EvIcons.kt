@@ -388,6 +388,24 @@ object EvIcons {
         }
     } }
 
+    val Fullscreen: ImageVector by lazy { vec("Fullscreen") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(7f, 14f); lineTo(5f, 14f); lineTo(5f, 19f); lineTo(10f, 19f); lineTo(10f, 17f); lineTo(7f, 17f); close()
+            moveTo(5f, 10f); lineTo(7f, 10f); lineTo(7f, 7f); lineTo(10f, 7f); lineTo(10f, 5f); lineTo(5f, 5f); close()
+            moveTo(17f, 17f); lineTo(14f, 17f); lineTo(14f, 19f); lineTo(19f, 19f); lineTo(19f, 14f); lineTo(17f, 14f); close()
+            moveTo(14f, 5f); lineTo(14f, 7f); lineTo(17f, 7f); lineTo(17f, 10f); lineTo(19f, 10f); lineTo(19f, 5f); close()
+        }
+    } }
+
+    val FullscreenExit: ImageVector by lazy { vec("FullscreenExit") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(5f, 16f); lineTo(8f, 16f); lineTo(8f, 19f); lineTo(10f, 19f); lineTo(10f, 14f); lineTo(5f, 14f); close()
+            moveTo(8f, 8f); lineTo(5f, 8f); lineTo(5f, 10f); lineTo(10f, 10f); lineTo(10f, 5f); lineTo(8f, 5f); close()
+            moveTo(14f, 19f); lineTo(16f, 19f); lineTo(16f, 16f); lineTo(19f, 16f); lineTo(19f, 14f); lineTo(14f, 14f); close()
+            moveTo(16f, 8f); lineTo(16f, 5f); lineTo(14f, 5f); lineTo(14f, 10f); lineTo(19f, 10f); lineTo(19f, 8f); close()
+        }
+    } }
+
     val Speed: ImageVector by lazy { vec("Speed") {
         path(fill = SolidColor(Color.White)) {
             moveTo(12f, 16f)

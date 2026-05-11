@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.repository.VehicleRepository
 import com.example.displayapp.presentation.state.ChartsUiState
+import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TimeRange
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +60,31 @@ class ChartsViewModel(
     fun setRange(range: TimeRange) {
         _uiState.update { it.copy(rangeSec = range.seconds) }
         emitSnapshot(force = true)
+    }
+
+    fun toggleMetric(metric: TelemetryMetric) {
+        _uiState.update { state ->
+            val next = if (metric in state.selectedMetrics)
+                state.selectedMetrics - metric
+            else
+                state.selectedMetrics + metric
+
+            val nextFocus = when {
+                state.focusedMetric in next -> state.focusedMetric
+                next.isEmpty() -> state.focusedMetric
+                else -> next.first()
+            }
+            state.copy(selectedMetrics = next, focusedMetric = nextFocus)
+        }
+    }
+
+    fun focusMetric(metric: TelemetryMetric) {
+        _uiState.update { state ->
+            state.copy(
+                focusedMetric = metric,
+                selectedMetrics = state.selectedMetrics + metric
+            )
+        }
     }
 
     private fun ingest(sample: VehicleData) {

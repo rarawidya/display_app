@@ -2,15 +2,6 @@ package com.example.displayapp.presentation.state
 
 import androidx.compose.runtime.Immutable
 
-/**
- * Snapshot of the rolling telemetry buffer for the Charts tab.
- *
- * Each list is an aligned time-series — index `i` of every list shares
- * the same timestamp `timestamps[i]`. Index 0 is the oldest sample.
- *
- * @Immutable so Compose can skip recomposition on identical references.
- * Lists are immutable (List<Float>); the VM swaps the whole state on each tick.
- */
 @Immutable
 data class ChartsUiState(
     val timestamps: List<Long> = emptyList(),
@@ -19,8 +10,20 @@ data class ChartsUiState(
     val current:     List<Float> = emptyList(),
     val temperature: List<Float> = emptyList(),
     val battery:     List<Float> = emptyList(),
+    val selectedMetrics: Set<TelemetryMetric> = setOf(TelemetryMetric.Speed, TelemetryMetric.Battery),
+    val focusedMetric: TelemetryMetric = TelemetryMetric.Speed,
     val rangeSec: Int = TimeRange.SEC_60.seconds
-)
+) {
+    fun valuesFor(metric: TelemetryMetric): List<Float> = when (metric) {
+        TelemetryMetric.Speed       -> speed
+        TelemetryMetric.Voltage     -> voltage
+        TelemetryMetric.Current     -> current
+        TelemetryMetric.Temperature -> temperature
+        TelemetryMetric.Battery     -> battery
+    }
+
+    fun latestFor(metric: TelemetryMetric): Float? = valuesFor(metric).lastOrNull()
+}
 
 enum class TimeRange(val seconds: Int, val label: String) {
     SEC_30(30, "30s"),

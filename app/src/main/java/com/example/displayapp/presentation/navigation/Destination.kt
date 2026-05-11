@@ -19,6 +19,9 @@ sealed class Destination(val route: String) {
     /** Theme & app preferences. Reached from the Drive top-bar gear icon. */
     data object Settings : Destination("settings")
 
+    /** Fullscreen map + navigation. Reached from the Drive mini-map card. */
+    data object Navigation : Destination("navigation")
+
     /** Detail route reached from Logs. Carries trip id as a path arg. */
     data object TripDetail : Destination("trip/{tripId}") {
         const val ARG_TRIP_ID = "tripId"

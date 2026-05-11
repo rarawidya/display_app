@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -23,10 +24,18 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.DisplayApp">
 
+        <!-- Maps SDK reads this key. Value comes from local.properties via
+             manifestPlaceholders — see app/build.gradle.kts. Missing/empty key
+             is handled gracefully at runtime by the MapKeyGate composable. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="${MAPS_API_KEY}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/Theme.DisplayApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -38,6 +47,21 @@
             android:name=".service.TelemetryService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!--
+            FileProvider for sharing exported trip CSVs via ACTION_SEND.
+            Authority must be globally unique — we use the app id with a `.fileprovider` suffix.
+            See res/xml/file_paths.xml for the exposed directories.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

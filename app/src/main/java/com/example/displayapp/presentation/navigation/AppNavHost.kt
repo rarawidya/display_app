@@ -31,6 +31,7 @@ import com.example.displayapp.presentation.ui.dashboard.DashboardScreen
 import com.example.displayapp.presentation.ui.device.DeviceScanScreen
 import com.example.displayapp.presentation.ui.logs.LogsScreen
 import com.example.displayapp.presentation.ui.logs.TripDetailScreen
+import com.example.displayapp.presentation.ui.maps.NavigationScreen
 import com.example.displayapp.presentation.ui.settings.SettingsScreen
 import com.example.displayapp.presentation.viewmodel.ChartsViewModel
 import com.example.displayapp.presentation.viewmodel.ChartsViewModelFactory
@@ -40,8 +41,12 @@ import com.example.displayapp.presentation.viewmodel.DeviceViewModel
 import com.example.displayapp.presentation.viewmodel.DeviceViewModelFactory
 import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.presentation.viewmodel.LogsViewModelFactory
+import com.example.displayapp.presentation.viewmodel.MapsViewModel
+import com.example.displayapp.presentation.viewmodel.MapsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.ThemeViewModel
 import com.example.displayapp.presentation.viewmodel.ThemeViewModelFactory
+import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
+import com.example.displayapp.presentation.viewmodel.TripDetailViewModelFactory
 
 /**
  * Root navigation container.
@@ -67,6 +72,7 @@ fun AppNavHost(
     val currentRoute = currentDestination?.route
 
     val cockpitRoutes = setOf(Destination.Drive.route, Destination.Charts.route, Destination.Logs.route)
+    // Hide the bottom bar on Navigation too — it's a fullscreen immersive surface.
     val showBottomBar = currentRoute in cockpitRoutes
 
     Scaffold(
@@ -153,10 +159,14 @@ private fun AppNavGraph(
             val vm: DashboardViewModel = viewModel(
                 factory = DashboardViewModelFactory(container.vehicleRepository)
             )
+            val mapsVm: MapsViewModel = viewModel(
+                factory = MapsViewModelFactory(container.locationRepository)
+            )
             val wifiConnected by container.wifiStateMonitor.isWifiConnected
                 .collectAsStateWithLifecycle(initialValue = false)
             DashboardScreen(
                 viewModel = vm,
+                mapsViewModel = mapsVm,
                 wifiConnected = wifiConnected,
                 onConnectionTap = {
                     navController.navigate(Destination.Scan.route) {
@@ -167,7 +177,22 @@ private fun AppNavGraph(
                     navController.navigate(Destination.Settings.route) {
                         launchSingleTop = true
                     }
+                },
+                onOpenNavigation = {
+                    navController.navigate(Destination.Navigation.route) {
+                        launchSingleTop = true
+                    }
                 }
+            )
+        }
+
+        composable(Destination.Navigation.route) {
+            val mapsVm: MapsViewModel = viewModel(
+                factory = MapsViewModelFactory(container.locationRepository)
+            )
+            NavigationScreen(
+                viewModel = mapsVm,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -190,10 +215,11 @@ private fun AppNavGraph(
 
         composable(Destination.Logs.route) {
             val vm: LogsViewModel = viewModel(
-                factory = LogsViewModelFactory(container.tripDao, container.csvExporter)
+                factory = LogsViewModelFactory(container.tripRepository, container.csvExporter)
             )
             LogsScreen(
                 viewModel = vm,
+                tripRepository = container.tripRepository,
                 onTripClick = { id ->
                     navController.navigate(Destination.TripDetail.routeFor(id))
                 }
@@ -207,8 +233,12 @@ private fun AppNavGraph(
             )
         ) { entry ->
             val tripId = entry.arguments?.getLong(Destination.TripDetail.ARG_TRIP_ID) ?: -1L
+            val detailVm: TripDetailViewModel = viewModel(
+                factory = TripDetailViewModelFactory(container.tripRepository, container.csvExporter)
+            )
             TripDetailScreen(
                 tripId = tripId,
+                viewModel = detailVm,
                 onBack = { navController.popBackStack() }
             )
         }
