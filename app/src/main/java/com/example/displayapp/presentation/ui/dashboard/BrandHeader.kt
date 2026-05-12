@@ -1,8 +1,10 @@
 package com.example.displayapp.presentation.ui.dashboard
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -21,6 +23,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,8 @@ fun BrandHeader(
     wifiConnected: Boolean,
     onConnectTap: () -> Unit,
     onSettingsTap: () -> Unit,
+    onBluetoothLongPress: () -> Unit = onConnectTap,
+    bluetoothAnchor: @Composable (Modifier) -> Unit = { _ -> },
     modifier: Modifier = Modifier
 ) {
     val bluetoothConnected = connectionState == ConnectionState.CONNECTED
@@ -75,12 +81,21 @@ fun BrandHeader(
                 contentDescription = if (wifiConnected) "Wi-Fi connected" else "Wi-Fi disconnected",
                 onClick = { /* no-op — system Wi-Fi isn't user-managed from here */ }
             )
-            StatusIcon(
-                icon = if (bluetoothConnected) EvIcons.Bluetooth else EvIcons.BluetoothOff,
-                connected = bluetoothConnected,
-                contentDescription = if (bluetoothConnected) "Bluetooth connected" else "Bluetooth disconnected",
-                onClick = onConnectTap
-            )
+            // Bluetooth icon has two gestures + an anchored slot for the popover.
+            // Tap → small popover with status + quick action.
+            // Long-press → BluetoothQuickSheet (full management).
+            Box {
+                StatusIcon(
+                    icon = if (bluetoothConnected) EvIcons.Bluetooth else EvIcons.BluetoothOff,
+                    connected = bluetoothConnected,
+                    contentDescription = if (bluetoothConnected) "Bluetooth connected" else "Bluetooth disconnected",
+                    onClick = onConnectTap,
+                    onLongClick = onBluetoothLongPress
+                )
+                // The popover (a DropdownMenu) anchors to this Box, so its
+                // owner is the Bluetooth icon's coordinates.
+                bluetoothAnchor(Modifier)
+            }
             StatusIcon(
                 icon = EvIcons.Settings,
                 connected = false,
@@ -140,26 +155,40 @@ private fun BrandMark() {
  * - Green when [connected], muted on-surface-variant otherwise.
  * - [tintOverride] short-circuits the green/gray logic (used for the Settings gear).
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StatusIcon(
     icon: ImageVector,
     connected: Boolean,
     contentDescription: String,
     onClick: () -> Unit,
-    tintOverride: Color? = null
+    tintOverride: Color? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     val target = tintOverride
         ?: if (connected) EvGreen
         else MaterialTheme.colorScheme.onSurfaceVariant
     val tint by animateColorAsState(targetValue = target, label = "status-tint")
+    val haptic = LocalHapticFeedback.current
 
     // Tight 30dp hit target — keeps the whole header row close to the height of
     // the wordmark itself, so there's no apparent gap above the text.
+    val clickModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onLongClick()
+            }
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
     Box(
         modifier = Modifier
             .size(30.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .then(clickModifier),
         contentAlignment = Alignment.Center
     ) {
         Icon(

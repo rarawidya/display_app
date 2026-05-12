@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.domain.model.VehicleMode
+import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.temperatureAlertLevel
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
@@ -65,7 +66,9 @@ fun DashboardScreen(
     wifiConnected: Boolean,
     onConnectionTap: () -> Unit,
     onSettingsTap: () -> Unit = {},
-    onOpenNavigation: () -> Unit = {}
+    onOpenNavigation: () -> Unit = {},
+    onBluetoothLongPress: () -> Unit = onConnectionTap,
+    bluetoothAnchor: @Composable (Modifier) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDiagnostics by viewModel.showDiagnostics.collectAsStateWithLifecycle()
@@ -78,6 +81,8 @@ fun DashboardScreen(
         onConnectionTap = onConnectionTap,
         onSettingsTap = onSettingsTap,
         onOpenNavigation = onOpenNavigation,
+        onBluetoothLongPress = onBluetoothLongPress,
+        bluetoothAnchor = bluetoothAnchor,
         onToggleDiagnostics = viewModel::toggleDiagnostics
     )
 }
@@ -92,6 +97,8 @@ fun DashboardContent(
     onConnectionTap: () -> Unit = {},
     onSettingsTap: () -> Unit = {},
     onOpenNavigation: () -> Unit = {},
+    onBluetoothLongPress: () -> Unit = onConnectionTap,
+    bluetoothAnchor: @Composable (Modifier) -> Unit = {},
     onToggleDiagnostics: () -> Unit = {}
 ) {
     Surface(
@@ -112,9 +119,9 @@ fun DashboardContent(
             // again would push the header down by the status-bar height twice.
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 if (maxWidth >= 720.dp) {
-                    DashboardLandscape(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation)
+                    DashboardLandscape(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor)
                 } else {
-                    DashboardPortrait(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation)
+                    DashboardPortrait(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor)
                 }
             }
 
@@ -141,7 +148,9 @@ private fun DashboardPortrait(
     wifiConnected: Boolean,
     onConnectionTap: () -> Unit,
     onSettingsTap: () -> Unit,
-    onOpenNavigation: () -> Unit
+    onOpenNavigation: () -> Unit,
+    onBluetoothLongPress: () -> Unit,
+    bluetoothAnchor: @Composable (Modifier) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -157,7 +166,9 @@ private fun DashboardPortrait(
             connectionState = state.connectionState,
             wifiConnected = wifiConnected,
             onConnectTap = onConnectionTap,
-            onSettingsTap = onSettingsTap
+            onSettingsTap = onSettingsTap,
+            onBluetoothLongPress = onBluetoothLongPress,
+            bluetoothAnchor = bluetoothAnchor
         )
         SpeedometerSection(state = state)
         BatteryRowCard(batteryPercent = state.batteryPercent)
@@ -181,7 +192,9 @@ private fun DashboardLandscape(
     wifiConnected: Boolean,
     onConnectionTap: () -> Unit,
     onSettingsTap: () -> Unit,
-    onOpenNavigation: () -> Unit
+    onOpenNavigation: () -> Unit,
+    onBluetoothLongPress: () -> Unit,
+    bluetoothAnchor: @Composable (Modifier) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -194,7 +207,9 @@ private fun DashboardLandscape(
             connectionState = state.connectionState,
             wifiConnected = wifiConnected,
             onConnectTap = onConnectionTap,
-            onSettingsTap = onSettingsTap
+            onSettingsTap = onSettingsTap,
+            onBluetoothLongPress = onBluetoothLongPress,
+            bluetoothAnchor = bluetoothAnchor
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -245,11 +260,12 @@ private fun SpeedometerSection(state: DashboardUiState) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  EV telemetry grid — six tiles, purely electric-vehicle data.              */
+/*  EV telemetry grid — eight tiles, purely electric-vehicle data.            */
 /*                                                                            */
 /*  Row 1: Power           | Current                                          */
 /*  Row 2: Voltage         | Engine Temp                                      */
 /*  Row 3: Battery Temp    | Controller Temp                                  */
+/*  Row 4: Wh/km           | Range                                            */
 /* -------------------------------------------------------------------------- */
 
 @Composable
@@ -331,6 +347,25 @@ private fun TelemetryGrid(state: DashboardUiState) {
                 value = controllerTemp,
                 unit = tempUnit,
                 level = temperatureAlertLevel(state.controllerTemperature),
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            )
+        }
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(Dim.md)
+        ) {
+            PremiumMetricTile(
+                icon = EvIcons.Plug,
+                label = "Wh/km",
+                valueText = EnergyFormatter.formatEfficiency(state.efficiency.whPerKm),
+                unit = "Wh/km",
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            )
+            PremiumMetricTile(
+                icon = EvIcons.Battery,
+                label = "Range",
+                valueText = EnergyFormatter.formatRangeKm(state.efficiency.rangeKm),
+                unit = "km",
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }

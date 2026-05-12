@@ -43,12 +43,12 @@ import com.example.displayapp.presentation.state.TripDetailUiState
 import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.icons.EvIcons
+import com.example.displayapp.presentation.ui.logs.components.EnergySummaryCard
 import com.example.displayapp.presentation.ui.logs.components.StaticTelemetryChart
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
 import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvGreen
 import com.example.displayapp.ui.theme.EvLime
 import com.example.displayapp.ui.theme.EvRed
 import java.io.File
@@ -283,6 +283,13 @@ private fun DetailBody(state: TripDetailUiState) {
     val app = LocalAppSettings.current
     HeroSummaryCard(state = state)
 
+    EnergySummaryCard(
+        energyUsedWh = state.energyUsedWh,
+        energyRegenWh = state.energyRegenWh,
+        distanceMeters = state.distanceMeters,
+        ratePerKwh = state.ratePerKwh
+    )
+
     StaticTelemetryChart(
         title = "Speed",
         unit = app.speedUnit.suffix,
@@ -321,7 +328,6 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
     val avgSpeedLabel = app.speedUnit.formatSpeed(state.avgSpeedKmh10 / 10f)
     val maxSpeedLabel = app.speedUnit.formatSpeed(state.maxSpeedKmh10 / 10f)
     val batteryLabel = "${state.startBattery}% → ${state.endBattery?.toString() ?: "—"}%"
-    val energyLabel = if (state.energyKwh > 0f) "≈ %.1f kWh".format(state.energyKwh) else "—"
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -371,11 +377,11 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
             Spacer(Modifier.height(0.dp))
 
             // Pairs of metrics — keeps the card compact while showing everything.
+            // ENERGY moved to its own EnergySummaryCard below the hero.
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat(label = "AVG", value = avgSpeedLabel, accent = EvBlue)
                 Stat(label = "MAX", value = maxSpeedLabel, accent = EvLime)
                 Stat(label = "BATT", value = batteryLabel, accent = EvAmber)
-                Stat(label = "ENERGY", value = energyLabel, accent = EvGreen)
             }
         }
     }

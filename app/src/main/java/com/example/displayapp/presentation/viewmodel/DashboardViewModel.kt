@@ -2,12 +2,14 @@ package com.example.displayapp.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.repository.VehicleRepository
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.DiagnosticsState
+import com.example.displayapp.presentation.state.EfficiencyState
 import com.example.displayapp.presentation.state.TripStatsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,7 +31,10 @@ import kotlinx.coroutines.launch
  * stay alive for 5s after the last subscriber disconnects (survives
  * quick config changes without losing connection).
  */
-class DashboardViewModel(private val repository: VehicleRepository) : ViewModel() {
+class DashboardViewModel(
+    private val repository: VehicleRepository,
+    private val efficiencyTracker: EfficiencyTracker
+) : ViewModel() {
 
     private val _showDiagnostics = MutableStateFlow(false)
     val showDiagnostics: StateFlow<Boolean> = _showDiagnostics
@@ -49,12 +54,13 @@ class DashboardViewModel(private val repository: VehicleRepository) : ViewModel(
     val uiState: StateFlow<DashboardUiState> = combine(
         repository.vehicleData,
         repository.connectionState,
-        _fps
-    ) { vehicleData, connectionState, fps ->
+        _fps,
+        efficiencyTracker.state
+    ) { vehicleData, connectionState, fps, efficiency ->
         trackFps()
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
-        mapToUiState(vehicleData, connectionState, fps)
+        mapToUiState(vehicleData, connectionState, fps, efficiency)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -79,7 +85,8 @@ class DashboardViewModel(private val repository: VehicleRepository) : ViewModel(
     private fun mapToUiState(
         data: VehicleData,
         connectionState: ConnectionState,
-        fps: Int
+        fps: Int,
+        efficiency: EfficiencyTracker.State
     ): DashboardUiState {
         // Until the wire schema separates motor / controller / battery temps,
         // approximate them from the single reported temperature value using
@@ -120,6 +127,10 @@ class DashboardViewModel(private val repository: VehicleRepository) : ViewModel(
                 maxSpeed = sessionMaxSpeed,
                 distanceKm = distanceKm,
                 durationSec = durationSec
+            ),
+            efficiency = EfficiencyState(
+                whPerKm = efficiency.whPerKm,
+                rangeKm = efficiency.rangeKm
             )
         )
     }

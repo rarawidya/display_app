@@ -97,10 +97,6 @@ class TripDetailViewModel(
 
     private fun buildState(trip: TripEntity, samples: List<TelemetryEntity>): TripDetailUiState {
         val durationSec = ((trip.endTime ?: System.currentTimeMillis()) - trip.startTime) / 1000L
-        val battStart = trip.startBattery
-        val battEnd   = trip.endBattery ?: battStart
-        val deltaBatt = (battStart - battEnd).coerceAtLeast(0)
-        val energyKwh = deltaBatt / 10f * 0.6f  // same heuristic as Logs row
 
         // Chart series stay in SI units; the UI converts at the label site.
         val speedSeries = FloatArray(samples.size) { samples[it].speed / 10f }
@@ -112,14 +108,16 @@ class TripDetailViewModel(
             loading = false,
             notFound = false,
             tripId = trip.id,
+            // ratePerKwh stays null until a Settings input is wired (Phase 3).
             startMs = trip.startTime,
             durationSec = durationSec,
             distanceMeters = trip.distanceMeters,
             avgSpeedKmh10 = trip.avgSpeedKmh10,
             maxSpeedKmh10 = trip.maxSpeedKmh10,
-            startBattery = battStart,
+            startBattery = trip.startBattery,
             endBattery = trip.endBattery,
-            energyKwh = energyKwh,
+            energyUsedWh = trip.energyUsedWh,
+            energyRegenWh = trip.energyRegenWh,
             sampleCount = trip.sampleCount,
             isActive = trip.endTime == null,
             speedSeries = speedSeries,

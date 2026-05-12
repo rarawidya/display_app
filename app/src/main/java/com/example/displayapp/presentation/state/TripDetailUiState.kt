@@ -15,6 +15,15 @@ data class TripDetailUiState(
     val notFound: Boolean = false,
     val tripId: Long = -1L,
 
+    /**
+     * Per-kWh electricity rate (e.g. 0.18f for 18¢/kWh). Null while the user
+     * hasn't entered one — EnergySummaryCard hides the cost row when null.
+     * Wired into the architecture now so a future Settings input can flip it
+     * on without code changes elsewhere.
+     */
+    val ratePerKwh: Float? = null,
+
+
     // Raw values — UI formats with LocalAppSettings so unit toggles take effect instantly.
     val startMs: Long = 0L,
     val durationSec: Long = 0L,
@@ -23,7 +32,13 @@ data class TripDetailUiState(
     val maxSpeedKmh10: Int = 0,
     val startBattery: Int = 0,
     val endBattery: Int? = null,
-    val energyKwh: Float = 0f,
+    /**
+     * Real per-trip energy in Wh, integrated from V × I × dt during recording.
+     * Pre-v2 trips have `energyUsedWh == 0.0 && energyRegenWh == 0.0` and the
+     * UI shows "—" rather than back-filling with a heuristic.
+     */
+    val energyUsedWh: Double = 0.0,
+    val energyRegenWh: Double = 0.0,
 
     val sampleCount: Long = 0L,
     val isActive: Boolean = false,
@@ -51,6 +66,7 @@ data class TripDetailUiState(
         return loading == other.loading &&
             notFound == other.notFound &&
             tripId == other.tripId &&
+            ratePerKwh == other.ratePerKwh &&
             startMs == other.startMs &&
             durationSec == other.durationSec &&
             distanceMeters == other.distanceMeters &&
@@ -58,7 +74,8 @@ data class TripDetailUiState(
             maxSpeedKmh10 == other.maxSpeedKmh10 &&
             startBattery == other.startBattery &&
             endBattery == other.endBattery &&
-            energyKwh == other.energyKwh &&
+            energyUsedWh == other.energyUsedWh &&
+            energyRegenWh == other.energyRegenWh &&
             sampleCount == other.sampleCount &&
             isActive == other.isActive &&
             speedSeries.size == other.speedSeries.size &&
@@ -74,6 +91,7 @@ data class TripDetailUiState(
         var h = loading.hashCode()
         h = 31 * h + notFound.hashCode()
         h = 31 * h + tripId.hashCode()
+        h = 31 * h + (ratePerKwh?.hashCode() ?: 0)
         h = 31 * h + startMs.hashCode()
         h = 31 * h + durationSec.hashCode()
         h = 31 * h + distanceMeters.hashCode()
@@ -81,7 +99,8 @@ data class TripDetailUiState(
         h = 31 * h + maxSpeedKmh10
         h = 31 * h + startBattery
         h = 31 * h + (endBattery ?: 0)
-        h = 31 * h + energyKwh.hashCode()
+        h = 31 * h + energyUsedWh.hashCode()
+        h = 31 * h + energyRegenWh.hashCode()
         h = 31 * h + sampleCount.hashCode()
         h = 31 * h + isActive.hashCode()
         h = 31 * h + speedSeries.size

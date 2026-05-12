@@ -1,5 +1,6 @@
 package com.example.displayapp.data.persistence
 
+import com.example.displayapp.data.energy.EnergyAccumulator
 import com.example.displayapp.data.persistence.dao.FaultEventDao
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
@@ -45,6 +46,15 @@ class TripSessionManager(
     private var startOdometerMeters = 0L
     private var lastOdometerMeters = 0L
 
+    /**
+     * Integrates V × I × dt across the recording. Pure / testable — the trip
+     * manager owns one instance per active trip and resets it on start.
+     * Future analytics (eco-score, thermal exposure) can be wired into
+     * onTelemetryUpdate alongside this accumulator without touching the
+     * energy logic itself.
+     */
+    private val energyAccumulator = EnergyAccumulator()
+
     suspend fun startTrip(initialData: VehicleData): Long {
         // Close any lingering active trip
         _activeTrip.value?.let { stopTrip(initialData) }
@@ -63,6 +73,7 @@ class TripSessionManager(
         sampleCount = 0
         startOdometerMeters = (initialData.odometer * 1000).toLong()
         lastOdometerMeters = startOdometerMeters
+        energyAccumulator.reset()
 
         telemetryLogger.startRecording(tripId)
         Timber.i("Trip $tripId started")
@@ -84,12 +95,20 @@ class TripSessionManager(
             maxSpeedKmh10 = maxSpeed,
             avgSpeedKmh10 = avgSpeed,
             endBattery = finalData.batteryPercent,
-            sampleCount = sampleCount
+            sampleCount = sampleCount,
+            energyUsedWh = energyAccumulator.usedWh(),
+            energyRegenWh = energyAccumulator.regenWh()
         )
         tripDao.update(completedTrip)
         _activeTrip.value = null
 
-        Timber.i("Trip ${trip.id} ended: ${distance}m, ${sampleCount} samples")
+        Timber.i(
+            "Trip ${trip.id} ended: ${distance}m, ${sampleCount} samples, " +
+                "used=%.1fWh regen=%.1fWh".format(
+                    energyAccumulator.usedWh(),
+                    energyAccumulator.regenWh()
+                )
+        )
     }
 
     /**
@@ -106,6 +125,9 @@ class TripSessionManager(
         speedSum += speedFixed
         sampleCount++
         lastOdometerMeters = (data.odometer * 1000).toLong()
+
+        // Integrate V × I × dt for real energy accounting.
+        energyAccumulator.onSample(data.voltage, data.current, data.timestamp)
     }
 
     suspend fun logFault(type: String, severity: Int, message: String) {

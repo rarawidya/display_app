@@ -3,7 +3,10 @@ package com.example.displayapp.di
 import android.content.Context
 import android.content.pm.PackageManager
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
+import com.example.displayapp.data.bluetooth.controller.AndroidBluetoothController
+import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
+import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
@@ -152,6 +155,28 @@ class AppContainer(private val context: Context) {
 
     val vehicleRepository: VehicleRepository by lazy {
         VehicleRepositoryImpl(bluetoothDataSource, telemetryMapper, tripSessionManager)
+    }
+
+    /**
+     * Adapter-level Bluetooth surface for the quick-settings sheet. Owns
+     * receivers for ACTION_STATE_CHANGED / ACTION_FOUND / ACTION_BOND_STATE_CHANGED.
+     * Independent from [bluetoothDataSource] so the sheet's lifecycle never
+     * interferes with the SPP connection pipeline.
+     */
+    val bluetoothController: BluetoothController by lazy {
+        AndroidBluetoothController(context.applicationContext)
+    }
+
+    /**
+     * Live efficiency state (rolling Wh/km, range estimate, instant power).
+     * Subscribes to vehicleData + connectionState at first access; the
+     * DashboardViewModel reads its state flow.
+     */
+    val efficiencyTracker: EfficiencyTracker by lazy {
+        EfficiencyTracker(
+            vehicleData = vehicleRepository.vehicleData,
+            connectionState = vehicleRepository.connectionState
+        )
     }
 
     fun switchDataSource(simulator: Boolean) {

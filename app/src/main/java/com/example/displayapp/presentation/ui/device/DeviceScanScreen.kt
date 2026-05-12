@@ -1,245 +1,229 @@
 package com.example.displayapp.presentation.ui.device
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.displayapp.domain.model.BluetoothDeviceInfo
+import com.example.displayapp.data.bluetooth.controller.AdapterState
 import com.example.displayapp.domain.model.ConnectionState
-import com.example.displayapp.presentation.viewmodel.DeviceScreenState
-import com.example.displayapp.presentation.viewmodel.DeviceViewModel
+import com.example.displayapp.presentation.state.BluetoothUiState
+import com.example.displayapp.presentation.state.UiDeviceState
+import com.example.displayapp.presentation.ui.connection.BluetoothManagementSections
+import com.example.displayapp.presentation.ui.icons.EvIcons
+import com.example.displayapp.presentation.viewmodel.BluetoothViewModel
+import com.example.displayapp.ui.theme.Dim
+import com.example.displayapp.ui.theme.EvAmber
+import com.example.displayapp.ui.theme.EvBlue
+import com.example.displayapp.ui.theme.EvBlueDeep
+import com.example.displayapp.ui.theme.EvGreen
+import com.example.displayapp.ui.theme.EvRed
 
+/**
+ * Device picker / connection home screen.
+ *
+ * Layout (top → bottom):
+ *  1. HeroStatusCard — animated connection state badge + Open Dashboard / Disconnect quick actions.
+ *  2. [BluetoothManagementSections] — adapter on/off toggle, scan row, sectioned device list
+ *     (Connected / Previously connected + Auto-connect / Paired / Available). Same component
+ *     the Drive page's long-press sheet renders.
+ *  3. SimulatorCta — "Try with simulator" outline button (skips Bluetooth entirely).
+ *
+ * Permission, enable/disable, and connect/disconnect flows are owned by
+ * [BluetoothManagementSections], so this screen stays focused on the framing
+ * (top app bar, hero, simulator escape hatch).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceScanScreen(
-    viewModel: DeviceViewModel,
+    viewModel: BluetoothViewModel,
     onNavigateToDashboard: () -> Unit = {},
-    onUseSimulator: () -> Unit = {}
+    onUseSimulator: () -> Unit = {},
+    onBack: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
-    DeviceScanContent(
-        state = state,
-        onScanClick = { viewModel.startScan() },
-        onStopScan = { viewModel.stopScan() },
-        onDeviceClick = { device ->
-            viewModel.connectViaService(context, device.address, device.name)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "Devices",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                navigationIcon = {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                EvIcons.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                windowInsets = WindowInsets(0, 0, 0, 0)
+            )
         },
-        onDisconnect = { viewModel.disconnectViaService(context) },
-        onAutoConnectChanged = { viewModel.setAutoConnect(it) },
-        onForgetDevice = { viewModel.forgetDevice() },
-        onNavigateToDashboard = onNavigateToDashboard,
-        onUseSimulator = onUseSimulator
-    )
-}
-
-@Composable
-fun DeviceScanContent(
-    state: DeviceScreenState,
-    onScanClick: () -> Unit = {},
-    onStopScan: () -> Unit = {},
-    onDeviceClick: (BluetoothDeviceInfo) -> Unit = {},
-    onDisconnect: () -> Unit = {},
-    onAutoConnectChanged: (Boolean) -> Unit = {},
-    onForgetDevice: () -> Unit = {},
-    onNavigateToDashboard: () -> Unit = {},
-    onUseSimulator: () -> Unit = {}
-) {
-    Scaffold { padding ->
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { inner ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp)
+                .padding(inner)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Dim.screenGutter)
+                .padding(bottom = Dim.xxl),
+            verticalArrangement = Arrangement.spacedBy(Dim.md)
         ) {
-            // Header
-            Text(
-                text = "Bluetooth Devices",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
+            HeroStatusCard(
+                state = state,
+                onNavigateToDashboard = onNavigateToDashboard,
+                onDisconnect = viewModel::disconnect
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Connection status
-            ConnectionCard(
-                state = state.connectionState,
-                onDisconnect = onDisconnect,
-                onNavigateToDashboard = onNavigateToDashboard
+            BluetoothManagementSections(
+                viewModel = viewModel,
+                showAutoConnectToggle = true
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Saved device card
-            state.savedDevice?.let { saved ->
-                SavedDeviceCard(
-                    name = saved.name,
-                    address = saved.address,
-                    autoConnect = saved.autoConnect,
-                    onAutoConnectChanged = onAutoConnectChanged,
-                    onForget = onForgetDevice
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Scan controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Available Devices",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                if (state.isScanning) {
-                    OutlinedButton(onClick = onStopScan) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Stop")
-                    }
-                } else {
-                    Button(onClick = onScanClick) {
-                        Text("Scan")
-                    }
-                }
-            }
-
-            // Scanning indicator
-            AnimatedVisibility(visible = state.isScanning) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Device list
-            if (state.devices.isEmpty() && !state.isScanning) {
-                Text(
-                    text = "No devices found. Tap Scan to discover nearby devices.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 24.dp)
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(state.devices, key = { it.address }) { device ->
-                        DeviceListItem(
-                            device = device,
-                            isConnecting = state.connectionState == ConnectionState.CONNECTING,
-                            onClick = { onDeviceClick(device) }
-                        )
-                    }
-                }
-            }
-
-            // Try-without-hardware affordance — pinned at the bottom of the column
-            OutlinedButton(
-                onClick = onUseSimulator,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-            ) {
-                Text("Try with simulator")
-            }
+            Spacer(Modifier.height(Dim.sm))
+            SimulatorCta(onClick = onUseSimulator)
         }
     }
 }
 
-@Composable
-private fun ConnectionCard(
-    state: ConnectionState,
-    onDisconnect: () -> Unit,
-    onNavigateToDashboard: () -> Unit
-) {
-    val (color, label) = when (state) {
-        ConnectionState.DISCONNECTED -> Color(0xFF757575) to "Not Connected"
-        ConnectionState.SCANNING -> Color(0xFFFFAB00) to "Scanning..."
-        ConnectionState.CONNECTING -> Color(0xFFFFAB00) to "Connecting..."
-        ConnectionState.CONNECTED -> Color(0xFF00E676) to "Connected"
-        ConnectionState.RECONNECTING -> Color(0xFFFFAB00) to "Reconnecting..."
-    }
+/* -------------------------------------------------------------------------- */
+/*  Hero status card                                                          */
+/* -------------------------------------------------------------------------- */
 
-    Card(
+@Composable
+private fun HeroStatusCard(
+    state: BluetoothUiState,
+    onNavigateToDashboard: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    val connState = state.connected?.state.toConnectionState(state.isScanning, state.adapterState)
+    val theme = visualThemeFor(connState, state.isScanning, state.adapterState)
+    val animatedAccent by animateColorAsState(targetValue = theme.accent, label = "hero-accent")
+
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 3.dp
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            theme.accent.copy(alpha = 0.18f),
+                            theme.accent.copy(alpha = 0.02f)
+                        )
+                    )
+                )
+                .padding(20.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state == ConnectionState.CONNECTING || state == ConnectionState.RECONNECTING) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = color
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    StateBadge(
+                        accent = animatedAccent,
+                        state = connState,
+                        isScanning = state.isScanning,
+                        adapterState = state.adapterState
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                }
-                Text(
-                    text = label,
-                    fontWeight = FontWeight.Medium,
-                    color = color
-                )
-            }
-
-            if (state == ConnectionState.CONNECTED) {
-                Row {
-                    TextButton(onClick = onNavigateToDashboard) {
-                        Text("Dashboard")
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = theme.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (theme.subtitle != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = theme.subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    TextButton(onClick = onDisconnect) {
-                        Text("Disconnect", color = Color(0xFFFF1744))
+                }
+
+                AnimatedVisibility(
+                    visible = connState == ConnectionState.CONNECTED,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Dim.sm)) {
+                        PrimaryAction(
+                            label = "Open dashboard",
+                            onClick = onNavigateToDashboard,
+                            fill = EvBlue
+                        )
+                        SecondaryAction(
+                            label = "Disconnect",
+                            onClick = onDisconnect,
+                            stroke = EvRed.copy(alpha = 0.55f),
+                            contentColor = EvRed
+                        )
                     }
                 }
             }
@@ -247,98 +231,193 @@ private fun ConnectionCard(
     }
 }
 
+private data class StatusTheme(val title: String, val subtitle: String?, val accent: Color)
+
 @Composable
-private fun SavedDeviceCard(
-    name: String,
-    address: String,
-    autoConnect: Boolean,
-    onAutoConnectChanged: (Boolean) -> Unit,
-    onForget: () -> Unit
+private fun visualThemeFor(
+    connection: ConnectionState,
+    isScanning: Boolean,
+    adapterState: AdapterState
+): StatusTheme {
+    if (adapterState != AdapterState.ON && adapterState != AdapterState.UNSUPPORTED) {
+        return StatusTheme("Bluetooth is off", "Turn on Bluetooth to pair", EvBlueDeep)
+    }
+    if (adapterState == AdapterState.UNSUPPORTED) {
+        return StatusTheme("Bluetooth not available", "This device has no Bluetooth adapter", EvBlueDeep)
+    }
+    return when (connection) {
+        ConnectionState.CONNECTED -> StatusTheme("Connected", "Telemetry is live", EvGreen)
+        ConnectionState.CONNECTING -> StatusTheme("Connecting…", "Establishing the link", EvAmber)
+        ConnectionState.RECONNECTING -> StatusTheme("Reconnecting…", "Lost signal · retrying", EvAmber)
+        ConnectionState.SCANNING -> StatusTheme("Searching for vehicles…", "Listening for Bluetooth", EvBlue)
+        ConnectionState.DISCONNECTED ->
+            if (isScanning) StatusTheme("Searching…", "Listening for Bluetooth", EvBlue)
+            else StatusTheme("Pair your vehicle", "Tap Scan below to discover nearby devices", EvBlueDeep)
+    }
+}
+
+@Composable
+private fun StateBadge(
+    accent: Color,
+    state: ConnectionState,
+    isScanning: Boolean,
+    adapterState: AdapterState
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+    val showPulse = adapterState == AdapterState.ON && (
+        isScanning ||
+        state == ConnectionState.CONNECTING ||
+        state == ConnectionState.RECONNECTING ||
+        state == ConnectionState.SCANNING
+    )
+
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp)) {
+        if (showPulse) {
+            PulseRing(color = accent)
+        }
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = 0.22f)),
+            contentAlignment = Alignment.Center
+        ) {
+            val icon = when {
+                adapterState != AdapterState.ON -> EvIcons.BluetoothOff
+                state == ConnectionState.CONNECTED -> EvIcons.Bluetooth
+                isScanning -> EvIcons.Bluetooth
+                state == ConnectionState.DISCONNECTED -> EvIcons.BluetoothOff
+                else -> EvIcons.Bluetooth
+            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulseRing(color: Color) {
+    val infinite = rememberInfiniteTransition(label = "pulse")
+    @Composable
+    fun ring(delayMs: Int) {
+        val scale by infinite.animateFloat(
+            initialValue = 0.6f,
+            targetValue = 1.6f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1_500, delayMillis = delayMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulse-scale-$delayMs"
         )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Last Device",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(text = name, fontWeight = FontWeight.Medium)
-                    Text(
-                        text = address,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = onForget) {
-                    Text("Forget", color = MaterialTheme.colorScheme.error)
-                }
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "Auto-connect on startup", fontSize = 14.sp)
-                Switch(
-                    checked = autoConnect,
-                    onCheckedChange = onAutoConnectChanged
-                )
-            }
-        }
+        val alpha by infinite.animateFloat(
+            initialValue = 0.55f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1_500, delayMillis = delayMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "pulse-alpha-$delayMs"
+        )
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .scale(scale)
+                .alpha(alpha)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.35f))
+        )
     }
+    ring(0)
+    ring(750)
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Simulator CTA + button primitives                                         */
+/* -------------------------------------------------------------------------- */
+
 @Composable
-private fun DeviceListItem(
-    device: BluetoothDeviceInfo,
-    isConnecting: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
+private fun SimulatorCta(onClick: () -> Unit) {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = !isConnecting, onClick = onClick)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = device.name,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = device.address,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
             Text(
-                text = "Connect",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
+                text = "Try with simulator",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }
+}
+
+@Composable
+private fun PrimaryAction(label: String, onClick: () -> Unit, fill: Color) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = fill
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun SecondaryAction(
+    label: String,
+    onClick: () -> Unit,
+    stroke: Color,
+    contentColor: Color
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, stroke)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = contentColor,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  UiDeviceState → ConnectionState mapping for the hero card                  */
+/* -------------------------------------------------------------------------- */
+
+private fun UiDeviceState?.toConnectionState(
+    isScanning: Boolean,
+    adapterState: AdapterState
+): ConnectionState = when {
+    this == UiDeviceState.CONNECTED -> ConnectionState.CONNECTED
+    this == UiDeviceState.CONNECTING -> ConnectionState.CONNECTING
+    this == UiDeviceState.RECONNECTING -> ConnectionState.RECONNECTING
+    isScanning && adapterState == AdapterState.ON -> ConnectionState.SCANNING
+    else -> ConnectionState.DISCONNECTED
 }

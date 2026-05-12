@@ -45,16 +45,15 @@ class BluetoothScanner(
         if (_isScanning.value) return
 
         Timber.d("Starting Bluetooth scan")
-        _isScanning.value = true
         foundDevices.clear()
 
-        // Add already-paired devices
+        // Show paired devices immediately so the list isn't empty while
+        // discovery warms up.
         adapter.bondedDevices?.forEach { device ->
             addDevice(device)
         }
         _discoveredDevices.value = foundDevices.toList()
 
-        // Register for discovery
         val discoveryReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 when (intent.action) {
@@ -77,7 +76,20 @@ class BluetoothScanner(
             addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
         }
         context.registerReceiver(discoveryReceiver, filter)
-        adapter.startDiscovery()
+
+        // Only flip isScanning once the system accepts the request. If
+        // startDiscovery() returns false (location services off pre-Android 12,
+        // adapter transitioning, etc.) the spinner would otherwise be stuck:
+        // the receiver never fires ACTION_DISCOVERY_FINISHED, so isScanning
+        // never reverts to false.
+        val started = runCatching { adapter.startDiscovery() }.getOrDefault(false)
+        if (started) {
+            _isScanning.value = true
+        } else {
+            Timber.w("startDiscovery() returned false — leaving scanner idle")
+            unregisterReceiver()
+            _isScanning.value = false
+        }
     }
 
     fun stopScan() {

@@ -5,6 +5,12 @@ import androidx.room.PrimaryKey
 
 /**
  * A trip session. Created when recording starts, updated with summary stats on completion.
+ *
+ * Energy columns (v2+):
+ *  - [energyUsedWh]: Wh integrated from positive-current samples (discharge).
+ *  - [energyRegenWh]: Wh integrated from negative-current samples (regen).
+ *  - Trips persisted under v1 default to 0/0; the UI surfaces these as "—" rather
+ *    than the old `Δbatt × 0.6` heuristic so old data isn't misleadingly precise.
  */
 @Entity(tableName = "trips")
 data class TripEntity(
@@ -16,5 +22,9 @@ data class TripEntity(
     val avgSpeedKmh10: Int = 0,      // avg speed * 10
     val startBattery: Int = 0,       // % at start
     val endBattery: Int? = null,     // % at end
-    val sampleCount: Long = 0
+    val sampleCount: Long = 0,
+
+    // ── v2: real energy accounting ────────────────────────────────────────────
+    val energyUsedWh: Double = 0.0,
+    val energyRegenWh: Double = 0.0
 )

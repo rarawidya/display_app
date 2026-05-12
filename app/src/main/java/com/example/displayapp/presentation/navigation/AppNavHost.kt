@@ -25,9 +25,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import com.example.displayapp.DisplayApp
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.ui.charts.ChartsScreen
+import com.example.displayapp.presentation.ui.connection.BluetoothQuickSheet
+import com.example.displayapp.presentation.ui.connection.BluetoothStatusPopover
 import com.example.displayapp.presentation.ui.dashboard.DashboardScreen
 import com.example.displayapp.presentation.ui.device.DeviceScanScreen
 import com.example.displayapp.presentation.ui.logs.LogsScreen
@@ -35,12 +40,12 @@ import com.example.displayapp.presentation.ui.logs.TripDetailScreen
 import com.example.displayapp.presentation.ui.maps.NavigationScreen
 import com.example.displayapp.presentation.ui.settings.DeveloperScreen
 import com.example.displayapp.presentation.ui.settings.SettingsScreen
+import com.example.displayapp.presentation.viewmodel.BluetoothViewModel
+import com.example.displayapp.presentation.viewmodel.BluetoothViewModelFactory
 import com.example.displayapp.presentation.viewmodel.ChartsViewModel
 import com.example.displayapp.presentation.viewmodel.ChartsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.DashboardViewModel
 import com.example.displayapp.presentation.viewmodel.DashboardViewModelFactory
-import com.example.displayapp.presentation.viewmodel.DeviceViewModel
-import com.example.displayapp.presentation.viewmodel.DeviceViewModelFactory
 import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.presentation.viewmodel.LogsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.MapsViewModel
@@ -120,22 +125,29 @@ private fun AppNavGraph(
         }
     ) {
         composable(Destination.Scan.route) {
-            val deviceVm: DeviceViewModel = viewModel(
-                factory = DeviceViewModelFactory(
-                    container.vehicleRepository,
-                    container.devicePreferences
+            // The scan screen now uses BluetoothViewModel directly — same
+            // VM the Drive page's long-press sheet uses, so the two surfaces
+            // share state (controller, paired list, scan flow).
+            val btVm: BluetoothViewModel = viewModel(
+                factory = BluetoothViewModelFactory(
+                    controller = container.bluetoothController,
+                    repository = container.vehicleRepository,
+                    devicePreferences = container.devicePreferences,
+                    appContext = context.applicationContext
                 )
             )
-            // Also surface the dashboard VM here so "Use Simulator" can route to Drive
+            // DashboardVM is still surfaced here so "Use Simulator" can kick off
+            // a simulated connection and let the LaunchedEffect below route to Drive.
             val dashboardVm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker)
             )
 
-            val scanState by deviceVm.uiState.collectAsStateWithLifecycle()
+            val connectionState by container.vehicleRepository.connectionState
+                .collectAsStateWithLifecycle()
 
-            // Auto-navigate to Drive when the connection becomes live
-            LaunchedEffect(scanState.connectionState) {
-                if (scanState.connectionState == ConnectionState.CONNECTED) {
+            // Auto-navigate to Drive when the connection becomes live.
+            LaunchedEffect(connectionState) {
+                if (connectionState == ConnectionState.CONNECTED) {
                     navController.navigate(Destination.Drive.route) {
                         popUpTo(Destination.Scan.route) { inclusive = true }
                         launchSingleTop = true
@@ -143,8 +155,10 @@ private fun AppNavGraph(
                 }
             }
 
+            // Back button only when this isn't the first screen the user lands on.
+            val canGoBack = navController.previousBackStackEntry != null
             DeviceScanScreen(
-                viewModel = deviceVm,
+                viewModel = btVm,
                 onNavigateToDashboard = {
                     navController.navigate(Destination.Drive.route) {
                         popUpTo(Destination.Scan.route) { inclusive = true }
@@ -154,28 +168,66 @@ private fun AppNavGraph(
                 onUseSimulator = {
                     container.switchDataSource(simulator = true)
                     dashboardVm.connect("SIM")
-                    // Connection becoming CONNECTED triggers the LaunchedEffect above
-                }
+                    // LaunchedEffect above routes to Drive once state == CONNECTED.
+                },
+                onBack = if (canGoBack) ({ navController.popBackStack() }) else null
             )
         }
 
         composable(Destination.Drive.route) {
             val vm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker)
             )
             val mapsVm: MapsViewModel = viewModel(
                 factory = MapsViewModelFactory(container.locationRepository)
             )
+            val btVm: BluetoothViewModel = viewModel(
+                factory = BluetoothViewModelFactory(
+                    controller = container.bluetoothController,
+                    repository = container.vehicleRepository,
+                    devicePreferences = container.devicePreferences,
+                    appContext = context.applicationContext
+                )
+            )
             val wifiConnected by container.wifiStateMonitor.isWifiConnected
                 .collectAsStateWithLifecycle(initialValue = false)
+
+            // Sheet + popover are siblings of the cockpit content. Both live at
+            // the NavHost level so the BrandHeader callbacks can flip them.
+            var showSheet by rememberSaveable { mutableStateOf(false) }
+            var showPopover by rememberSaveable { mutableStateOf(false) }
+            val btState by btVm.uiState.collectAsStateWithLifecycle()
+
             DashboardScreen(
                 viewModel = vm,
                 mapsViewModel = mapsVm,
                 wifiConnected = wifiConnected,
-                onConnectionTap = {
-                    navController.navigate(Destination.Scan.route) {
-                        launchSingleTop = true
-                    }
+                onConnectionTap = { showPopover = true },
+                onBluetoothLongPress = { showSheet = true },
+                bluetoothAnchor = { _ ->
+                    BluetoothStatusPopover(
+                        expanded = showPopover,
+                        adapterState = btState.adapterState,
+                        connectionState = btState.connected?.let {
+                            // Map UiDeviceState back to ConnectionState for the
+                            // popover, which renders a simpler model.
+                            when (it.state) {
+                                com.example.displayapp.presentation.state.UiDeviceState.CONNECTED ->
+                                    ConnectionState.CONNECTED
+                                com.example.displayapp.presentation.state.UiDeviceState.CONNECTING ->
+                                    ConnectionState.CONNECTING
+                                com.example.displayapp.presentation.state.UiDeviceState.RECONNECTING ->
+                                    ConnectionState.RECONNECTING
+                                else -> ConnectionState.DISCONNECTED
+                            }
+                        } ?: ConnectionState.DISCONNECTED,
+                        connectedName = btState.connected?.name,
+                        previouslyConnectedName = btState.previouslyConnected?.name,
+                        onDismiss = { showPopover = false },
+                        onDisconnect = { btVm.disconnect() },
+                        onReconnect = { btVm.reconnectLast() },
+                        onOpenSheet = { showSheet = true }
+                    )
                 },
                 onSettingsTap = {
                     navController.navigate(Destination.Settings.route) {
@@ -188,6 +240,13 @@ private fun AppNavGraph(
                     }
                 }
             )
+
+            if (showSheet) {
+                BluetoothQuickSheet(
+                    viewModel = btVm,
+                    onDismiss = { showSheet = false }
+                )
+            }
         }
 
         composable(Destination.Navigation.route) {

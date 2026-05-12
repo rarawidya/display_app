@@ -1,6 +1,7 @@
 package com.example.displayapp.presentation.state
 
 import androidx.compose.runtime.Immutable
+import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.data.persistence.entity.TripEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -162,9 +163,13 @@ fun TripEntity.toRow(): TripRow {
     val distKm = distanceMeters / 1000f
     val maxSpd = maxSpeedKmh10 / 10f
     val avgSpd = avgSpeedKmh10 / 10f
-    val end = endBattery ?: startBattery
-    val deltaBatt = (startBattery - end).coerceAtLeast(0)
-    val energyKwh = deltaBatt / 10f * 0.6f
+
+    // Real energy: persisted under v2+ as integrated Wh. Pre-v2 trips have both
+    // columns = 0 — we surface "—" rather than fabricating a heuristic.
+    val hasRealEnergy = energyUsedWh > 0.0 || energyRegenWh > 0.0
+    val netWh = energyUsedWh - energyRegenWh
+    val energyKwh = (netWh / 1000.0).toFloat()
+    val energyLabel = if (hasRealEnergy) EnergyFormatter.formatNetEnergyWh(netWh) else "—"
 
     return TripRow(
         id = id,
@@ -174,7 +179,7 @@ fun TripEntity.toRow(): TripRow {
         avgSpeedLabel = "%.0f km/h".format(avgSpd),
         maxSpeedLabel = "%.0f km/h".format(maxSpd),
         batteryLabel = "$startBattery% → ${endBattery ?: '—'}%",
-        energyLabel = if (energyKwh > 0f) "≈ %.1f kWh".format(energyKwh) else "—",
+        energyLabel = energyLabel,
         isActive = endTime == null,
         distanceMeters = distanceMeters,
         durationSec = durationSec,

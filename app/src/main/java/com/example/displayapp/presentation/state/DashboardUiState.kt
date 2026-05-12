@@ -32,7 +32,19 @@ data class DashboardUiState(
     val headlamp: Boolean = false,
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val diagnostics: DiagnosticsState = DiagnosticsState(),
-    val tripStats: TripStatsState = TripStatsState()
+    val tripStats: TripStatsState = TripStatsState(),
+    val efficiency: EfficiencyState = EfficiencyState()
+)
+
+/**
+ * Live efficiency snapshot consumed by the Drive tiles. Both Wh/km and range
+ * are nullable so the UI can render "—" when there isn't yet enough data
+ * (idle, just connected, or covered less than 10 m in the rolling window).
+ */
+@Immutable
+data class EfficiencyState(
+    val whPerKm: Float? = null,
+    val rangeKm: Float? = null
 )
 
 /**
