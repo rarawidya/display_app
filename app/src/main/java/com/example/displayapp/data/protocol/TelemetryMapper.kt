@@ -5,17 +5,24 @@ import com.example.displayapp.domain.model.VehicleMode
 import timber.log.Timber
 
 /**
- * Maps a decoded Cap'n Proto TelemetryFrame to the domain VehicleData model.
- * Handles fixed-point → floating-point conversion and bitfield extraction.
+ * Maps a decoded Cap'n Proto [TelemetryFrame] to the canonical [VehicleData]
+ * domain model. Owns wire-format conversion only — all *derivations* (rpm,
+ * power) route through [TelemetryDerivations] so every surface in the app
+ * (Drive, Charts, Trip Detail, replay, CSV) reads bit-identical values.
+ *
+ * Phase 1 audit invariant: this is the ONE place that translates a live
+ * wire frame into VehicleData. Nothing downstream may re-derive rpm or
+ * power locally; they read the fields off VehicleData / TelemetryEntity
+ * and trust [TelemetryDerivations.decodeEntity] for persisted samples.
  */
 class TelemetryMapper {
 
     fun map(payload: ByteArray, previous: VehicleData): VehicleData? {
         return try {
             val frame = TelemetrySchema.readFrom(payload)
-            val speedKmh = frame.speed / 10
-            val voltageV = frame.voltage / 100f
-            val currentA = frame.current / 100f
+            val speedKmh = TelemetryDerivations.speedKmhFromWire(frame.speed)
+            val voltageV = TelemetryDerivations.voltageFromWire(frame.voltage)
+            val currentA = TelemetryDerivations.currentFromWire(frame.current)
             VehicleData(
                 speed = speedKmh,
                 batteryPercent = frame.battery.coerceIn(0, 100),
@@ -25,16 +32,16 @@ class TelemetryMapper {
                 batteryTemperature = frame.batteryTemperature,
                 controllerTemperature = frame.controllerTemperature,
                 vehicleMode = mapMode(frame.mode),
-                // Single source of truth for derived per-frame values.
-                rpm = speedKmh * 100,
-                power = voltageV * currentA,
+                rpm = TelemetryDerivations.rpmFromSpeedKmh(speedKmh),
+                power = TelemetryDerivations.powerFromVoltsAmps(voltageV, currentA),
                 // Wall-clock at decode time, not `frame.timestamp`.
                 //
                 // `frame.timestamp` is a UInt32 millis count (wraps every ~49 days)
                 // and is currently relative to MCU boot — see telemetry.capnp:14. Fine
                 // for wire-side ordering, but Logs/replay/CSV need monotonic absolute
-                // time. Switch to honoring it only once the MCU exposes either
-                // (a) a wall-clock value or (b) a boot epoch we can add here.
+                // time. Phase 3 will introduce a per-trip `bootEpochMs` so we can honor
+                // the MCU clock while keeping replay deterministic; for now wall-clock
+                // is the only reliable absolute reference.
                 timestamp = System.currentTimeMillis()
             )
         } catch (e: Exception) {

@@ -2,7 +2,10 @@ package com.example.displayapp.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.displayapp.data.diagnostics.DiagnosticsRepository
+import com.example.displayapp.data.diagnostics.DiagnosticsSnapshot
 import com.example.displayapp.data.energy.EfficiencyTracker
+import com.example.displayapp.data.protocol.TelemetryConstants
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.domain.model.VehicleData
@@ -33,16 +36,20 @@ import kotlinx.coroutines.launch
  */
 class DashboardViewModel(
     private val repository: VehicleRepository,
-    private val efficiencyTracker: EfficiencyTracker
+    private val efficiencyTracker: EfficiencyTracker,
+    private val diagnosticsRepository: DiagnosticsRepository
 ) : ViewModel() {
 
     private val _showDiagnostics = MutableStateFlow(false)
     val showDiagnostics: StateFlow<Boolean> = _showDiagnostics
 
-    // FPS tracking
+    // FPS is still computed here (one tick per vehicleData emission) but the
+    // resulting value is pushed into DiagnosticsRepository so the snapshot is
+    // the single canonical source — Settings and the overlay read the same
+    // number. Local frameCount is just the windowed accumulator; the count
+    // itself is held in DiagnosticsRepository.framesDecoded.
     private var frameCount = 0
     private var lastFpsTime = System.currentTimeMillis()
-    private val _fps = MutableStateFlow(0)
 
     // Rolling trip summary (resets on disconnect).
     // Distance is integrated from speed × dt — schema-first telemetry has no
@@ -58,13 +65,13 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = combine(
         repository.vehicleData,
         repository.connectionState,
-        _fps,
-        efficiencyTracker.state
-    ) { vehicleData, connectionState, fps, efficiency ->
+        efficiencyTracker.state,
+        diagnosticsRepository.snapshot
+    ) { vehicleData, connectionState, efficiency, diag ->
         trackFps()
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
-        mapToUiState(vehicleData, connectionState, fps, efficiency)
+        mapToUiState(vehicleData, connectionState, diag, efficiency)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -89,7 +96,7 @@ class DashboardViewModel(
     private fun mapToUiState(
         data: VehicleData,
         connectionState: ConnectionState,
-        fps: Int,
+        diag: DiagnosticsSnapshot,
         efficiency: EfficiencyTracker.State
     ): DashboardUiState {
         val durationSec = if (sessionStartMs > 0) {
@@ -97,9 +104,9 @@ class DashboardViewModel(
         } else 0L
         val avgSpeed = if (sessionSpeedSamples > 0) (sessionSpeedSum / sessionSpeedSamples).toInt() else 0
 
-        // Pass canonical telemetry through; no UI-side math. rpm/power are
-        // derived in TelemetryMapper; battery/controller temps are real wire
-        // channels (telemetry.capnp v2+).
+        // Pass canonical telemetry + diagnostics through; no UI-side math.
+        // rpm/power are derived in TelemetryMapper; counters originate in
+        // FrameDecoder → DiagnosticsRepository.
         return DashboardUiState(
             speed = data.speed,
             rpm = data.rpm,
@@ -113,7 +120,14 @@ class DashboardViewModel(
             vehicleMode = data.vehicleMode,
             connectionState = connectionState,
             diagnostics = DiagnosticsState(
-                framesPerSecond = fps,
+                framesPerSecond = diag.framesPerSecond,
+                framesDecoded = diag.framesDecoded,
+                crcErrors = diag.crcErrors,
+                syncLosses = diag.syncLosses,
+                reconnects = diag.reconnects,
+                // Prefer the live frame timestamp — it ticks every frame.
+                // Falling back to diag.lastUpdateMs would lag by up to the
+                // diagnostics-flush interval.
                 lastUpdateMs = data.timestamp
             ),
             tripStats = TripStatsState(
@@ -143,7 +157,7 @@ class DashboardViewModel(
         // TripSessionManager so Drive's "session distance" and Logs' trip
         // distance use the same algorithm.
         val dtMsRaw = data.timestamp - sessionLastTimestampMs
-        if (sessionLastTimestampMs > 0L && dtMsRaw in 1..MAX_SESSION_DT_MS) {
+        if (sessionLastTimestampMs > 0L && dtMsRaw in 1..TelemetryConstants.MAX_SAMPLE_DT_MS) {
             val avgSpeedMs = ((sessionLastSpeed + data.speed) / 2.0) / 3.6
             sessionDistanceKm += avgSpeedMs * dtMsRaw / 3_600_000.0
         }
@@ -166,15 +180,11 @@ class DashboardViewModel(
         val now = System.currentTimeMillis()
         val elapsed = now - lastFpsTime
         if (elapsed >= 1000) {
-            _fps.value = (frameCount * 1000 / elapsed).toInt()
+            val fps = (frameCount * 1000 / elapsed).toInt()
+            diagnosticsRepository.reportFps(fps)
             frameCount = 0
             lastFpsTime = now
         }
     }
 
-    private companion object {
-        // Skip distance accumulation for gaps longer than this — covers
-        // backgrounding pauses, reconnects, etc. without fabricating distance.
-        const val MAX_SESSION_DT_MS = 2_000L
-    }
 }

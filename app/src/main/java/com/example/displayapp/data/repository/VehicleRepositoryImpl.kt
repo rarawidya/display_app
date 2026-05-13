@@ -1,6 +1,7 @@
 package com.example.displayapp.data.repository
 
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
+import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.persistence.TripSessionManager
 import com.example.displayapp.data.protocol.FrameDecoder
 import com.example.displayapp.data.protocol.TelemetryMapper
@@ -19,7 +20,8 @@ import kotlinx.coroutines.launch
 class VehicleRepositoryImpl(
     private val dataSource: BluetoothDataSource,
     private val mapper: TelemetryMapper,
-    private val tripSessionManager: TripSessionManager
+    private val tripSessionManager: TripSessionManager,
+    private val diagnostics: DiagnosticsRepository
 ) : VehicleRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -30,15 +32,23 @@ class VehicleRepositoryImpl(
     override val connectionState: StateFlow<ConnectionState> = dataSource.connectionState
     override val availableDevices: StateFlow<List<BluetoothDeviceInfo>> = dataSource.discoveredDevices
 
-    private val frameDecoder = FrameDecoder { payload ->
-        val current = _vehicleData.value
-        val mapped = mapper.map(payload, current)
-        if (mapped != null) {
-            _vehicleData.value = mapped
-            // Feed to trip recording if active
-            tripSessionManager.onTelemetryUpdate(mapped)
-        }
-    }
+    // FrameDecoder is the natural choke point for live protocol diagnostics —
+    // every byte off the SPP pipe flows through here. Feeding the counters
+    // from this single site is what lets the overlay show real CRC / sync /
+    // frame numbers instead of placeholder zeros.
+    private val frameDecoder = FrameDecoder(
+        onFrame = { payload ->
+            val current = _vehicleData.value
+            val mapped = mapper.map(payload, current)
+            if (mapped != null) {
+                _vehicleData.value = mapped
+                diagnostics.reportFrame()
+                tripSessionManager.onTelemetryUpdate(mapped)
+            }
+        },
+        onCrcError = { diagnostics.reportCrcError() },
+        onSyncLoss = { diagnostics.reportSyncLoss() }
+    )
 
     init {
         scope.launch {

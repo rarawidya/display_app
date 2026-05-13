@@ -320,14 +320,18 @@ private fun DetailBody(state: TripDetailUiState) {
     )
 
     // Trip Detail is the analytics center — every chart series matches one
-    // TelemetryMetric in the unified vocabulary. Units convert at the
-    // label site; chart values stay SI.
+    // TelemetryMetric in the unified vocabulary. Series are SI (km/h, °C);
+    // conversion is applied at label time via displayConverter so toggling
+    // km/h↔mph in Settings updates labels without rebuilding the dataset.
+    val speedConverter: (Float) -> Float = { app.speedUnit.convertFromKmh(it) }
+    val tempConverter: (Float) -> Float = { app.temperatureUnit.convertFromCelsius(it) }
     StaticTelemetryChart(
         title = TelemetryMetric.Speed.displayName,
         unit = app.speedUnit.suffix,
-        series = state.speedSeries.map { app.speedUnit.convertFromKmh(it) }.toFloatArray(),
+        series = state.speedSeries,
         color = TelemetryMetric.Speed.seriesColor(),
-        latestFormat = TelemetryMetric.Speed.format
+        latestFormat = TelemetryMetric.Speed.format,
+        displayConverter = speedConverter
     )
     StaticTelemetryChart(
         title = TelemetryMetric.Power.displayName,
@@ -360,23 +364,26 @@ private fun DetailBody(state: TripDetailUiState) {
     StaticTelemetryChart(
         title = TelemetryMetric.EngineTemp.displayName,
         unit = app.temperatureUnit.suffix,
-        series = state.temperatureSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
+        series = state.temperatureSeries,
         color = TelemetryMetric.EngineTemp.seriesColor(),
-        latestFormat = TelemetryMetric.EngineTemp.format
+        latestFormat = TelemetryMetric.EngineTemp.format,
+        displayConverter = tempConverter
     )
     StaticTelemetryChart(
         title = TelemetryMetric.BatteryTemp.displayName,
         unit = app.temperatureUnit.suffix,
-        series = state.batteryTempSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
+        series = state.batteryTempSeries,
         color = TelemetryMetric.BatteryTemp.seriesColor(),
-        latestFormat = TelemetryMetric.BatteryTemp.format
+        latestFormat = TelemetryMetric.BatteryTemp.format,
+        displayConverter = tempConverter
     )
     StaticTelemetryChart(
         title = TelemetryMetric.ControllerTemp.displayName,
         unit = app.temperatureUnit.suffix,
-        series = state.controllerTempSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
+        series = state.controllerTempSeries,
         color = TelemetryMetric.ControllerTemp.seriesColor(),
-        latestFormat = TelemetryMetric.ControllerTemp.format
+        latestFormat = TelemetryMetric.ControllerTemp.format,
+        displayConverter = tempConverter
     )
 }
 

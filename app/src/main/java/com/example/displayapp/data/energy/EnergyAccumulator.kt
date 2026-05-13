@@ -1,5 +1,6 @@
 package com.example.displayapp.data.energy
 
+import com.example.displayapp.data.protocol.TelemetryConstants
 import kotlin.math.absoluteValue
 
 /**
@@ -76,8 +77,13 @@ class EnergyAccumulator {
     }
 
     companion object {
-        /** Max dt counted per gap. Anything longer is clamped (assumed BT dropout). */
-        const val MAX_DT_MS: Long = 1_000L
+        /**
+         * Max dt counted per gap. Anything longer is clamped (assumed BT
+         * dropout). Aliased to the project-wide [TelemetryConstants.MAX_SAMPLE_DT_MS]
+         * so a single number governs every integrator and the live Drive
+         * session — required for `Drive == TripSessionManager` distance parity.
+         */
+        const val MAX_DT_MS: Long = TelemetryConstants.MAX_SAMPLE_DT_MS
         private const val MS_PER_HOUR: Double = 3_600_000.0
     }
 }

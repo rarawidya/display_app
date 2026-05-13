@@ -15,7 +15,9 @@ import timber.log.Timber
  * Thread-safety: NOT thread-safe. Call [feed] from a single coroutine.
  */
 class FrameDecoder(
-    private val onFrame: (ByteArray) -> Unit
+    private val onFrame: (ByteArray) -> Unit,
+    private val onCrcError: () -> Unit = {},
+    private val onSyncLoss: () -> Unit = {}
 ) {
     private enum class State {
         SYNC_HI,
@@ -66,6 +68,7 @@ class FrameDecoder(
                     state = State.SYNC_LO
                 } else {
                     syncLosses++
+                    onSyncLoss()
                     state = State.SYNC_HI
                 }
             }
@@ -80,6 +83,7 @@ class FrameDecoder(
                 if (payloadLength == 0 || payloadLength > MAX_PAYLOAD) {
                     Timber.w("Invalid payload length: $payloadLength, resyncing")
                     syncLosses++
+                    onSyncLoss()
                     state = State.SYNC_HI
                 } else {
                     if (payload.size < payloadLength) {
@@ -113,6 +117,7 @@ class FrameDecoder(
                 } else {
                     crcErrors++
                     Timber.w("CRC mismatch: received=0x${receivedCrc.toString(16)}, computed=0x${computedCrc.toString(16)}")
+                    onCrcError()
                 }
 
                 state = State.SYNC_HI

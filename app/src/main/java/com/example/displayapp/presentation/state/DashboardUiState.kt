@@ -61,12 +61,18 @@ data class TripStatsState(
     val durationSec: Long = 0
 )
 
+/**
+ * Mirrors `DiagnosticsRepository.DiagnosticsSnapshot` 1:1 so the overlay reads
+ * the same counters Settings → Diagnostics does. The Dashboard ViewModel
+ * passes the snapshot through as-is — no UI-local accounting.
+ */
 @Immutable
 data class DiagnosticsState(
     val framesPerSecond: Int = 0,
     val framesDecoded: Long = 0,
     val crcErrors: Long = 0,
     val syncLosses: Long = 0,
+    val reconnects: Long = 0,
     val lastUpdateMs: Long = 0
 )
 

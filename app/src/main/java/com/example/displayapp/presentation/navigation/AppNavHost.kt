@@ -139,7 +139,7 @@ private fun AppNavGraph(
             // DashboardVM is still surfaced here so "Use Simulator" can kick off
             // a simulated connection and let the LaunchedEffect below route to Drive.
             val dashboardVm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository)
             )
 
             val connectionState by container.vehicleRepository.connectionState
@@ -176,7 +176,7 @@ private fun AppNavGraph(
 
         composable(Destination.Drive.route) {
             val vm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository)
             )
             val mapsVm: MapsViewModel = viewModel(
                 factory = MapsViewModelFactory(container.locationRepository)

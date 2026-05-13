@@ -3,6 +3,7 @@ package com.example.displayapp.data.persistence.export
 import android.content.Context
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
+import com.example.displayapp.data.protocol.TelemetryDerivations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -51,25 +52,25 @@ class CsvExporter(
                 // Header
                 writer.appendLine(CSV_HEADER)
 
-                // Data rows. rpm and power are derived on export from the
-                // canonical wire fields so a CSV column never disagrees with
-                // what Drive/Charts/Logs show on screen.
+                // Each row goes through the canonical entity→VehicleData decode
+                // so rpm and power match what Drive/Charts/Trip Detail show for
+                // the same wire frame. No CSV-local derivation. speed_kmh is
+                // formatted with one decimal because the wire carries int10
+                // precision (e.g. 45.2 km/h = 452); the rest follow the wire
+                // precision contract documented in TelemetryEntity.
                 for (sample in samples) {
+                    val vd = TelemetryDerivations.decodeEntity(sample)
                     val speedKmh = sample.speed / 10f
-                    val voltageV = sample.voltage / 100f
-                    val currentA = sample.current / 100f
-                    val rpm = sample.speed * 10   // speedKmh × 100 stored as int10
-                    val powerW = voltageV * currentA
                     writer.append(sample.timestamp.toString()).append(',')
                     writer.append("%.1f".format(speedKmh)).append(',')
-                    writer.append(rpm.toString()).append(',')
-                    writer.append(sample.battery.toString()).append(',')
-                    writer.append("%.2f".format(voltageV)).append(',')
-                    writer.append("%.2f".format(currentA)).append(',')
-                    writer.append("%.1f".format(powerW)).append(',')
-                    writer.append(sample.temperature.toString()).append(',')
-                    writer.append(sample.batteryTemperature.toString()).append(',')
-                    writer.append(sample.controllerTemperature.toString()).append(',')
+                    writer.append(vd.rpm.toString()).append(',')
+                    writer.append(vd.batteryPercent.toString()).append(',')
+                    writer.append("%.2f".format(vd.voltage)).append(',')
+                    writer.append("%.2f".format(vd.current)).append(',')
+                    writer.append("%.1f".format(vd.power)).append(',')
+                    writer.append(vd.temperature.toString()).append(',')
+                    writer.append(vd.batteryTemperature.toString()).append(',')
+                    writer.append(vd.controllerTemperature.toString()).append(',')
                     writer.appendLine(sample.mode.toString())
                 }
             }

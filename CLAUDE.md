@@ -71,6 +71,22 @@ Clean layering under `app/src/main/java/com/example/displayapp/`:
 
 Runtime permission flow: `presentation/ui/permissions/`.
 
+## Canonical telemetry invariants (Phase 1 audit)
+
+**One pipeline, one derivation site, one display rule.** These are the rules that
+keep Drive / Charts / Logs / Trip Detail / replay / CSV exporting the same
+number for the same wire frame.
+
+- **Single decode path.** Live frames flow through `TelemetryMapper`; persisted samples flow through [`TelemetryDerivations.decodeEntity`](app/src/main/java/com/example/displayapp/data/protocol/TelemetryDerivations.kt). Every consumer downstream — replay, CSV, Trip Detail charts — reads the resulting `VehicleData`. No screen, ViewModel, or exporter may re-derive `rpm` or `power` locally; adding a new derivation = adding a function to `TelemetryDerivations` and calling it from both the live mapper and `decodeEntity`.
+- **Sign convention.** `current > 0` = discharge; `current < 0` = regen. `power = voltage × current` inherits the same sign. `EnergyAccumulator` and every CSV/UI consumer assume this — flipping it MCU-side silently inverts used vs regen totals. Documented in [`telemetry.capnp`](app/schema/telemetry.capnp).
+- **RPM semantics.** `rpm = speedKmh × 100` is a *display proxy*, not real motor electrical frequency. If a future thermal/torque model needs true RPM, add it as a separate wire field rather than overloading this one.
+- **Timestamps.** `VehicleData.timestamp` is wall-clock-at-decode. `frame.timestamp` (MCU boot-relative, ~49-day wrap) is currently ignored for trip math — Phase 3 introduces a per-trip `bootEpochMs` for deterministic replay.
+- **One `dt` clamp.** All integrators (`EnergyAccumulator`, `EfficiencyTracker`, `TripSessionManager` distance, Drive session distance) clamp inter-sample `dt` to [`TelemetryConstants.MAX_SAMPLE_DT_MS`](app/src/main/java/com/example/displayapp/data/protocol/TelemetryConstants.kt). Don't introduce a screen-local clamp; trip distance vs Drive session distance must drift only through different aggregation windows, never through different gap policies.
+- **Diagnostics is end-to-end live.** Frame decoding, CRC errors, and sync losses report directly from `FrameDecoder` into `DiagnosticsRepository`; the Dashboard ViewModel passes that snapshot through to `DiagnosticsState` — no zero placeholders, no UI-local accounting. FPS is computed in the VM and pushed via `reportFps()` so Settings and the overlay read the same number.
+- **Display-layer unit conversion only.** Chart series stay in SI (km/h, °C); km/h↔mph and °C↔°F are applied at the label site (see `StaticTelemetryChart.displayConverter`). A unit preference change must update labels without rebuilding datasets.
+
+The target invariant: **Drive page == Charts == Logs == Trip Detail == Replay == CSV** for any given wire frame. Phase 2 will persist `rpm`/`power` columns so even a future change to the derivation formula doesn't retroactively alter recorded trips; Phase 3 handles deterministic timestamps; Phase 4 wires reconnect events into `FaultEventEntity` for persisted fault tracking.
+
 ## Conventions
 
 - Compose-only UI; no XML layouts.

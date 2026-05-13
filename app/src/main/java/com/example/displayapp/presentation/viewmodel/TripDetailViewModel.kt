@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import com.example.displayapp.data.persistence.export.CsvExporter
+import com.example.displayapp.data.protocol.TelemetryDerivations
 import com.example.displayapp.domain.model.VehicleMode
 import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.presentation.state.TripDetailUiState
@@ -99,19 +100,21 @@ class TripDetailViewModel(
     private fun buildState(trip: TripEntity, samples: List<TelemetryEntity>): TripDetailUiState {
         val durationSec = ((trip.endTime ?: System.currentTimeMillis()) - trip.startTime) / 1000L
 
-        // Chart series stay in SI units; the UI converts at the label site.
-        // Decode each persisted column with the same scale TelemetryMapper /
-        // TelemetryReplaySource use — so a chart drawn here matches what live
-        // Drive and Charts would draw for the same wire values.
+        // Chart series stay in SI; the UI converts at the label site only.
+        // Decoding through TelemetryDerivations.decodeEntity is the single
+        // canonical path — rpm and power come out matching live Drive /
+        // Charts / replay for the same wire values. No Trip-Detail-local
+        // formula.
+        val decoded = Array(samples.size) { TelemetryDerivations.decodeEntity(samples[it]) }
         val speedSeries = FloatArray(samples.size) { samples[it].speed / 10f }
-        val rpmSeries = FloatArray(samples.size) { (samples[it].speed * 10).toFloat() }  // speed/10 km/h × 100 = speed×10
-        val voltageSeries = FloatArray(samples.size) { samples[it].voltage / 100f }
-        val currentSeries = FloatArray(samples.size) { samples[it].current / 100f }
-        val powerSeries = FloatArray(samples.size) { (samples[it].voltage / 100f) * (samples[it].current / 100f) }
-        val batterySeries = FloatArray(samples.size) { samples[it].battery.toFloat() }
-        val temperatureSeries = FloatArray(samples.size) { samples[it].temperature.toFloat() }
-        val batteryTempSeries = FloatArray(samples.size) { samples[it].batteryTemperature.toFloat() }
-        val controllerTempSeries = FloatArray(samples.size) { samples[it].controllerTemperature.toFloat() }
+        val rpmSeries = FloatArray(samples.size) { decoded[it].rpm.toFloat() }
+        val voltageSeries = FloatArray(samples.size) { decoded[it].voltage }
+        val currentSeries = FloatArray(samples.size) { decoded[it].current }
+        val powerSeries = FloatArray(samples.size) { decoded[it].power }
+        val batterySeries = FloatArray(samples.size) { decoded[it].batteryPercent.toFloat() }
+        val temperatureSeries = FloatArray(samples.size) { decoded[it].temperature.toFloat() }
+        val batteryTempSeries = FloatArray(samples.size) { decoded[it].batteryTemperature.toFloat() }
+        val controllerTempSeries = FloatArray(samples.size) { decoded[it].controllerTemperature.toFloat() }
 
         // Dominant mode across the trip. Computed off the downsampled samples
         // (~600 points), which is more than enough resolution to identify the

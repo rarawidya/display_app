@@ -2,8 +2,9 @@ package com.example.displayapp.data.persistence
 
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
+import com.example.displayapp.data.protocol.TelemetryConstants
+import com.example.displayapp.data.protocol.TelemetryDerivations
 import com.example.displayapp.domain.model.VehicleData
-import com.example.displayapp.domain.model.VehicleMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -47,7 +48,7 @@ class TelemetryReplaySource(
             val elapsed = sample.timestamp - previousTimestamp
             if (elapsed > 0) {
                 val adjustedDelay = (elapsed / speedMultiplier).toLong()
-                delay(adjustedDelay.coerceAtMost(MAX_DELAY_MS))
+                delay(adjustedDelay.coerceAtMost(TelemetryConstants.MAX_REPLAY_DELAY_MS))
             }
             previousTimestamp = sample.timestamp
             emit(entityToVehicleData(sample))
@@ -77,29 +78,11 @@ class TelemetryReplaySource(
             .map { entityToVehicleData(it) }
     }
 
-    private fun entityToVehicleData(entity: TelemetryEntity): VehicleData {
-        // Mirror TelemetryMapper exactly so replay produces the same canonical
-        // VehicleData shape (including derived rpm/power) the live decode path
-        // would emit for these wire values.
-        val speedKmh = entity.speed / 10
-        val voltageV = entity.voltage / 100f
-        val currentA = entity.current / 100f
-        return VehicleData(
-            speed = speedKmh,
-            batteryPercent = entity.battery,
-            voltage = voltageV,
-            current = currentA,
-            temperature = entity.temperature,
-            batteryTemperature = entity.batteryTemperature,
-            controllerTemperature = entity.controllerTemperature,
-            vehicleMode = VehicleMode.entries.getOrElse(entity.mode) { VehicleMode.PARK },
-            timestamp = entity.timestamp,
-            rpm = speedKmh * 100,
-            power = voltageV * currentA
-        )
-    }
+    // Replay decode is the canonical entity→VehicleData path; rpm/power are
+    // computed by the same TelemetryDerivations helpers TelemetryMapper uses
+    // for live frames, so a replayed VehicleData matches what was originally
+    // emitted bit-for-bit.
+    private fun entityToVehicleData(entity: TelemetryEntity): VehicleData =
+        TelemetryDerivations.decodeEntity(entity)
 
-    companion object {
-        private const val MAX_DELAY_MS = 2000L
-    }
 }

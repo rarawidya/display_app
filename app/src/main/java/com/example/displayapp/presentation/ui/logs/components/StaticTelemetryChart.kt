@@ -47,6 +47,16 @@ import com.example.displayapp.presentation.ui.common.GlassCard
  *  - The data is already pre-formatted by the VM — recompositions only
  *    happen when the trip changes, not per-pixel.
  */
+/**
+ * Reusable historical telemetry chart.
+ *
+ * Series values stay in canonical SI (km/h, °C, etc.); [displayConverter]
+ * is applied only at the label sites (header latest, footer min/max). This
+ * keeps the chart line shape unit-invariant and lets the user toggle
+ * km/h↔mph in Settings without rebuilding the dataset — only the labels
+ * recompose. The canvas itself draws normalized to the series' own range,
+ * so converting before drawing would have no visual effect anyway.
+ */
 @Composable
 fun StaticTelemetryChart(
     title: String,
@@ -54,11 +64,19 @@ fun StaticTelemetryChart(
     series: FloatArray,
     color: Color,
     modifier: Modifier = Modifier,
-    latestFormat: String = "%.1f"
+    latestFormat: String = "%.1f",
+    displayConverter: (Float) -> Float = { it }
 ) {
     GlassCard(modifier = modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ChartHeader(title = title, unit = unit, series = series, color = color, latestFormat = latestFormat)
+            ChartHeader(
+                title = title,
+                unit = unit,
+                series = series,
+                color = color,
+                latestFormat = latestFormat,
+                displayConverter = displayConverter
+            )
             ChartCanvas(
                 series = series,
                 color = color,
@@ -66,7 +84,12 @@ fun StaticTelemetryChart(
                     .fillMaxWidth()
                     .height(130.dp)
             )
-            ChartFooter(series = series, latestFormat = latestFormat, unit = unit)
+            ChartFooter(
+                series = series,
+                latestFormat = latestFormat,
+                unit = unit,
+                displayConverter = displayConverter
+            )
         }
     }
 }
@@ -77,7 +100,8 @@ private fun ChartHeader(
     unit: String,
     series: FloatArray,
     color: Color,
-    latestFormat: String
+    latestFormat: String,
+    displayConverter: (Float) -> Float
 ) {
     val (min, max, last) = remember(series) { quickStats(series) }
     Row(
@@ -100,7 +124,7 @@ private fun ChartHeader(
             )
         }
         Text(
-            text = if (last.isNaN()) "—" else "${latestFormat.format(last)} $unit",
+            text = if (last.isNaN()) "—" else "${latestFormat.format(displayConverter(last))} $unit",
             style = MaterialTheme.typography.titleMedium,
             color = color
         )
@@ -181,14 +205,19 @@ private fun ChartCanvas(
 }
 
 @Composable
-private fun ChartFooter(series: FloatArray, latestFormat: String, unit: String) {
+private fun ChartFooter(
+    series: FloatArray,
+    latestFormat: String,
+    unit: String,
+    displayConverter: (Float) -> Float
+) {
     val stats = remember(series) { quickStats(series) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Stat(label = "min", value = if (series.isEmpty()) "—" else "${latestFormat.format(stats.min)} $unit")
-        Stat(label = "max", value = if (series.isEmpty()) "—" else "${latestFormat.format(stats.max)} $unit")
+        Stat(label = "min", value = if (series.isEmpty()) "—" else "${latestFormat.format(displayConverter(stats.min))} $unit")
+        Stat(label = "max", value = if (series.isEmpty()) "—" else "${latestFormat.format(displayConverter(stats.max))} $unit")
         Stat(label = "samples", value = series.size.toString())
     }
 }

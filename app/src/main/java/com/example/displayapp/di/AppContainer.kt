@@ -164,7 +164,7 @@ class AppContainer(private val context: Context) {
     val telemetryMapper: TelemetryMapper by lazy { TelemetryMapper() }
 
     val vehicleRepository: VehicleRepository by lazy {
-        VehicleRepositoryImpl(bluetoothDataSource, telemetryMapper, tripSessionManager)
+        VehicleRepositoryImpl(bluetoothDataSource, telemetryMapper, tripSessionManager, diagnosticsRepository)
     }
 
     /**
