@@ -26,5 +26,14 @@ data class TripEntity(
 
     // ── v2: real energy accounting ────────────────────────────────────────────
     val energyUsedWh: Double = 0.0,
-    val energyRegenWh: Double = 0.0
+    val energyRegenWh: Double = 0.0,
+
+    // ── v5: unified analytics aggregates ─────────────────────────────────────
+    // Powers are stored centi-watts (×100); the int range covers ±214 kW with
+    // two-decimal precision. Peaks are °C ints (matches per-sample columns).
+    val avgPowerW100: Int = 0,
+    val maxPowerW100: Int = 0,
+    val peakMotorTempC: Int = 0,
+    val peakBatteryTempC: Int = 0,
+    val peakControllerTempC: Int = 0
 )

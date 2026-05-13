@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -27,6 +28,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
+import com.example.displayapp.ui.theme.LocalTelemetryPalette
+import com.example.displayapp.ui.theme.TelemetrySeriesStyle
 
 private const val Y_TICKS = 4
 private const val X_TICKS = 4
@@ -37,11 +40,22 @@ fun RealtimeLineChart(
     modifier: Modifier = Modifier,
     height: Dp = 280.dp
 ) {
-    val axisColor   = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-    val gridColor   = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+    val palette = LocalTelemetryPalette.current
+    // Resolve all series colors up-front — DrawScope isn't @Composable.
+    val seriesColors = remember(palette) {
+        TelemetryMetric.entries.associateWith { palette.colorOf(it) }
+    }
+
+    val axisColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+    val baselineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
+    val gridMajor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+    val gridMinor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
     val labelColor  = MaterialTheme.colorScheme.onSurfaceVariant
     val emptyColor  = MaterialTheme.colorScheme.onSurfaceVariant
     val labelStyle  = MaterialTheme.typography.labelSmall.copy(color = labelColor)
+    val focusLabelStyle = MaterialTheme.typography.labelSmall.copy(
+        color = seriesColors.getValue(state.focusedMetric)
+    )
     val measurer    = rememberTextMeasurer()
 
     val alphas = TelemetryMetric.entries.associateWith { metric ->
@@ -78,10 +92,10 @@ fun RealtimeLineChart(
         }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val leftPad   = 52.dp.toPx()
+            val leftPad   = 56.dp.toPx()
             val rightPad  = 12.dp.toPx()
             val topPad    = 14.dp.toPx()
-            val bottomPad = 28.dp.toPx()
+            val bottomPad = 30.dp.toPx()
 
             val plotLeft   = leftPad
             val plotTop    = topPad
@@ -91,27 +105,43 @@ fun RealtimeLineChart(
             val plotH = plotBottom - plotTop
             if (plotW <= 0f || plotH <= 0f) return@Canvas
 
+            // Horizontal grid — major lines at each Y tick, dashed for minor read.
+            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
             for (i in 0..Y_TICKS) {
                 val y = plotTop + plotH * i / Y_TICKS
+                val isEdge = i == 0 || i == Y_TICKS
                 drawLine(
-                    color = gridColor,
+                    color = if (isEdge) gridMajor else gridMinor,
                     start = Offset(plotLeft, y),
                     end   = Offset(plotRight, y),
-                    strokeWidth = 1f
+                    strokeWidth = 1f,
+                    pathEffect = if (isEdge) null else dashEffect
                 )
             }
             for (i in 1..X_TICKS) {
                 val x = plotLeft + plotW * i / X_TICKS
                 drawLine(
-                    color = gridColor,
+                    color = gridMinor,
                     start = Offset(x, plotTop),
                     end   = Offset(x, plotBottom),
-                    strokeWidth = 1f
+                    strokeWidth = 1f,
+                    pathEffect = dashEffect
                 )
             }
 
+            // Axes — left = focused metric (its color tints the Y baseline),
+            // bottom = time. Slightly thicker than grid so they read as the
+            // chart frame, not noise.
             drawLine(axisColor, Offset(plotLeft, plotTop),    Offset(plotLeft, plotBottom),  strokeWidth = 1.5f)
-            drawLine(axisColor, Offset(plotLeft, plotBottom), Offset(plotRight, plotBottom), strokeWidth = 1.5f)
+            drawLine(baselineColor, Offset(plotLeft, plotBottom), Offset(plotRight, plotBottom), strokeWidth = 1.5f)
+
+            // Draw selected lines. Non-focused selected lines get a lower
+            // alpha + thinner stroke so the focused metric reads first
+            // during glance analysis.
+            val focused = state.focusedMetric
+            val focusedStroke = TelemetrySeriesStyle.FOCUSED_STROKE_DP
+            val unfocusedStroke = TelemetrySeriesStyle.UNFOCUSED_STROKE_DP
+            val unfocusedAlpha = TelemetrySeriesStyle.UNFOCUSED_ALPHA
 
             for (metric in TelemetryMetric.entries) {
                 val alpha = alphas[metric] ?: 0f
@@ -121,23 +151,34 @@ fun RealtimeLineChart(
 
                 val (lo, hi) = niceRange(values, metric)
                 val span = (hi - lo).coerceAtLeast(0.0001f)
-                val isFocused = metric == state.focusedMetric
+                val isFocused = metric == focused
+                val effectiveAlpha = if (isFocused) alpha else alpha * unfocusedAlpha
+                val color = seriesColors.getValue(metric)
                 val n = values.size
                 val stepX = plotW / (n - 1)
 
                 val path = paths.getValue(metric).also { it.reset() }
+                // Rolling channels (Wh/km, range) emit NaN before they're
+                // ready. Break the path on NaN so the line doesn't smear
+                // across the gap.
+                var penDown = false
                 for (i in 0 until n) {
+                    val v = values[i]
+                    if (v.isNaN()) { penDown = false; continue }
                     val x = plotLeft + i * stepX
-                    val y = plotBottom - ((values[i] - lo) / span) * plotH
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    val y = plotBottom - ((v - lo) / span) * plotH
+                    if (!penDown) { path.moveTo(x, y); penDown = true } else path.lineTo(x, y)
                 }
 
                 if (isFocused) {
                     fillPath.reset()
-                    fillPath.moveTo(plotLeft, plotBottom)
+                    var fillPenDown = false
                     for (i in 0 until n) {
+                        val v = values[i]
+                        if (v.isNaN()) { fillPenDown = false; continue }
                         val x = plotLeft + i * stepX
-                        val y = plotBottom - ((values[i] - lo) / span) * plotH
+                        val y = plotBottom - ((v - lo) / span) * plotH
+                        if (!fillPenDown) { fillPath.moveTo(x, plotBottom); fillPenDown = true }
                         fillPath.lineTo(x, y)
                     }
                     fillPath.lineTo(plotLeft + (n - 1) * stepX, plotBottom)
@@ -146,7 +187,7 @@ fun RealtimeLineChart(
                         path = fillPath,
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                metric.color.copy(alpha = 0.22f * alpha),
+                                color.copy(alpha = 0.28f * alpha),
                                 Color.Transparent
                             ),
                             startY = plotTop,
@@ -157,20 +198,29 @@ fun RealtimeLineChart(
 
                 drawPath(
                     path = path,
-                    color = metric.color.copy(alpha = alpha),
+                    color = color.copy(alpha = effectiveAlpha),
                     style = Stroke(
-                        width = if (isFocused) 2.8f else 2f,
+                        width = if (isFocused) focusedStroke.dp.toPx() else unfocusedStroke.dp.toPx(),
                         cap   = StrokeCap.Round,
                         join  = StrokeJoin.Round
                     )
                 )
 
-                val lastX = plotLeft + (n - 1) * stepX
-                val lastY = plotBottom - ((values.last() - lo) / span) * plotH
-                drawCircle(metric.color.copy(alpha = 0.22f * alpha), radius = 11f, center = Offset(lastX, lastY))
-                drawCircle(metric.color.copy(alpha = alpha),         radius = 4f,  center = Offset(lastX, lastY))
+                // Marker dot at the most recent non-NaN sample.
+                var lastIdx = n - 1
+                while (lastIdx >= 0 && values[lastIdx].isNaN()) lastIdx--
+                if (lastIdx >= 0) {
+                    val lastX = plotLeft + lastIdx * stepX
+                    val lastY = plotBottom - ((values[lastIdx] - lo) / span) * plotH
+                    val haloR = if (isFocused) 13f else 9f
+                    val dotR  = if (isFocused) 4.5f else 3.5f
+                    drawCircle(color.copy(alpha = 0.22f * effectiveAlpha), radius = haloR, center = Offset(lastX, lastY))
+                    drawCircle(color.copy(alpha = effectiveAlpha),         radius = dotR,  center = Offset(lastX, lastY))
+                }
             }
 
+            // Y tick labels — colored to match the focused metric so the
+            // viewer instantly knows which series the axis is reading.
             val focusValues = state.valuesFor(state.focusedMetric)
             if (focusValues.isNotEmpty()) {
                 val (lo, hi) = niceRange(focusValues, state.focusedMetric)
@@ -181,8 +231,8 @@ fun RealtimeLineChart(
                     drawAxisLabel(
                         measurer = measurer,
                         text = state.focusedMetric.format.format(tickValue),
-                        style = labelStyle,
-                        anchorX = plotLeft - 6.dp.toPx(),
+                        style = focusLabelStyle,
+                        anchorX = plotLeft - 8.dp.toPx(),
                         centerY = y,
                         alignEnd = true
                     )
@@ -226,9 +276,11 @@ private fun niceRange(values: List<Float>, metric: TelemetryMetric): Pair<Float,
     var lo = Float.POSITIVE_INFINITY
     var hi = Float.NEGATIVE_INFINITY
     for (v in values) {
+        if (v.isNaN()) continue   // rolling channels (Wh/km, range) emit NaN until ready
         if (v < lo) lo = v
         if (v > hi) hi = v
     }
+    if (lo.isInfinite() || hi.isInfinite()) return 0f to 1f
     val span = hi - lo
     val pad = if (span < 1f) 1f else span * 0.12f
     return (lo - pad) to (hi + pad)

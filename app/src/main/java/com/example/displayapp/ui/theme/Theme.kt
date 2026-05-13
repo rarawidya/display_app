@@ -13,6 +13,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -152,12 +153,17 @@ fun DisplayAppTheme(
         }
     }
 
+    val telemetryPalette = if (darkTheme) DarkTelemetryPalette else LightTelemetryPalette
+
     MaterialTheme(
         colorScheme = animatedScheme,
         typography  = Typography,
-        shapes      = EvShapes,
-        content     = content
-    )
+        shapes      = EvShapes
+    ) {
+        CompositionLocalProvider(LocalTelemetryPalette provides telemetryPalette) {
+            content()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

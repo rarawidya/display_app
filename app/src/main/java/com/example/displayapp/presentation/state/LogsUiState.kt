@@ -20,6 +20,11 @@ data class TripRow(
     val maxSpeedLabel: String,
     val batteryLabel: String,
     val energyLabel: String,
+    val regenLabel: String,
+    val efficiencyLabel: String,
+    val avgPowerLabel: String,
+    val maxPowerLabel: String,
+    val peakTempLabel: String,
     val isActive: Boolean,
     // Raw values retained for filter/sort math — avoids re-parsing label strings.
     val distanceMeters: Long,
@@ -170,6 +175,21 @@ fun TripEntity.toRow(): TripRow {
     val netWh = energyUsedWh - energyRegenWh
     val energyKwh = (netWh / 1000.0).toFloat()
     val energyLabel = if (hasRealEnergy) EnergyFormatter.formatNetEnergyWh(netWh) else "—"
+    val regenLabel = if (hasRealEnergy) "%.0f Wh".format(energyRegenWh) else "—"
+
+    val effLabel: String = if (hasRealEnergy && distKm > 0.05f) {
+        "%.0f Wh/km".format(energyUsedWh / distKm)
+    } else "—"
+
+    // v5 aggregates: pre-v5 trips default to 0 → render "—".
+    val hasPowerAgg = avgPowerW100 != 0 || maxPowerW100 != 0
+    val avgPowerLabel = if (hasPowerAgg) "%.0f W".format(avgPowerW100 / 100f) else "—"
+    val maxPowerLabel = if (hasPowerAgg) "%.0f W".format(maxPowerW100 / 100f) else "—"
+
+    val hasPeakTemps = peakMotorTempC != 0 || peakBatteryTempC != 0 || peakControllerTempC != 0
+    val peakTempLabel: String = if (hasPeakTemps) {
+        "${peakMotorTempC}° / ${peakBatteryTempC}° / ${peakControllerTempC}°"
+    } else "—"
 
     return TripRow(
         id = id,
@@ -180,6 +200,11 @@ fun TripEntity.toRow(): TripRow {
         maxSpeedLabel = "%.0f km/h".format(maxSpd),
         batteryLabel = "$startBattery% → ${endBattery ?: '—'}%",
         energyLabel = energyLabel,
+        regenLabel = regenLabel,
+        efficiencyLabel = effLabel,
+        avgPowerLabel = avgPowerLabel,
+        maxPowerLabel = maxPowerLabel,
+        peakTempLabel = peakTempLabel,
         isActive = endTime == null,
         distanceMeters = distanceMeters,
         durationSec = durationSec,

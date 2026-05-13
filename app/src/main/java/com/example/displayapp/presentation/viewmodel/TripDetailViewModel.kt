@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import com.example.displayapp.data.persistence.export.CsvExporter
+import com.example.displayapp.domain.model.VehicleMode
 import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.presentation.state.TripDetailUiState
 import kotlinx.coroutines.Dispatchers
@@ -99,10 +100,29 @@ class TripDetailViewModel(
         val durationSec = ((trip.endTime ?: System.currentTimeMillis()) - trip.startTime) / 1000L
 
         // Chart series stay in SI units; the UI converts at the label site.
+        // Decode each persisted column with the same scale TelemetryMapper /
+        // TelemetryReplaySource use — so a chart drawn here matches what live
+        // Drive and Charts would draw for the same wire values.
         val speedSeries = FloatArray(samples.size) { samples[it].speed / 10f }
+        val rpmSeries = FloatArray(samples.size) { (samples[it].speed * 10).toFloat() }  // speed/10 km/h × 100 = speed×10
         val voltageSeries = FloatArray(samples.size) { samples[it].voltage / 100f }
         val currentSeries = FloatArray(samples.size) { samples[it].current / 100f }
+        val powerSeries = FloatArray(samples.size) { (samples[it].voltage / 100f) * (samples[it].current / 100f) }
+        val batterySeries = FloatArray(samples.size) { samples[it].battery.toFloat() }
         val temperatureSeries = FloatArray(samples.size) { samples[it].temperature.toFloat() }
+        val batteryTempSeries = FloatArray(samples.size) { samples[it].batteryTemperature.toFloat() }
+        val controllerTempSeries = FloatArray(samples.size) { samples[it].controllerTemperature.toFloat() }
+
+        // Dominant mode across the trip. Computed off the downsampled samples
+        // (~600 points), which is more than enough resolution to identify the
+        // longest-running mode without re-querying every row.
+        val modeCounts = IntArray(VehicleMode.entries.size)
+        for (s in samples) {
+            val idx = s.mode
+            if (idx in modeCounts.indices) modeCounts[idx]++
+        }
+        val dominantIdx = modeCounts.withIndex().maxByOrNull { it.value }?.index ?: 0
+        val dominantMode = VehicleMode.entries.getOrElse(dominantIdx) { VehicleMode.PARK }
 
         return TripDetailUiState(
             loading = false,
@@ -118,12 +138,23 @@ class TripDetailViewModel(
             endBattery = trip.endBattery,
             energyUsedWh = trip.energyUsedWh,
             energyRegenWh = trip.energyRegenWh,
+            avgPowerW = trip.avgPowerW100 / 100f,
+            maxPowerW = trip.maxPowerW100 / 100f,
+            peakMotorTempC = trip.peakMotorTempC,
+            peakBatteryTempC = trip.peakBatteryTempC,
+            peakControllerTempC = trip.peakControllerTempC,
+            dominantMode = dominantMode,
             sampleCount = trip.sampleCount,
             isActive = trip.endTime == null,
             speedSeries = speedSeries,
+            rpmSeries = rpmSeries,
             voltageSeries = voltageSeries,
             currentSeries = currentSeries,
-            temperatureSeries = temperatureSeries
+            powerSeries = powerSeries,
+            batterySeries = batterySeries,
+            temperatureSeries = temperatureSeries,
+            batteryTempSeries = batteryTempSeries,
+            controllerTempSeries = controllerTempSeries
         )
     }
 }

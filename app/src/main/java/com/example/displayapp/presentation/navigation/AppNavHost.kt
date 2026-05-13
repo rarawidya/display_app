@@ -324,7 +324,7 @@ private fun AppNavGraph(
 
         composable(Destination.Charts.route) {
             val vm: ChartsViewModel = viewModel(
-                factory = ChartsViewModelFactory(container.vehicleRepository)
+                factory = ChartsViewModelFactory(container.vehicleRepository, container.efficiencyTracker)
             )
             ChartsScreen(viewModel = vm)
         }

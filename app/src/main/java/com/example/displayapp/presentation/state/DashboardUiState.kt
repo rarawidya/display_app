@@ -17,15 +17,17 @@ import com.example.displayapp.domain.model.VehicleMode
  */
 @Immutable
 data class DashboardUiState(
-    val speed: Int = 0,
+    val speed: Int = 0,                          // km/h
+    val rpm: Int = 0,                            // derived in TelemetryMapper (speed×100)
     val maxSpeed: Int = 120,
     val batteryPercent: Int = 0,
-    val voltage: String = "0.0",
-    val current: String = "0.0",
-    val temperature: Int = 0,                    // engine / motor temperature (deg C)
-    val controllerTemperature: Int = 0,          // controller temperature (deg C)
-    val batteryTemperature: Int = 0,             // battery-pack temperature (deg C)
-    val odometer: String = "0.0",
+    val voltage: Float = 0f,                     // V
+    val current: Float = 0f,                     // A (signed; negative = regen)
+    val power: Float = 0f,                       // W (V×I), derived in TelemetryMapper
+    val temperature: Int = 0,                    // motor temp (°C)
+    val controllerTemperature: Int = 0,          // wire field (°C)
+    val batteryTemperature: Int = 0,             // wire field (°C)
+    val odometer: Float = 0f,                    // km
     val vehicleMode: VehicleMode = VehicleMode.PARK,
     val leftIndicator: Boolean = false,
     val rightIndicator: Boolean = false,

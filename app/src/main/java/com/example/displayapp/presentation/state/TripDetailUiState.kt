@@ -1,6 +1,7 @@
 package com.example.displayapp.presentation.state
 
 import androidx.compose.runtime.Immutable
+import com.example.displayapp.domain.model.VehicleMode
 
 /**
  * Pre-formatted state for the Trip Detail screen.
@@ -40,14 +41,33 @@ data class TripDetailUiState(
     val energyUsedWh: Double = 0.0,
     val energyRegenWh: Double = 0.0,
 
+    // v5 aggregates — Watts as Float, °C as Int (matches per-sample columns).
+    val avgPowerW: Float = 0f,
+    val maxPowerW: Float = 0f,
+    val peakMotorTempC: Int = 0,
+    val peakBatteryTempC: Int = 0,
+    val peakControllerTempC: Int = 0,
+
+    /**
+     * Most-frequent mode across the trip's persisted samples. Defaults to
+     * PARK when the trip has no telemetry (eg. zero-sample stale row).
+     */
+    val dominantMode: VehicleMode = VehicleMode.PARK,
+
     val sampleCount: Long = 0L,
     val isActive: Boolean = false,
 
-    // Chart series (downsampled, float arrays for cheap draw loops)
+    // Chart series (downsampled, float arrays for cheap draw loops).
+    // All units stay SI — the UI converts at the label site via LocalAppSettings.
     val speedSeries: FloatArray = FloatArray(0),
+    val rpmSeries: FloatArray = FloatArray(0),
     val voltageSeries: FloatArray = FloatArray(0),
     val currentSeries: FloatArray = FloatArray(0),
+    val powerSeries: FloatArray = FloatArray(0),
+    val batterySeries: FloatArray = FloatArray(0),
     val temperatureSeries: FloatArray = FloatArray(0),
+    val batteryTempSeries: FloatArray = FloatArray(0),
+    val controllerTempSeries: FloatArray = FloatArray(0),
 
     // Export feedback
     val exportInProgress: Boolean = false,
@@ -76,12 +96,23 @@ data class TripDetailUiState(
             endBattery == other.endBattery &&
             energyUsedWh == other.energyUsedWh &&
             energyRegenWh == other.energyRegenWh &&
+            avgPowerW == other.avgPowerW &&
+            maxPowerW == other.maxPowerW &&
+            peakMotorTempC == other.peakMotorTempC &&
+            peakBatteryTempC == other.peakBatteryTempC &&
+            peakControllerTempC == other.peakControllerTempC &&
+            dominantMode == other.dominantMode &&
             sampleCount == other.sampleCount &&
             isActive == other.isActive &&
             speedSeries.size == other.speedSeries.size &&
+            rpmSeries.size == other.rpmSeries.size &&
             voltageSeries.size == other.voltageSeries.size &&
             currentSeries.size == other.currentSeries.size &&
+            powerSeries.size == other.powerSeries.size &&
+            batterySeries.size == other.batterySeries.size &&
             temperatureSeries.size == other.temperatureSeries.size &&
+            batteryTempSeries.size == other.batteryTempSeries.size &&
+            controllerTempSeries.size == other.controllerTempSeries.size &&
             exportInProgress == other.exportInProgress &&
             exportedFilePath == other.exportedFilePath &&
             exportError == other.exportError
@@ -101,12 +132,23 @@ data class TripDetailUiState(
         h = 31 * h + (endBattery ?: 0)
         h = 31 * h + energyUsedWh.hashCode()
         h = 31 * h + energyRegenWh.hashCode()
+        h = 31 * h + avgPowerW.hashCode()
+        h = 31 * h + maxPowerW.hashCode()
+        h = 31 * h + peakMotorTempC
+        h = 31 * h + peakBatteryTempC
+        h = 31 * h + peakControllerTempC
+        h = 31 * h + dominantMode.hashCode()
         h = 31 * h + sampleCount.hashCode()
         h = 31 * h + isActive.hashCode()
         h = 31 * h + speedSeries.size
+        h = 31 * h + rpmSeries.size
         h = 31 * h + voltageSeries.size
         h = 31 * h + currentSeries.size
+        h = 31 * h + powerSeries.size
+        h = 31 * h + batterySeries.size
         h = 31 * h + temperatureSeries.size
+        h = 31 * h + batteryTempSeries.size
+        h = 31 * h + controllerTempSeries.size
         h = 31 * h + exportInProgress.hashCode()
         h = 31 * h + (exportedFilePath?.hashCode() ?: 0)
         h = 31 * h + (exportError?.hashCode() ?: 0)

@@ -27,6 +27,7 @@ import com.example.displayapp.data.repository.ThemeRepositoryImpl
 import com.example.displayapp.data.repository.TripRepositoryImpl
 import com.example.displayapp.data.repository.VehicleRepositoryImpl
 import com.example.displayapp.data.system.WifiStateMonitor
+import com.example.displayapp.data.simulator.SampleTripSeeder
 import com.example.displayapp.data.simulator.SimulatedDataSource
 import com.example.displayapp.data.simulator.TelemetryScenario
 import com.example.displayapp.domain.replay.TripReplaySource
@@ -134,6 +135,15 @@ class AppContainer(private val context: Context) {
 
     val retentionPolicy: RetentionPolicy by lazy {
         RetentionPolicy(telemetryDao, tripDao, faultEventDao)
+    }
+
+    /**
+     * Seeds a handful of demo trips on first launch when the simulator is on,
+     * so the Logs page isn't empty for users running hardware-free. Idempotent —
+     * skips when the trips table already has rows.
+     */
+    val sampleTripSeeder: SampleTripSeeder by lazy {
+        SampleTripSeeder(tripDao, telemetryDao)
     }
 
     // Bluetooth data source

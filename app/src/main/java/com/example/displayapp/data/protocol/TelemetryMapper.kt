@@ -13,17 +13,28 @@ class TelemetryMapper {
     fun map(payload: ByteArray, previous: VehicleData): VehicleData? {
         return try {
             val frame = TelemetrySchema.readFrom(payload)
+            val speedKmh = frame.speed / 10
+            val voltageV = frame.voltage / 100f
+            val currentA = frame.current / 100f
             VehicleData(
-                speed = frame.speed / 10,
+                speed = speedKmh,
                 batteryPercent = frame.battery.coerceIn(0, 100),
-                voltage = frame.voltage / 100f,
-                current = frame.current / 100f,
+                voltage = voltageV,
+                current = currentA,
                 temperature = frame.temperature,
-                odometer = frame.odometer / 1000f, // meters → km
+                batteryTemperature = frame.batteryTemperature,
+                controllerTemperature = frame.controllerTemperature,
                 vehicleMode = mapMode(frame.mode),
-                leftIndicator = (frame.indicators and 0x01) != 0,
-                rightIndicator = (frame.indicators and 0x02) != 0,
-                headlamp = (frame.indicators and 0x04) != 0,
+                // Single source of truth for derived per-frame values.
+                rpm = speedKmh * 100,
+                power = voltageV * currentA,
+                // Wall-clock at decode time, not `frame.timestamp`.
+                //
+                // `frame.timestamp` is a UInt32 millis count (wraps every ~49 days)
+                // and is currently relative to MCU boot — see telemetry.capnp:14. Fine
+                // for wire-side ordering, but Logs/replay/CSV need monotonic absolute
+                // time. Switch to honoring it only once the MCU exposes either
+                // (a) a wall-clock value or (b) a boot epoch we can add here.
                 timestamp = System.currentTimeMillis()
             )
         } catch (e: Exception) {
@@ -37,6 +48,7 @@ class TelemetryMapper {
         1 -> VehicleMode.ECO
         2 -> VehicleMode.NORMAL
         3 -> VehicleMode.SPORT
+        4 -> VehicleMode.REGEN
         else -> VehicleMode.PARK
     }
 }

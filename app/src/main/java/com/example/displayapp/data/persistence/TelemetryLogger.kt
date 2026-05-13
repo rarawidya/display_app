@@ -82,9 +82,9 @@ class TelemetryLogger(
             voltage = (data.voltage * 100).toInt(),
             current = (data.current * 100).toInt(),
             temperature = data.temperature,
-            odometer = (data.odometer * 1000).toLong(),
             mode = data.vehicleMode.ordinal,
-            indicators = packIndicators(data)
+            batteryTemperature = data.batteryTemperature,
+            controllerTemperature = data.controllerTemperature
         )
 
         // Write to ring buffer
@@ -138,14 +138,6 @@ class TelemetryLogger(
             count = 0
             return result
         }
-    }
-
-    private fun packIndicators(data: VehicleData): Int {
-        var flags = 0
-        if (data.leftIndicator) flags = flags or 0x01
-        if (data.rightIndicator) flags = flags or 0x02
-        if (data.headlamp) flags = flags or 0x04
-        return flags
     }
 
     companion object {

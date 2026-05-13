@@ -50,7 +50,6 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 8.0 + 4.0 * sin(t * 0.3),
         tempC = 38 + (3 * sin(t * 0.05)).toInt(),
         mode = 2, // NORMAL
-        indicators = if (tick % 300 < 40) 0x01 else 0x04
     )
 
     private fun highway(t: Double, tick: Long) = ScenarioFrame(
@@ -60,7 +59,6 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 25.0 + 8.0 * sin(t * 0.15),
         tempC = 52 + (5 * sin(t * 0.03)).toInt(),
         mode = 3, // SPORT
-        indicators = 0x04 // headlamp on
     )
 
     private fun lowBattery(t: Double, tick: Long) = ScenarioFrame(
@@ -70,7 +68,6 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 3.0 + Random.nextDouble() * 2.0,
         tempC = 35,
         mode = 1, // ECO
-        indicators = 0x04
     )
 
     private fun overheating(t: Double, tick: Long) = ScenarioFrame(
@@ -80,7 +77,6 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 20.0 + 5.0 * sin(t * 0.2),
         tempC = (68 + (5 * sin(t * 0.1)).toInt()).coerceAtMost(85),
         mode = 2, // NORMAL
-        indicators = 0x04
     )
 
     private fun regenBraking(t: Double, tick: Long) = ScenarioFrame(
@@ -89,8 +85,7 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         voltageV = 74.0 + 2.0 * sin(t * 0.3),
         currentA = -15.0 + 5.0 * sin(t * 0.5), // Negative = regen
         tempC = 40,
-        mode = 1, // ECO
-        indicators = 0x00
+        mode = 4, // REGEN — wire value the mapper decodes to VehicleMode.REGEN
     )
 
     private fun parked(tick: Long) = ScenarioFrame(
@@ -100,7 +95,6 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 0.2 + Random.nextDouble() * 0.1,
         tempC = 25,
         mode = 0, // PARK
-        indicators = 0x00
     )
 
     private fun sportMode(t: Double, tick: Long) = ScenarioFrame(
@@ -110,10 +104,15 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         currentA = 35.0 + 15.0 * sin(t * 0.4),
         tempC = (45 + (tick * 0.02).toInt()).coerceAtMost(72),
         mode = 3, // SPORT
-        indicators = if (tick % 100 < 20) 0x02 else 0x04
     )
 }
 
+/**
+ * Wire-level scenario sample. `tempC` is the motor temperature; the battery
+ * and controller readings are independent channels (telemetry.capnp v2+).
+ * Heuristic offsets here are local to the simulator only — the live decode
+ * path reads them straight off the wire without any synthesis.
+ */
 data class ScenarioFrame(
     val speedKmh: Double,
     val battery: Int,
@@ -121,5 +120,6 @@ data class ScenarioFrame(
     val currentA: Double,
     val tempC: Int,
     val mode: Int,
-    val indicators: Int
+    val batteryTempC: Int = (tempC - 12).coerceAtLeast(-40),
+    val controllerTempC: Int = (tempC - 7).coerceAtLeast(-40)
 )

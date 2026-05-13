@@ -42,7 +42,6 @@ class SimulatedDataSource(
     override val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>> = _discoveredDevices.asStateFlow()
 
     private var tick = 0L
-    private var odometerMeters = 0L
     private var bootTimeMs = 0L
 
     override fun startDiscovery() {
@@ -68,7 +67,6 @@ class SimulatedDataSource(
         _connectionState.value = ConnectionState.CONNECTED
         bootTimeMs = System.currentTimeMillis()
         tick = 0L
-        odometerMeters = 0L
         Timber.i("Simulator connected [scenario=${scenario.name}]")
         startEmitting()
     }
@@ -104,10 +102,6 @@ class SimulatedDataSource(
         val voltageFixed = (sf.voltageV * 100).toInt().coerceIn(0, 65535).toShort()
         val currentFixed = (sf.currentA * 100).toInt().coerceIn(-32768, 32767).toShort()
 
-        // Accumulate odometer
-        val speedMs = sf.speedKmh / 3.6
-        odometerMeters += (speedMs * 0.05).toLong()
-
         val timestamp = ((System.currentTimeMillis() - bootTimeMs) and 0xFFFFFFFFL).toInt()
 
         val capnpPayload = TelemetrySchema.buildMessage {
@@ -117,9 +111,9 @@ class SimulatedDataSource(
             setVoltage(voltageFixed)
             setCurrent(currentFixed)
             setTemperature(sf.tempC.coerceIn(-128, 127).toByte())
-            setOdometer(odometerMeters.toInt())
             setMode(sf.mode.toShort())
-            setIndicators(sf.indicators.toByte())
+            setBatteryTemperature(sf.batteryTempC.coerceIn(-128, 127).toByte())
+            setControllerTemperature(sf.controllerTempC.coerceIn(-128, 127).toByte())
         }
 
         return FrameEncoder.encode(capnpPayload)

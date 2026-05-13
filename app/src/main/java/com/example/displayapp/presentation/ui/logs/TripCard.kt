@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.domain.repository.TripRepository
+import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TripRow
 import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
@@ -28,9 +29,9 @@ import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.logs.components.MiniSparkline
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
-import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvGreen
-import com.example.displayapp.ui.theme.EvLime
+import com.example.displayapp.ui.theme.LocalTelemetryPalette
+import com.example.displayapp.ui.theme.OverlayKind
+import com.example.displayapp.ui.theme.seriesColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -112,9 +113,16 @@ fun TripCard(
                     FloatArray(samples.size) { samples[it].speed / 10f }
                 }
             }
+            val palette = LocalTelemetryPalette.current
+            val speedColor   = TelemetryMetric.Speed.seriesColor()
+            val batteryColor = TelemetryMetric.Battery.seriesColor()
+            val powerColor   = TelemetryMetric.Power.seriesColor()
+            val whPerKmColor = TelemetryMetric.WhPerKm.seriesColor()
+            val regenColor   = palette.overlay(OverlayKind.Regen)
+
             MiniSparkline(
                 series = sparkline,
-                color = EvBlue,
+                color = speedColor,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(36.dp)
@@ -124,10 +132,20 @@ fun TripCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                MiniStat("AVG", avgSpeedLabel, EvBlue)
-                MiniStat("MAX", maxSpeedLabel, EvLime)
-                MiniStat("BATT", row.batteryLabel, EvAmber)
-                MiniStat("ENERGY", row.energyLabel, EvGreen)
+                MiniStat("AVG", avgSpeedLabel, speedColor)
+                MiniStat("MAX", maxSpeedLabel, speedColor)
+                MiniStat("BATT", row.batteryLabel, batteryColor)
+                MiniStat("ENERGY", row.energyLabel, regenColor)
+            }
+            // v5 analytics: avg/max power + efficiency (Wh/km).
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                MiniStat("AVG PWR", row.avgPowerLabel, powerColor)
+                MiniStat("MAX PWR", row.maxPowerLabel, powerColor)
+                MiniStat("Wh/km",   row.efficiencyLabel, whPerKmColor)
+                MiniStat("REGEN",   row.regenLabel, regenColor)
             }
         }
     }

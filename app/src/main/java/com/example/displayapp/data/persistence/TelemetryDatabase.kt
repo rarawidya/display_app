@@ -19,7 +19,7 @@ import com.example.displayapp.data.persistence.entity.TripEntity
         TripEntity::class,
         FaultEventEntity::class
     ],
-    version = 2,
+    version = 5,
     exportSchema = false
 )
 abstract class TelemetryDatabase : RoomDatabase() {
@@ -57,12 +57,98 @@ abstract class TelemetryDatabase : RoomDatabase() {
         }
 
         /**
+         * v2 → v3: real per-channel temperatures.
+         *
+         * Pre-v3 samples have a single motor `temperature` field plus heuristic
+         * battery/controller offsets computed in the ViewModel. v3 splits them
+         * into independent wire-sourced channels. Old rows default to 0 °C for
+         * both new columns; the UI surfaces those as 0 / "—" rather than
+         * fabricating heuristics.
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE telemetry ADD COLUMN batteryTemperature INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE telemetry ADD COLUMN controllerTemperature INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * v3 → v4: retire `odometer` and `indicators` columns.
+         *
+         * The canonical telemetry model no longer exposes either field —
+         * distance is integrated from speed × dt in the analytics layer, and
+         * blinker / headlamp state is no longer surfaced anywhere in the UI.
+         *
+         * SQLite before 3.35 (Android < API 31) can't `DROP COLUMN`, so we
+         * rebuild the table: CREATE new, INSERT carrying over the kept
+         * columns, DROP old, RENAME, recreate indices. The new table keeps
+         * the same id space so foreign keys from elsewhere stay valid.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE telemetry_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        tripId INTEGER NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        speed INTEGER NOT NULL,
+                        battery INTEGER NOT NULL,
+                        voltage INTEGER NOT NULL,
+                        current INTEGER NOT NULL,
+                        temperature INTEGER NOT NULL,
+                        mode INTEGER NOT NULL,
+                        batteryTemperature INTEGER NOT NULL DEFAULT 0,
+                        controllerTemperature INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(tripId) REFERENCES trips(id) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO telemetry_new (
+                        id, tripId, timestamp, speed, battery, voltage, current,
+                        temperature, mode, batteryTemperature, controllerTemperature
+                    )
+                    SELECT id, tripId, timestamp, speed, battery, voltage, current,
+                           temperature, mode, batteryTemperature, controllerTemperature
+                    FROM telemetry
+                """.trimIndent())
+                db.execSQL("DROP TABLE telemetry")
+                db.execSQL("ALTER TABLE telemetry_new RENAME TO telemetry")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_telemetry_tripId_timestamp ON telemetry(tripId, timestamp)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_telemetry_timestamp ON telemetry(timestamp)")
+            }
+        }
+
+        /**
+         * v4 → v5: per-trip analytics aggregates.
+         *
+         * Adds avg/max power and peak temps to `trips` so Logs row cards and
+         * Trip Detail can surface them without a per-row scan of telemetry.
+         * Pre-v5 trips default to 0; UI renders "—" for those.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE trips ADD COLUMN avgPowerW100 INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE trips ADD COLUMN maxPowerW100 INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE trips ADD COLUMN peakMotorTempC INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE trips ADD COLUMN peakBatteryTempC INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE trips ADD COLUMN peakControllerTempC INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /**
          * All migrations live in this list. Adding a new one is append-only —
          * future SOH / fault-watchdog / eco-score work will declare
-         * `Migration(2, 3)` above and add it to this array.
+         * `Migration(5, 6)` above and append it here.
          */
         private val MIGRATIONS = arrayOf(
-            MIGRATION_1_2
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5
         )
 
         private fun buildDatabase(context: Context): TelemetryDatabase {

@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -34,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
@@ -111,6 +114,31 @@ fun LogsContent(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Trip the user has swiped on, gated by an AlertDialog before the actual
+    // delete fires. Cleared on confirm or cancel.
+    var confirmingDeleteId by remember { mutableStateOf<Long?>(null) }
+    if (confirmingDeleteId != null) {
+        AlertDialog(
+            onDismissRequest = { confirmingDeleteId = null },
+            title = { Text("Delete this trip?") },
+            text = {
+                Text("The trip and all of its telemetry samples will be removed permanently.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = confirmingDeleteId
+                        confirmingDeleteId = null
+                        if (id != null) onDelete(id)
+                    }
+                ) { Text("Delete", color = EvRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDeleteId = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     // Export feedback — "Share" action opens the system share sheet.
     LaunchedEffect(state.lastExportPath, state.lastExportError) {
@@ -204,7 +232,7 @@ fun LogsContent(
                                 tripRepository = tripRepository,
                                 onClick = { onTripClick(row.id) },
                                 onExport = { onExport(row.id) },
-                                onDelete = { onDelete(row.id) }
+                                onRequestDelete = { confirmingDeleteId = row.id }
                             )
                         }
                     }
@@ -412,7 +440,7 @@ private fun SwipeableTripRow(
     tripRepository: TripRepository,
     onClick: () -> Unit,
     onExport: () -> Unit,
-    onDelete: () -> Unit
+    onRequestDelete: () -> Unit
 ) {
     // Active trips can't be swiped-to-delete — they're still recording.
     if (row.isActive) {
@@ -426,12 +454,14 @@ private fun SwipeableTripRow(
     }
 
     val dismissState = rememberSwipeToDismissBoxState(
+        // Reject the dismiss (so the row snaps back) and surface a confirmation
+        // dialog instead. The actual delete only happens after the user
+        // confirms via AlertDialog in LogsContent.
         confirmValueChange = { value ->
-            // Only commit on full end-to-start swipe (right→left).
             if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                true
-            } else false
+                onRequestDelete()
+            }
+            false
         }
     )
 
@@ -448,11 +478,11 @@ private fun SwipeableTripRow(
                     .padding(horizontal = Dim.lg),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                Text(
-                    text = "Delete",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = EvRed,
-                    fontWeight = FontWeight.SemiBold
+                Icon(
+                    imageVector = EvIcons.Trash,
+                    contentDescription = "Delete",
+                    tint = EvRed,
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }

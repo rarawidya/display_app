@@ -42,5 +42,14 @@ class DisplayApp : Application() {
                 .days
             appContainer.retentionPolicy.enforce(overrideDays = retentionDays)
         }
+
+        // Hardware-free demo: when running against the simulator and the trips
+        // table is empty, seed a handful of plausible past trips so the Logs
+        // page has content. No-op once any trip exists, so user deletes stick.
+        if (appContainer.useSimulator) {
+            appScope.launch {
+                appContainer.sampleTripSeeder.seedIfEmpty()
+            }
+        }
     }
 }

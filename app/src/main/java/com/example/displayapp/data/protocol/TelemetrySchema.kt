@@ -23,11 +23,13 @@ import java.nio.ByteOrder
  *   Word 1 (bytes 8-15):
  *     [8..9]   voltage   : UInt16
  *     [10..11] current   : Int16
- *     [12..15] odometer  : UInt32
+ *     [12..15] reserved  (was: odometer — retired; distance integrated from speed)
  *   Word 2 (bytes 16-23):
- *     [16..17] mode       : UInt16 (enum)
- *     [18]     indicators : UInt8
- *     [19..23] reserved
+ *     [16..17] mode                  : UInt16 (enum)
+ *     [18]     reserved              (was: indicators — retired)
+ *     [19]     batteryTemperature    : Int8
+ *     [20]     controllerTemperature : Int8
+ *     [21..23] reserved
  *
  * Total message size: 8 (header) + 8 (pointer) + 24 (data) = 40 bytes
  */
@@ -47,9 +49,11 @@ object TelemetrySchema {
     private const val OFF_TEMPERATURE = 7
     private const val OFF_VOLTAGE = 8
     private const val OFF_CURRENT = 10
-    private const val OFF_ODOMETER = 12
+    // [12..15] reserved (retired odometer field)
     private const val OFF_MODE = 16
-    private const val OFF_INDICATORS = 18
+    // [18] reserved (retired indicators field)
+    private const val OFF_BATTERY_TEMP = 19
+    private const val OFF_CONTROLLER_TEMP = 20
 
     /**
      * Reads a TelemetryFrame from a Cap'n Proto serialized message.
@@ -67,9 +71,9 @@ object TelemetrySchema {
             temperature = buf.get(dataOffset + OFF_TEMPERATURE).toInt(),
             voltage = buf.getShort(dataOffset + OFF_VOLTAGE).toInt() and 0xFFFF,
             current = buf.getShort(dataOffset + OFF_CURRENT).toInt(),
-            odometer = buf.getInt(dataOffset + OFF_ODOMETER).toLong() and 0xFFFFFFFFL,
             mode = buf.getShort(dataOffset + OFF_MODE).toInt() and 0xFFFF,
-            indicators = buf.get(dataOffset + OFF_INDICATORS).toInt() and 0xFF
+            batteryTemperature = buf.get(dataOffset + OFF_BATTERY_TEMP).toInt(),
+            controllerTemperature = buf.get(dataOffset + OFF_CONTROLLER_TEMP).toInt()
         )
     }
 
@@ -89,9 +93,9 @@ object TelemetrySchema {
         val temperature: Int,
         val voltage: Int,
         val current: Int,
-        val odometer: Long,
         val mode: Int,
-        val indicators: Int
+        val batteryTemperature: Int,
+        val controllerTemperature: Int
     )
 
     class MessageBuilder {
@@ -101,9 +105,9 @@ object TelemetrySchema {
         private var temperature: Byte = 0
         private var voltage: Short = 0
         private var current: Short = 0
-        private var odometer: Int = 0
         private var mode: Short = 0
-        private var indicators: Byte = 0
+        private var batteryTemperature: Byte = 0
+        private var controllerTemperature: Byte = 0
 
         fun setTimestamp(value: Int) { timestamp = value }
         fun setSpeed(value: Short) { speed = value }
@@ -111,9 +115,9 @@ object TelemetrySchema {
         fun setTemperature(value: Byte) { temperature = value }
         fun setVoltage(value: Short) { voltage = value }
         fun setCurrent(value: Short) { current = value }
-        fun setOdometer(value: Int) { odometer = value }
         fun setMode(value: Short) { mode = value }
-        fun setIndicators(value: Byte) { indicators = value }
+        fun setBatteryTemperature(value: Byte) { batteryTemperature = value }
+        fun setControllerTemperature(value: Byte) { controllerTemperature = value }
 
         fun serialize(): ByteArray {
             val buf = ByteBuffer.allocate(MESSAGE_SIZE).order(ByteOrder.LITTLE_ENDIAN)
@@ -141,11 +145,13 @@ object TelemetrySchema {
             buf.put(temperature)            // [7]
             buf.putShort(voltage)           // [8..9]
             buf.putShort(current)           // [10..11]
-            buf.putInt(odometer)            // [12..15]
+            buf.putInt(0)                   // [12..15] reserved (retired odometer)
             buf.putShort(mode)              // [16..17]
-            buf.put(indicators)             // [18]
+            buf.put(0)                      // [18] reserved (retired indicators)
+            buf.put(batteryTemperature)     // [19]
+            buf.put(controllerTemperature)  // [20]
 
-            // Pad remaining bytes in word 2 to zero
+            // Pad remaining reserved bytes in word 2 to zero
             while (buf.position() < dataStart + STRUCT_DATA_SIZE) {
                 buf.put(0)
             }

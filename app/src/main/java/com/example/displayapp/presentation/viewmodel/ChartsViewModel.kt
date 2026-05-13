@@ -2,14 +2,16 @@ package com.example.displayapp.presentation.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.displayapp.domain.model.VehicleData
+import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.domain.repository.VehicleRepository
 import com.example.displayapp.presentation.state.ChartsUiState
+import com.example.displayapp.presentation.state.LiveTelemetry
 import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TimeRange
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.ArrayDeque
@@ -17,43 +19,49 @@ import java.util.ArrayDeque
 /**
  * ViewModel for the Charts tab.
  *
- * Maintains a fixed-capacity ring buffer of the most recent telemetry samples.
- * The Charts UI consumes [uiState] and renders all series from the same snapshot
- * — every tile shows the same time window even if one series momentarily skips
- * a sample.
+ * Subscribes to the canonical [LiveTelemetry] stream (vehicle frames merged
+ * with the rolling [EfficiencyTracker] state) and maintains one fixed-cap
+ * ring buffer per [TelemetryMetric]. Adding a metric to the enum threads it
+ * through here automatically — no per-metric branching.
  *
  * Why ArrayDeque + manual cap?
  * - O(1) push/pop at both ends
  * - Bounded memory (no leaks)
- * - One buffer per series keeps the producer single-threaded (the VM scope)
+ * - Single-threaded producer (VM scope) keeps state machine simple
  *
  * Throttling:
- * - We accept every sample upstream emits but only emit a UI snapshot every
- *   ~100 ms (10 fps). Charts don't need 20 fps and 10 fps is plenty visually.
- *   Cuts recompositions roughly in half during heavy telemetry.
+ * - Every upstream sample is ingested. The UI snapshot is published at
+ *   most every [EMIT_INTERVAL_MS] (10 fps) — plenty for line charts and
+ *   roughly half the recompositions of the raw 20 Hz rate.
+ *
+ * Rolling channels (Wh/km, range) push `Float.NaN` when their underlying
+ * value is null; the chart renderer skips NaN samples.
  */
 class ChartsViewModel(
-    private val repository: VehicleRepository
+    private val repository: VehicleRepository,
+    private val efficiencyTracker: EfficiencyTracker
 ) : ViewModel() {
 
     /** Hard cap covering the largest selectable time window at the source rate. */
     private val capacity = TimeRange.SEC_900.seconds * SOURCE_HZ
 
     private val timestamps = ArrayDeque<Long>(capacity)
-    private val speed       = ArrayDeque<Float>(capacity)
-    private val voltage     = ArrayDeque<Float>(capacity)
-    private val current     = ArrayDeque<Float>(capacity)
-    private val temperature = ArrayDeque<Float>(capacity)
-    private val battery     = ArrayDeque<Float>(capacity)
+    private val series: Map<TelemetryMetric, ArrayDeque<Float>> =
+        TelemetryMetric.entries.associateWith { ArrayDeque<Float>(capacity) }
 
     private val _uiState = MutableStateFlow(ChartsUiState(rangeSec = TimeRange.SEC_60.seconds))
     val uiState: StateFlow<ChartsUiState> = _uiState.asStateFlow()
 
     private var lastEmitMs = 0L
+    private var lastSnapshot: LiveTelemetry = LiveTelemetry()
 
     init {
         viewModelScope.launch {
-            repository.vehicleData.collect { sample -> ingest(sample) }
+            combine(
+                repository.vehicleData,
+                efficiencyTracker.state
+            ) { vehicle, efficiency -> LiveTelemetry(vehicle, efficiency) }
+                .collect { snapshot -> ingest(snapshot) }
         }
     }
 
@@ -87,23 +95,22 @@ class ChartsViewModel(
         }
     }
 
-    private fun ingest(sample: VehicleData) {
-        push(timestamps, sample.timestamp)
-        push(speed,       sample.speed.toFloat())
-        push(voltage,     sample.voltage)
-        push(current,     sample.current)
-        push(temperature, sample.temperature.toFloat())
-        push(battery,     sample.batteryPercent.toFloat())
+    private fun ingest(live: LiveTelemetry) {
+        val ts = live.vehicle.timestamp.takeIf { it > 0L } ?: return
+        lastSnapshot = live
+        push(timestamps, ts)
+        for (metric in TelemetryMetric.entries) {
+            val value = metric.valueFrom(live) ?: Float.NaN
+            push(series.getValue(metric), value)
+        }
 
-        // Drop anything older than the current window so memory stays bounded
-        val now = sample.timestamp
-        val windowStart = now - _uiState.value.rangeSec * 1000L
+        // Drop anything older than the current window so memory stays bounded.
+        val windowStart = ts - _uiState.value.rangeSec * 1000L
         while (timestamps.isNotEmpty()) {
             val oldest = timestamps.peekFirst() ?: break
             if (oldest >= windowStart) break
             timestamps.pollFirst()
-            speed.pollFirst(); voltage.pollFirst(); current.pollFirst()
-            temperature.pollFirst(); battery.pollFirst()
+            series.values.forEach { it.pollFirst() }
         }
 
         emitSnapshot(force = false)
@@ -113,14 +120,11 @@ class ChartsViewModel(
         val now = System.currentTimeMillis()
         if (!force && now - lastEmitMs < EMIT_INTERVAL_MS) return
         lastEmitMs = now
-        _uiState.update {
-            it.copy(
-                timestamps   = timestamps.toList(),
-                speed        = speed.toList(),
-                voltage      = voltage.toList(),
-                current      = current.toList(),
-                temperature  = temperature.toList(),
-                battery      = battery.toList()
+        _uiState.update { state ->
+            state.copy(
+                timestamps = timestamps.toList(),
+                series = series.mapValues { (_, deque) -> deque.toList() },
+                vehicleMode = lastSnapshot.vehicle.vehicleMode
             )
         }
     }

@@ -40,8 +40,11 @@ data class TelemetryEntity(
     val battery: Int,          // 0-100
     val voltage: Int,          // V * 100
     val current: Int,          // A * 100 (signed)
-    val temperature: Int,      // celsius
-    val odometer: Long,        // meters
+    val temperature: Int,      // motor temp °C (matches VehicleData.temperature)
     val mode: Int,             // enum ordinal
-    val indicators: Int        // bitfield
+    // ── v3: real temp channels (schema split) ────────────────────────────────
+    val batteryTemperature: Int = 0,
+    val controllerTemperature: Int = 0
+    // odometer and indicators were dropped in schema v4 — see MIGRATION_3_4.
+    // Distance is integrated from speed × dt in the analytics layer.
 )

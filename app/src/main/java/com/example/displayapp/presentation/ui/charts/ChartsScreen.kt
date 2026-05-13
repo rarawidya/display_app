@@ -37,11 +37,13 @@ import com.example.displayapp.presentation.state.TimeRange
 import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.common.StatusChip
+import com.example.displayapp.presentation.ui.components.mode.ModeBadge
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.viewmodel.ChartsViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
 import com.example.displayapp.ui.theme.EvLime
+import com.example.displayapp.ui.theme.seriesColor
 
 @Composable
 fun ChartsScreen(viewModel: ChartsViewModel) {
@@ -117,10 +119,18 @@ private fun Header(state: ChartsUiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        StatusChip(
-            text  = if (state.timestamps.isEmpty()) "Waiting" else "Live",
-            color = if (state.timestamps.isEmpty()) EvAmber else EvLime
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        ) {
+            // Mirrors the Drive page's active mode so the cockpit reads as
+            // one continuous system regardless of which tab is open.
+            ModeBadge(mode = state.vehicleMode)
+            StatusChip(
+                text  = if (state.timestamps.isEmpty()) "Waiting" else "Live",
+                color = if (state.timestamps.isEmpty()) EvAmber else EvLime
+            )
+        }
     }
 }
 
@@ -167,11 +177,15 @@ private fun displayLatest(
 ): Pair<String, String> {
     if (latest == null) return "—" to metric.unit
     return when (metric) {
-        TelemetryMetric.Speed -> {
+        TelemetryMetric.Speed,
+        TelemetryMetric.EstRange -> {
             val v = app.speedUnit.convertFromKmh(latest)
-            metric.format.format(v) to app.speedUnit.suffix
+            val suffix = if (metric == TelemetryMetric.Speed) app.speedUnit.suffix else app.speedUnit.distanceSuffix
+            metric.format.format(v) to suffix
         }
-        TelemetryMetric.Temperature -> {
+        TelemetryMetric.EngineTemp,
+        TelemetryMetric.BatteryTemp,
+        TelemetryMetric.ControllerTemp -> {
             val v = app.temperatureUnit.convertFromCelsius(latest)
             metric.format.format(v) to app.temperatureUnit.suffix
         }
@@ -184,6 +198,7 @@ private fun FocusedMetricRow(state: ChartsUiState, onExpand: () -> Unit) {
     val metric  = state.focusedMetric
     val latest  = state.latestFor(metric)
     val app = LocalAppSettings.current
+    val color = metric.seriesColor()
     val (latestText, unitText) = displayLatest(metric, latest, app)
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -198,7 +213,7 @@ private fun FocusedMetricRow(state: ChartsUiState, onExpand: () -> Unit) {
                 Modifier
                     .size(10.dp)
                     .clip(CircleShape)
-                    .background(metric.color)
+                    .background(color)
             )
             Column {
                 Text(
@@ -221,7 +236,7 @@ private fun FocusedMetricRow(state: ChartsUiState, onExpand: () -> Unit) {
                 Text(
                     text = latestText,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = metric.color
+                    color = color
                 )
                 Text(
                     text = unitText,

@@ -27,28 +27,33 @@ import androidx.compose.ui.unit.dp
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.ui.theme.Dim
+import com.example.displayapp.ui.theme.TelemetrySeriesStyle
+import com.example.displayapp.ui.theme.seriesColor
 
 @Composable
 fun MetricToggleChips(
     state: ChartsUiState,
     onToggle: (TelemetryMetric) -> Unit,
     onFocus: (TelemetryMetric) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        horizontalArrangement = Arrangement.spacedBy(if (compact) Dim.xs else Dim.sm)
     ) {
         for (metric in TelemetryMetric.entries) {
             val selected = metric in state.selectedMetrics
             val focused  = selected && metric == state.focusedMetric
             MetricChip(
                 metric = metric,
+                color = metric.seriesColor(),
                 latest = state.latestFor(metric),
                 selected = selected,
                 focused  = focused,
+                compact  = compact,
                 onClick = {
                     when {
                         !selected -> onFocus(metric)
@@ -64,23 +69,25 @@ fun MetricToggleChips(
 @Composable
 private fun MetricChip(
     metric: TelemetryMetric,
+    color: Color,
     latest: Float?,
     selected: Boolean,
     focused: Boolean,
+    compact: Boolean,
     onClick: () -> Unit
 ) {
     val border by animateColorAsState(
         targetValue = when {
-            focused  -> metric.color
-            selected -> metric.color.copy(alpha = 0.45f)
+            focused  -> color
+            selected -> color.copy(alpha = 0.45f)
             else     -> MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
         },
         label = "chipBorder"
     )
     val container by animateColorAsState(
         targetValue = when {
-            focused  -> metric.color.copy(alpha = 0.18f)
-            selected -> metric.color.copy(alpha = 0.08f)
+            focused  -> color.copy(alpha = 0.18f)
+            selected -> color.copy(alpha = 0.08f)
             else     -> Color.Transparent
         },
         label = "chipContainer"
@@ -90,8 +97,8 @@ private fun MetricChip(
                       else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "chipLabel"
     )
-    val dotAlpha by animateDpAsState(
-        targetValue = if (selected) 10.dp else 8.dp,
+    val dotSize by animateDpAsState(
+        targetValue = if (focused) 11.dp else if (selected) 10.dp else 8.dp,
         label = "chipDot"
     )
     val borderWidth by animateDpAsState(
@@ -99,32 +106,41 @@ private fun MetricChip(
         label = "chipBorderW"
     )
 
+    val dotColor = when {
+        selected -> color
+        else     -> color.copy(alpha = TelemetrySeriesStyle.DISABLED_DOT_ALPHA)
+    }
+
+    val hPad = if (compact) Dim.sm else Dim.md
+    val vPad = if (compact) Dim.xs else Dim.sm
+
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(container)
             .border(borderWidth, border, RoundedCornerShape(50))
             .clickable(onClick = onClick)
-            .padding(horizontal = Dim.md, vertical = Dim.sm),
+            .padding(horizontal = hPad, vertical = vPad),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        horizontalArrangement = Arrangement.spacedBy(if (compact) Dim.xs else Dim.sm)
     ) {
         Box(
             Modifier
-                .size(dotAlpha)
+                .size(dotSize)
                 .clip(CircleShape)
-                .background(if (selected) metric.color else metric.color.copy(alpha = 0.45f))
+                .background(dotColor)
         )
         Text(
             text = metric.displayName,
-            style = MaterialTheme.typography.labelMedium,
+            style = if (compact) MaterialTheme.typography.labelSmall
+                    else MaterialTheme.typography.labelMedium,
             color = labelColor
         )
-        if (selected && latest != null) {
+        if (!compact && selected && latest != null) {
             Text(
                 text = "${metric.format.format(latest)} ${metric.unit}",
                 style = MaterialTheme.typography.labelMedium,
-                color = metric.color
+                color = color
             )
         }
     }

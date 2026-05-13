@@ -14,8 +14,9 @@ import java.util.Locale
 /**
  * Exports trip telemetry data to CSV files.
  *
- * CSV format:
- *   timestamp,speed_kmh,battery_%,voltage_V,current_A,temp_C,odometer_km,mode,indicators
+ * CSV format: see CSV_HEADER constant. Columns are the canonical telemetry
+ * fields — every value flows from `VehicleData` via `TelemetryEntity`, so a
+ * CSV row matches what the user saw live on Drive/Charts/Logs.
  *
  * Files are written to the app's external files directory (shareable via Intent).
  * Uses streaming write to handle large trips without loading all data into memory.
@@ -50,17 +51,26 @@ class CsvExporter(
                 // Header
                 writer.appendLine(CSV_HEADER)
 
-                // Data rows
+                // Data rows. rpm and power are derived on export from the
+                // canonical wire fields so a CSV column never disagrees with
+                // what Drive/Charts/Logs show on screen.
                 for (sample in samples) {
+                    val speedKmh = sample.speed / 10f
+                    val voltageV = sample.voltage / 100f
+                    val currentA = sample.current / 100f
+                    val rpm = sample.speed * 10   // speedKmh × 100 stored as int10
+                    val powerW = voltageV * currentA
                     writer.append(sample.timestamp.toString()).append(',')
-                    writer.append("%.1f".format(sample.speed / 10f)).append(',')
+                    writer.append("%.1f".format(speedKmh)).append(',')
+                    writer.append(rpm.toString()).append(',')
                     writer.append(sample.battery.toString()).append(',')
-                    writer.append("%.2f".format(sample.voltage / 100f)).append(',')
-                    writer.append("%.2f".format(sample.current / 100f)).append(',')
+                    writer.append("%.2f".format(voltageV)).append(',')
+                    writer.append("%.2f".format(currentA)).append(',')
+                    writer.append("%.1f".format(powerW)).append(',')
                     writer.append(sample.temperature.toString()).append(',')
-                    writer.append("%.3f".format(sample.odometer / 1000f)).append(',')
-                    writer.append(sample.mode.toString()).append(',')
-                    writer.appendLine(sample.indicators.toString())
+                    writer.append(sample.batteryTemperature.toString()).append(',')
+                    writer.append(sample.controllerTemperature.toString()).append(',')
+                    writer.appendLine(sample.mode.toString())
                 }
             }
 
@@ -96,6 +106,7 @@ class CsvExporter(
 
     companion object {
         private const val CSV_HEADER =
-            "timestamp_ms,speed_kmh,battery_pct,voltage_V,current_A,temperature_C,odometer_km,mode,indicators"
+            "timestamp_ms,speed_kmh,rpm,battery_pct,voltage_V,current_A,power_W," +
+                "motor_temp_C,battery_temp_C,controller_temp_C,mode"
     }
 }

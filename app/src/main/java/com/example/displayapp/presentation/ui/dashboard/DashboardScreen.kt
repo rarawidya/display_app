@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.displayapp.domain.model.VehicleMode
 import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.temperatureAlertLevel
@@ -35,14 +34,13 @@ import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.components.DiagnosticsOverlay
 import com.example.displayapp.presentation.ui.components.PremiumMetricTile
 import com.example.displayapp.presentation.ui.components.SpeedometerGauge
+import com.example.displayapp.presentation.ui.components.mode.ModeCard
+import com.example.displayapp.presentation.ui.components.mode.visuals
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.maps.MiniMapCard
 import com.example.displayapp.presentation.viewmodel.DashboardViewModel
 import com.example.displayapp.presentation.viewmodel.MapsViewModel
 import com.example.displayapp.ui.theme.Dim
-import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvLime
-import com.example.displayapp.ui.theme.EvViolet
 
 @Composable
 fun DashboardScreen(
@@ -156,6 +154,9 @@ private fun DashboardPortrait(
             bluetoothAnchor = bluetoothAnchor
         )
         SpeedometerSection(state = state)
+        // Drive-mode selector sits directly below the speedometer so quick-
+        // glance recognition has the gauge + active mode in one frame.
+        ModeCard(mode = state.vehicleMode)
         BatteryRowCard(batteryPercent = state.batteryPercent)
         TelemetryGrid(state = state)
         MiniMapCard(
@@ -205,6 +206,7 @@ private fun DashboardLandscape(
                 verticalArrangement = Arrangement.spacedBy(Dim.md)
             ) {
                 SpeedometerSection(state = state)
+                ModeCard(mode = state.vehicleMode)
                 MiniMapCard(
                     viewModel = mapsViewModel,
                     onOpenFullscreen = onOpenNavigation
@@ -228,15 +230,14 @@ private fun DashboardLandscape(
 @Composable
 private fun SpeedometerSection(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    // RPM is rotational and not affected by display unit choice.
-    val derivedRpm = state.speed * 100
+    // RPM is derived in TelemetryMapper (single source of truth) — no UI math.
     val progress = if (state.maxSpeed > 0) state.speed.toFloat() / state.maxSpeed else 0f
 
     // Secondary readout honors the user's speed-unit preference (km/h ↔ mph).
     val secondary = app.speedUnit.formatSpeed(state.speed.toFloat()).uppercase()
 
     SpeedometerGauge(
-        heroValue = derivedRpm,
+        heroValue = state.rpm,
         heroUnit = "RPM",
         progressFraction = progress,
         secondaryText = secondary,
@@ -256,9 +257,11 @@ private fun SpeedometerSection(state: DashboardUiState) {
 @Composable
 private fun TelemetryGrid(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    val voltage = state.voltage.toFloatOrNull() ?: 0f
-    val current = state.current.toFloatOrNull() ?: 0f
-    val power   = voltage * current  // derived — no direct power channel yet
+    // All values come straight off canonical telemetry — no UI math. Power
+    // is derived in TelemetryMapper; temperatures are real wire channels.
+    val voltage = state.voltage
+    val current = state.current
+    val power   = state.power
 
     // Convert telemetry's °C readings to whatever unit the user picked.
     val engineTemp     = app.temperatureUnit.convertFromCelsius(state.temperature.toFloat())
@@ -358,17 +361,17 @@ private fun TelemetryGrid(state: DashboardUiState) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Ambient background glow — subtle accent based on vehicle mode             */
+/*  Ambient background glow — driven by the shared ModeVisuals catalog so the */
+/*  Drive backdrop, ModeCard, and any future mode-aware widget stay in sync.  */
 /* -------------------------------------------------------------------------- */
 
 @Composable
 private fun Modifier.ambientGlow(state: DashboardUiState): Modifier {
-    val tint = when (state.vehicleMode) {
-        VehicleMode.PARK   -> Color.Transparent
-        VehicleMode.ECO    -> EvLime.copy(alpha = 0.06f)
-        VehicleMode.NORMAL -> EvBlue.copy(alpha = 0.08f)
-        VehicleMode.SPORT  -> EvViolet.copy(alpha = 0.10f)
-    }
+    val visuals = state.vehicleMode.visuals()
+    // Map the catalog intensity (0..1) onto a subtle alpha range. PARK
+    // (intensity 0) collapses to fully transparent so the cockpit doesn't
+    // hum visually while stationary.
+    val tint = visuals.accent.copy(alpha = 0.05f + 0.07f * visuals.intensity)
     val brush = Brush.verticalGradient(
         listOf(tint, Color.Transparent)
     )

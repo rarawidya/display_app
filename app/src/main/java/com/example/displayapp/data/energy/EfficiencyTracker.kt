@@ -18,10 +18,12 @@ import kotlinx.coroutines.launch
  * for the realtime Wh/km tile and range estimate.
  *
  * Algorithm (per-sample):
- *  1. Append (V, I, speed, odometer, battery, t) to a deque.
+ *  1. Append (V, I, speedKmh, battery, t) to a deque.
  *  2. Trim from the front until window spans no more than [windowMs].
  *  3. Trapezoidal integrate V × I × dt over the window → energyWh.
- *  4. Distance from odometer delta over the window → distanceKm.
+ *  4. Trapezoidal integrate speed × dt over the same window → distanceKm.
+ *     (Schema-first: there is no `odometer` wire field; distance is derived
+ *      from speed so it always agrees with the persisted samples.)
  *  5. If distance ≥ [MIN_DISTANCE_KM]: raw Wh/km = energyWh / distanceKm.
  *     Otherwise raw = null (idle / standing still — division would blow up).
  *  6. EWMA-smooth the raw value with α = [EWMA_ALPHA] so the displayed
@@ -91,7 +93,7 @@ class EfficiencyTracker(
         val sample = Sample(
             voltage = data.voltage,
             current = data.current,
-            odometerKm = data.odometer,
+            speedKmh = data.speed.toFloat(),
             batteryPercent = data.batteryPercent,
             timestamp = data.timestamp
         )
@@ -111,6 +113,7 @@ class EfficiencyTracker(
         var rawWhPerKm: Float? = null
         if (window.size >= 2) {
             var energyWh = 0.0
+            var distanceKm = 0.0
             for (i in 1 until window.size) {
                 val prev = window[i - 1]
                 val cur = window[i]
@@ -121,9 +124,10 @@ class EfficiencyTracker(
                 } else dtMsRaw
                 val avgPower = (prev.voltage * prev.current + cur.voltage * cur.current) / 2.0
                 energyWh += avgPower * dtMs / 3_600_000.0
+                // Distance from trapezoidal-integrated speed: km/h × hours.
+                val avgSpeedKmh = (prev.speedKmh + cur.speedKmh) / 2.0
+                distanceKm += avgSpeedKmh * dtMs / 3_600_000.0
             }
-            val distanceKm = (window.last().odometerKm - window.first().odometerKm)
-                .coerceAtLeast(0f)
             if (distanceKm >= MIN_DISTANCE_KM) {
                 rawWhPerKm = (energyWh / distanceKm).toFloat()
             }
@@ -172,7 +176,7 @@ class EfficiencyTracker(
     private data class Sample(
         val voltage: Float,
         val current: Float,
-        val odometerKm: Float,
+        val speedKmh: Float,
         val batteryPercent: Int,
         val timestamp: Long
     )

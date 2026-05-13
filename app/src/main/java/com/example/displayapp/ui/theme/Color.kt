@@ -39,11 +39,15 @@ val EvRed        = Color(0xFFFF1744)
 val EvViolet     = Color(0xFF7C4DFF)
 val EvIce        = Color(0xFFE0F7FA)
 
-// Mode pill colors (semantic — unchanged across themes)
+// Mode pill colors (semantic — unchanged across themes). REGEN uses a bright
+// cyan so it's visually distinct from NORMAL's blue while still feeling
+// "electric." ECO leans toward green-teal rather than pure lime so it reads
+// as efficient, not as a warning.
 val ModePark    = Color(0xFF78909C)
-val ModeEco     = EvLime
+val ModeEco     = Color(0xFF1FE0B5)   // green-teal
 val ModeNormal  = EvBlue
-val ModeSport   = EvRed
+val ModeSport   = Color(0xFFFF5722)   // red-orange
+val ModeRegen   = Color(0xFF22D3EE)   // cyan
 
 // ---------------------------------------------------------------------------
 // Dark surfaces — deep navy-black cockpit matching the mockup.

@@ -78,18 +78,24 @@ class TelemetryReplaySource(
     }
 
     private fun entityToVehicleData(entity: TelemetryEntity): VehicleData {
+        // Mirror TelemetryMapper exactly so replay produces the same canonical
+        // VehicleData shape (including derived rpm/power) the live decode path
+        // would emit for these wire values.
+        val speedKmh = entity.speed / 10
+        val voltageV = entity.voltage / 100f
+        val currentA = entity.current / 100f
         return VehicleData(
-            speed = entity.speed / 10,
+            speed = speedKmh,
             batteryPercent = entity.battery,
-            voltage = entity.voltage / 100f,
-            current = entity.current / 100f,
+            voltage = voltageV,
+            current = currentA,
             temperature = entity.temperature,
-            odometer = entity.odometer / 1000f,
+            batteryTemperature = entity.batteryTemperature,
+            controllerTemperature = entity.controllerTemperature,
             vehicleMode = VehicleMode.entries.getOrElse(entity.mode) { VehicleMode.PARK },
-            leftIndicator = (entity.indicators and 0x01) != 0,
-            rightIndicator = (entity.indicators and 0x02) != 0,
-            headlamp = (entity.indicators and 0x04) != 0,
-            timestamp = entity.timestamp
+            timestamp = entity.timestamp,
+            rpm = speedKmh * 100,
+            power = voltageV * currentA
         )
     }
 

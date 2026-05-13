@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,10 +26,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,18 +43,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.data.sharing.ShareHelper
+import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TripDetailUiState
 import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
+import com.example.displayapp.presentation.ui.components.mode.ModeBadge
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.logs.components.EnergySummaryCard
 import com.example.displayapp.presentation.ui.logs.components.StaticTelemetryChart
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
-import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvLime
 import com.example.displayapp.ui.theme.EvRed
+import com.example.displayapp.ui.theme.seriesColor
 import java.io.File
 
 /**
@@ -98,6 +103,30 @@ private fun TripDetailContent(
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
 
+    // Confirmation dialog gating the actual delete — flipped on by the
+    // top-bar Trash button and cleared when the user confirms or cancels.
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("Delete this trip?") },
+            text = {
+                Text("The trip and all of its telemetry samples will be removed permanently.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmingDelete = false
+                        onDelete()
+                    }
+                ) { Text("Delete", color = EvRed) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     // Show export feedback Snackbar. The Share action launches the system share sheet.
     LaunchedEffect(state.exportedFilePath, state.exportError) {
         when {
@@ -144,7 +173,7 @@ private fun TripDetailContent(
                     exportInProgress = state.exportInProgress,
                     onBack = onBack,
                     onExport = onExport,
-                    onDelete = onDelete
+                    onDelete = { confirmingDelete = true }
                 )
 
                 when {
@@ -226,7 +255,7 @@ private fun DetailTopBar(
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
-                        imageVector = EvIcons.MoreVert,
+                        imageVector = EvIcons.Trash,
                         contentDescription = "Delete trip",
                         tint = EvRed
                     )
@@ -290,33 +319,64 @@ private fun DetailBody(state: TripDetailUiState) {
         ratePerKwh = state.ratePerKwh
     )
 
+    // Trip Detail is the analytics center — every chart series matches one
+    // TelemetryMetric in the unified vocabulary. Units convert at the
+    // label site; chart values stay SI.
     StaticTelemetryChart(
-        title = "Speed",
+        title = TelemetryMetric.Speed.displayName,
         unit = app.speedUnit.suffix,
         series = state.speedSeries.map { app.speedUnit.convertFromKmh(it) }.toFloatArray(),
-        color = EvBlue,
-        latestFormat = "%.0f"
+        color = TelemetryMetric.Speed.seriesColor(),
+        latestFormat = TelemetryMetric.Speed.format
     )
     StaticTelemetryChart(
-        title = "Voltage",
-        unit = "V",
+        title = TelemetryMetric.Power.displayName,
+        unit = TelemetryMetric.Power.unit,
+        series = state.powerSeries,
+        color = TelemetryMetric.Power.seriesColor(),
+        latestFormat = TelemetryMetric.Power.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.Voltage.displayName,
+        unit = TelemetryMetric.Voltage.unit,
         series = state.voltageSeries,
-        color = EvLime,
-        latestFormat = "%.1f"
+        color = TelemetryMetric.Voltage.seriesColor(),
+        latestFormat = TelemetryMetric.Voltage.format
     )
     StaticTelemetryChart(
-        title = "Current",
-        unit = "A",
+        title = TelemetryMetric.Current.displayName,
+        unit = TelemetryMetric.Current.unit,
         series = state.currentSeries,
-        color = EvAmber,
-        latestFormat = "%.1f"
+        color = TelemetryMetric.Current.seriesColor(),
+        latestFormat = TelemetryMetric.Current.format
     )
     StaticTelemetryChart(
-        title = "Temperature",
+        title = TelemetryMetric.Battery.displayName,
+        unit = TelemetryMetric.Battery.unit,
+        series = state.batterySeries,
+        color = TelemetryMetric.Battery.seriesColor(),
+        latestFormat = TelemetryMetric.Battery.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.EngineTemp.displayName,
         unit = app.temperatureUnit.suffix,
         series = state.temperatureSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
-        color = EvRed,
-        latestFormat = "%.0f"
+        color = TelemetryMetric.EngineTemp.seriesColor(),
+        latestFormat = TelemetryMetric.EngineTemp.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.BatteryTemp.displayName,
+        unit = app.temperatureUnit.suffix,
+        series = state.batteryTempSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
+        color = TelemetryMetric.BatteryTemp.seriesColor(),
+        latestFormat = TelemetryMetric.BatteryTemp.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.ControllerTemp.displayName,
+        unit = app.temperatureUnit.suffix,
+        series = state.controllerTempSeries.map { app.temperatureUnit.convertFromCelsius(it) }.toFloatArray(),
+        color = TelemetryMetric.ControllerTemp.seriesColor(),
+        latestFormat = TelemetryMetric.ControllerTemp.format
     )
 }
 
@@ -328,6 +388,25 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
     val avgSpeedLabel = app.speedUnit.formatSpeed(state.avgSpeedKmh10 / 10f)
     val maxSpeedLabel = app.speedUnit.formatSpeed(state.maxSpeedKmh10 / 10f)
     val batteryLabel = "${state.startBattery}% → ${state.endBattery?.toString() ?: "—"}%"
+
+    // v5 analytics — render "—" for pre-v5 trips where the column defaulted to 0.
+    val hasPowerAgg = state.avgPowerW != 0f || state.maxPowerW != 0f
+    val avgPowerLabel = if (hasPowerAgg) "%.0f W".format(state.avgPowerW) else "—"
+    val maxPowerLabel = if (hasPowerAgg) "%.0f W".format(state.maxPowerW) else "—"
+    val hasPeakTemps =
+        state.peakMotorTempC != 0 || state.peakBatteryTempC != 0 || state.peakControllerTempC != 0
+    val tempSuffix = app.temperatureUnit.suffix
+    val peakTempLabel = if (hasPeakTemps) {
+        val m = app.temperatureUnit.convertFromCelsius(state.peakMotorTempC.toFloat()).toInt()
+        val b = app.temperatureUnit.convertFromCelsius(state.peakBatteryTempC.toFloat()).toInt()
+        val c = app.temperatureUnit.convertFromCelsius(state.peakControllerTempC.toFloat()).toInt()
+        "$m$tempSuffix / $b$tempSuffix / $c$tempSuffix"
+    } else "—"
+
+    val speedColor      = TelemetryMetric.Speed.seriesColor()
+    val batteryColor    = TelemetryMetric.Battery.seriesColor()
+    val powerColor      = TelemetryMetric.Power.seriesColor()
+    val engineTempColor = TelemetryMetric.EngineTemp.seriesColor()
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -358,19 +437,28 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Box(
-                    Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(EvBlue.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center
+                // Drive icon + mode badge. The badge mirrors the dominant
+                // mode of this recorded trip so a glance at the header tells
+                // the user what kind of drive they're inspecting.
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = EvIcons.Drive,
-                        contentDescription = null,
-                        tint = EvBlue,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(speedColor.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = EvIcons.Drive,
+                            contentDescription = null,
+                            tint = speedColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    ModeBadge(mode = state.dominantMode)
                 }
             }
 
@@ -379,9 +467,15 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
             // Pairs of metrics — keeps the card compact while showing everything.
             // ENERGY moved to its own EnergySummaryCard below the hero.
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat(label = "AVG", value = avgSpeedLabel, accent = EvBlue)
-                Stat(label = "MAX", value = maxSpeedLabel, accent = EvLime)
-                Stat(label = "BATT", value = batteryLabel, accent = EvAmber)
+                Stat(label = "AVG", value = avgSpeedLabel, accent = speedColor)
+                Stat(label = "MAX", value = maxSpeedLabel, accent = speedColor)
+                Stat(label = "BATT", value = batteryLabel, accent = batteryColor)
+            }
+            // v5 unified analytics row — same shape, new metrics.
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Stat(label = "AVG PWR", value = avgPowerLabel, accent = powerColor)
+                Stat(label = "MAX PWR", value = maxPowerLabel, accent = powerColor)
+                Stat(label = "PEAK T°", value = peakTempLabel, accent = engineTempColor)
             }
         }
     }

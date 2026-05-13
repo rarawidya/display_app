@@ -43,8 +43,17 @@ class TripSessionManager(
     private var maxSpeed = 0
     private var speedSum = 0L
     private var sampleCount = 0L
-    private var startOdometerMeters = 0L
-    private var lastOdometerMeters = 0L
+    // Distance is integrated from speed × dt (no odometer wire field).
+    // Carries the previous sample so we can trapezoidal-integrate on the next.
+    private var distanceMeters = 0.0
+    private var lastSampleSpeedKmh = 0
+    private var lastSampleTimestampMs = 0L
+    // v5 analytics aggregates — power and peak temps.
+    private var powerW100Sum = 0L
+    private var maxPowerW100 = 0
+    private var peakMotorTemp = Int.MIN_VALUE
+    private var peakBatteryTemp = Int.MIN_VALUE
+    private var peakControllerTemp = Int.MIN_VALUE
 
     /**
      * Integrates V × I × dt across the recording. Pure / testable — the trip
@@ -71,8 +80,14 @@ class TripSessionManager(
         maxSpeed = 0
         speedSum = 0
         sampleCount = 0
-        startOdometerMeters = (initialData.odometer * 1000).toLong()
-        lastOdometerMeters = startOdometerMeters
+        distanceMeters = 0.0
+        lastSampleSpeedKmh = initialData.speed
+        lastSampleTimestampMs = initialData.timestamp
+        powerW100Sum = 0
+        maxPowerW100 = 0
+        peakMotorTemp = Int.MIN_VALUE
+        peakBatteryTemp = Int.MIN_VALUE
+        peakControllerTemp = Int.MIN_VALUE
         energyAccumulator.reset()
 
         telemetryLogger.startRecording(tripId)
@@ -85,9 +100,12 @@ class TripSessionManager(
 
         telemetryLogger.stopRecording()
 
-        lastOdometerMeters = (finalData.odometer * 1000).toLong()
-        val distance = lastOdometerMeters - startOdometerMeters
+        // One last trapezoidal step so the final sample contributes.
+        accumulateDistance(finalData.speed, finalData.timestamp)
+        val distance = distanceMeters.toLong()
         val avgSpeed = if (sampleCount > 0) (speedSum / sampleCount).toInt() else 0
+
+        val avgPowerW100 = if (sampleCount > 0) (powerW100Sum / sampleCount).toInt() else 0
 
         val completedTrip = trip.copy(
             endTime = System.currentTimeMillis(),
@@ -97,7 +115,12 @@ class TripSessionManager(
             endBattery = finalData.batteryPercent,
             sampleCount = sampleCount,
             energyUsedWh = energyAccumulator.usedWh(),
-            energyRegenWh = energyAccumulator.regenWh()
+            energyRegenWh = energyAccumulator.regenWh(),
+            avgPowerW100 = avgPowerW100,
+            maxPowerW100 = maxPowerW100,
+            peakMotorTempC = peakMotorTemp.coerceAtLeast(0),
+            peakBatteryTempC = peakBatteryTemp.coerceAtLeast(0),
+            peakControllerTempC = peakControllerTemp.coerceAtLeast(0)
         )
         tripDao.update(completedTrip)
         _activeTrip.value = null
@@ -124,10 +147,36 @@ class TripSessionManager(
         if (speedFixed > maxSpeed) maxSpeed = speedFixed
         speedSum += speedFixed
         sampleCount++
-        lastOdometerMeters = (data.odometer * 1000).toLong()
+
+        // Integrate trip distance from speed × dt (no odometer wire field).
+        accumulateDistance(data.speed, data.timestamp)
 
         // Integrate V × I × dt for real energy accounting.
         energyAccumulator.onSample(data.voltage, data.current, data.timestamp)
+
+        // v5 unified analytics: avg/max power + peak temps.
+        val powerW100 = (data.power * 100f).toInt()
+        powerW100Sum += powerW100
+        if (powerW100 > maxPowerW100) maxPowerW100 = powerW100
+        if (data.temperature > peakMotorTemp) peakMotorTemp = data.temperature
+        if (data.batteryTemperature > peakBatteryTemp) peakBatteryTemp = data.batteryTemperature
+        if (data.controllerTemperature > peakControllerTemp) peakControllerTemp = data.controllerTemperature
+    }
+
+    /**
+     * Trapezoidal integration of speed × dt into [distanceMeters]. Caps
+     * `dt` at [EnergyAccumulator.MAX_DT_MS] so a long pause between samples
+     * (e.g. backgrounded service) doesn't fabricate huge distance.
+     */
+    private fun accumulateDistance(speedKmh: Int, timestampMs: Long) {
+        val dtMsRaw = timestampMs - lastSampleTimestampMs
+        if (lastSampleTimestampMs > 0L && dtMsRaw > 0L) {
+            val dtMs = if (dtMsRaw > EnergyAccumulator.MAX_DT_MS) EnergyAccumulator.MAX_DT_MS else dtMsRaw
+            val avgSpeedMs = ((lastSampleSpeedKmh + speedKmh) / 2.0) / 3.6
+            distanceMeters += avgSpeedMs * dtMs / 1000.0
+        }
+        lastSampleSpeedKmh = speedKmh
+        lastSampleTimestampMs = timestampMs
     }
 
     suspend fun logFault(type: String, severity: Int, message: String) {

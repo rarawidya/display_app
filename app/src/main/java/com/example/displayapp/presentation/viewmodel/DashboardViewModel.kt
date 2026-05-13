@@ -44,12 +44,16 @@ class DashboardViewModel(
     private var lastFpsTime = System.currentTimeMillis()
     private val _fps = MutableStateFlow(0)
 
-    // Rolling trip summary (resets on disconnect)
+    // Rolling trip summary (resets on disconnect).
+    // Distance is integrated from speed × dt — schema-first telemetry has no
+    // odometer wire field, so this is the canonical source of session distance.
     private var sessionStartMs = 0L
     private var sessionMaxSpeed = 0
     private var sessionSpeedSum = 0L
     private var sessionSpeedSamples = 0L
-    private var sessionFirstOdometer = -1f
+    private var sessionDistanceKm = 0.0
+    private var sessionLastSpeed = 0
+    private var sessionLastTimestampMs = 0L
 
     val uiState: StateFlow<DashboardUiState> = combine(
         repository.vehicleData,
@@ -88,35 +92,25 @@ class DashboardViewModel(
         fps: Int,
         efficiency: EfficiencyTracker.State
     ): DashboardUiState {
-        // Until the wire schema separates motor / controller / battery temps,
-        // approximate them from the single reported temperature value using
-        // steady-state offsets (controllers and battery packs run cooler than
-        // the motor). Honest about being three distinct readings while keeping
-        // the protocol unchanged — replace these when the schema gains fields.
-        val controllerTemp = (data.temperature - 7).coerceAtLeast(0)
-        val batteryTemp    = (data.temperature - 12).coerceAtLeast(0)
-
         val durationSec = if (sessionStartMs > 0) {
             ((System.currentTimeMillis() - sessionStartMs) / 1000L).coerceAtLeast(0)
         } else 0L
-        val distanceKm = if (sessionFirstOdometer >= 0) {
-            (data.odometer - sessionFirstOdometer).coerceAtLeast(0f)
-        } else 0f
         val avgSpeed = if (sessionSpeedSamples > 0) (sessionSpeedSum / sessionSpeedSamples).toInt() else 0
 
+        // Pass canonical telemetry through; no UI-side math. rpm/power are
+        // derived in TelemetryMapper; battery/controller temps are real wire
+        // channels (telemetry.capnp v2+).
         return DashboardUiState(
             speed = data.speed,
+            rpm = data.rpm,
             batteryPercent = data.batteryPercent,
-            voltage = "%.1f".format(data.voltage),
-            current = "%.1f".format(data.current),
+            voltage = data.voltage,
+            current = data.current,
+            power = data.power,
             temperature = data.temperature,
-            controllerTemperature = controllerTemp,
-            batteryTemperature = batteryTemp,
-            odometer = "%.1f".format(data.odometer),
+            controllerTemperature = data.controllerTemperature,
+            batteryTemperature = data.batteryTemperature,
             vehicleMode = data.vehicleMode,
-            leftIndicator = data.leftIndicator,
-            rightIndicator = data.rightIndicator,
-            headlamp = data.headlamp,
             connectionState = connectionState,
             diagnostics = DiagnosticsState(
                 framesPerSecond = fps,
@@ -125,7 +119,7 @@ class DashboardViewModel(
             tripStats = TripStatsState(
                 avgSpeed = avgSpeed,
                 maxSpeed = sessionMaxSpeed,
-                distanceKm = distanceKm,
+                distanceKm = sessionDistanceKm.toFloat(),
                 durationSec = durationSec
             ),
             efficiency = EfficiencyState(
@@ -136,11 +130,25 @@ class DashboardViewModel(
     }
 
     private fun updateSessionStats(data: VehicleData) {
-        if (sessionStartMs == 0L) sessionStartMs = System.currentTimeMillis()
-        if (sessionFirstOdometer < 0f) sessionFirstOdometer = data.odometer
+        if (sessionStartMs == 0L) {
+            sessionStartMs = System.currentTimeMillis()
+            sessionLastSpeed = data.speed
+            sessionLastTimestampMs = data.timestamp
+        }
         if (data.speed > sessionMaxSpeed) sessionMaxSpeed = data.speed
         sessionSpeedSum += data.speed
         sessionSpeedSamples += 1
+
+        // Integrate distance from speed × dt (trapezoidal). Same shape as
+        // TripSessionManager so Drive's "session distance" and Logs' trip
+        // distance use the same algorithm.
+        val dtMsRaw = data.timestamp - sessionLastTimestampMs
+        if (sessionLastTimestampMs > 0L && dtMsRaw in 1..MAX_SESSION_DT_MS) {
+            val avgSpeedMs = ((sessionLastSpeed + data.speed) / 2.0) / 3.6
+            sessionDistanceKm += avgSpeedMs * dtMsRaw / 3_600_000.0
+        }
+        sessionLastSpeed = data.speed
+        sessionLastTimestampMs = data.timestamp
     }
 
     private fun resetSession() {
@@ -148,7 +156,9 @@ class DashboardViewModel(
         sessionMaxSpeed = 0
         sessionSpeedSum = 0L
         sessionSpeedSamples = 0L
-        sessionFirstOdometer = -1f
+        sessionDistanceKm = 0.0
+        sessionLastSpeed = 0
+        sessionLastTimestampMs = 0L
     }
 
     private fun trackFps() {
@@ -160,5 +170,11 @@ class DashboardViewModel(
             frameCount = 0
             lastFpsTime = now
         }
+    }
+
+    private companion object {
+        // Skip distance accumulation for gaps longer than this — covers
+        // backgrounding pauses, reconnects, etc. without fabricating distance.
+        const val MAX_SESSION_DT_MS = 2_000L
     }
 }

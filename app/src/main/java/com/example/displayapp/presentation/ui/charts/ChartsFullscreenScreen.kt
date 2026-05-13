@@ -28,6 +28,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -37,6 +38,7 @@ import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TimeRange
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.ui.theme.Dim
+import com.example.displayapp.ui.theme.seriesColor
 
 @Composable
 fun ChartsFullscreen(
@@ -106,12 +108,14 @@ private fun FullscreenChartLayout(
 ) {
     val currentRange = TimeRange.entries.firstOrNull { it.seconds == state.rangeSec } ?: TimeRange.SEC_60
 
+    // Tighter horizontal gutter (sm vs lg) so the plot reaches almost edge-to-edge
+    // — every pixel back to the chart is a glance-analysis win in landscape.
     Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = Dim.lg, vertical = Dim.md),
-        verticalArrangement = Arrangement.spacedBy(Dim.md)
+            .padding(horizontal = Dim.sm, vertical = Dim.xs),
+        verticalArrangement = Arrangement.spacedBy(Dim.xs)
     ) {
         TopToolbar(
             state = state,
@@ -119,13 +123,12 @@ private fun FullscreenChartLayout(
             onClose = onClose,
             onRangeSelected = onRangeSelected
         )
+        // No card wrapper — the toolbar + legend already frame the chart.
+        // The previous Surface+padding ate ~32dp of vertical real estate.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .clip(RoundedCornerShape(Dim.cardCorner))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                .padding(Dim.lg)
         ) {
             RealtimeLineChart(
                 state = state,
@@ -136,6 +139,7 @@ private fun FullscreenChartLayout(
             state = state,
             onToggle = onToggleMetric,
             onFocus  = onFocusMetric,
+            compact  = true,
             modifier = Modifier.fillMaxWidth()
         )
     }
@@ -157,10 +161,10 @@ private fun TopToolbar(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Dim.md)
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
             CloseButton(onClose)
-            FocusInline(metric = metric, latest = latest)
+            FocusInline(metric = metric, latest = latest, color = metric.seriesColor())
         }
         TimeRangeSelector(
             selected = currentRange,
@@ -173,7 +177,7 @@ private fun TopToolbar(
 private fun CloseButton(onClick: () -> Unit) {
     Box(
         Modifier
-            .size(40.dp)
+            .size(36.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), CircleShape)
@@ -184,18 +188,18 @@ private fun CloseButton(onClick: () -> Unit) {
             imageVector = EvIcons.FullscreenExit,
             contentDescription = "Exit fullscreen",
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(18.dp)
         )
     }
 }
 
 @Composable
-private fun FocusInline(metric: TelemetryMetric, latest: Float?) {
+private fun FocusInline(metric: TelemetryMetric, latest: Float?, color: Color) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Dim.sm)
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(metric.color))
+        Box(Modifier.size(10.dp).clip(CircleShape).background(color))
         Text(
             text = "FOCUS",
             style = MaterialTheme.typography.labelSmall,
@@ -210,7 +214,7 @@ private fun FocusInline(metric: TelemetryMetric, latest: Float?) {
         Text(
             text = if (latest != null) metric.format.format(latest) else "—",
             style = MaterialTheme.typography.titleLarge,
-            color = metric.color
+            color = color
         )
         Text(
             text = metric.unit,
