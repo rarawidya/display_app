@@ -44,7 +44,17 @@ data class TelemetryEntity(
     val mode: Int,             // enum ordinal
     // ── v3: real temp channels (schema split) ────────────────────────────────
     val batteryTemperature: Int = 0,
-    val controllerTemperature: Int = 0
+    val controllerTemperature: Int = 0,
     // odometer and indicators were dropped in schema v4 — see MIGRATION_3_4.
     // Distance is integrated from speed × dt in the analytics layer.
+
+    // ── v6: persisted derivations ────────────────────────────────────────────
+    // rpm and power are derived in TelemetryDerivations at decode time. v6
+    // persists them so a future change to either formula doesn't retroactively
+    // alter recorded trips — replay/CSV/Trip Detail read these columns
+    // verbatim. Both are nullable: pre-v6 rows carry NULL and the read-side
+    // (TelemetryDerivations.decodeEntity) falls back to recomputing from
+    // the wire fields for backward compatibility.
+    val rpm: Int? = null,
+    val powerW: Float? = null
 )

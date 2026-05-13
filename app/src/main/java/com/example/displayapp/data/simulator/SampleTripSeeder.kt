@@ -4,6 +4,7 @@ import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
+import com.example.displayapp.data.protocol.TelemetryDerivations
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import timber.log.Timber
@@ -153,6 +154,11 @@ class SampleTripSeeder(
             if (battTempInt > peakBatteryTemp) peakBatteryTemp = battTempInt
             if (ctrlTempInt > peakControllerTemp) peakControllerTemp = ctrlTempInt
 
+            // v6: persist the canonical derivations on the seeded rows too,
+            // so the seeder is a literal example of "what live decode would
+            // have written for this wire frame". TelemetryDerivations is the
+            // ONLY place these formulas live.
+            val speedKmhInt = speed10 / 10
             samples.add(
                 TelemetryEntity(
                     tripId = tripId,
@@ -165,7 +171,9 @@ class SampleTripSeeder(
                     mode = 2, // cityCruise emits NORMAL
                     // Same default relationship the simulator uses on the wire.
                     batteryTemperature = battTempInt,
-                    controllerTemperature = ctrlTempInt
+                    controllerTemperature = ctrlTempInt,
+                    rpm = TelemetryDerivations.rpmFromSpeedKmh(speedKmhInt),
+                    powerW = TelemetryDerivations.powerFromVoltsAmps(voltageV.toFloat(), currentA.toFloat())
                 )
             )
         }

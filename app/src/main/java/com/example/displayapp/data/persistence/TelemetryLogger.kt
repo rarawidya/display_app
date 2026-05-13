@@ -84,7 +84,12 @@ class TelemetryLogger(
             temperature = data.temperature,
             mode = data.vehicleMode.ordinal,
             batteryTemperature = data.batteryTemperature,
-            controllerTemperature = data.controllerTemperature
+            controllerTemperature = data.controllerTemperature,
+            // v6: persist the canonical derivations so replay / CSV / Trip
+            // Detail read the value that was recorded, not one recomputed
+            // by a (possibly evolved) formula.
+            rpm = data.rpm,
+            powerW = data.power
         )
 
         // Write to ring buffer

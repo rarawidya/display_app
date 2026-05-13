@@ -68,6 +68,12 @@ object TelemetryDerivations {
      * This is the bridge that keeps replay, CSV, and Trip Detail aligned with
      * the live pipeline — all of them should call this rather than touching
      * entity columns directly.
+     *
+     * Schema v6+ rows carry persisted [TelemetryEntity.rpm] /
+     * [TelemetryEntity.powerW]; we read those verbatim so a future change to
+     * the derivation formula does not retroactively alter recorded trips.
+     * Pre-v6 rows have NULL in both columns — we fall back to recomputing
+     * from the wire fields, preserving the historical chart shape.
      */
     fun decodeEntity(entity: TelemetryEntity): VehicleData {
         val speedKmh = speedKmhFromWire(entity.speed)
@@ -83,8 +89,8 @@ object TelemetryDerivations {
             controllerTemperature = entity.controllerTemperature,
             vehicleMode = VehicleMode.entries.getOrElse(entity.mode) { VehicleMode.PARK },
             timestamp = entity.timestamp,
-            rpm = rpmFromSpeedKmh(speedKmh),
-            power = powerFromVoltsAmps(voltageV, currentA)
+            rpm = entity.rpm ?: rpmFromSpeedKmh(speedKmh),
+            power = entity.powerW ?: powerFromVoltsAmps(voltageV, currentA)
         )
     }
 }

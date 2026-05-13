@@ -19,7 +19,7 @@ import com.example.displayapp.data.persistence.entity.TripEntity
         TripEntity::class,
         FaultEventEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class TelemetryDatabase : RoomDatabase() {
@@ -29,6 +29,11 @@ abstract class TelemetryDatabase : RoomDatabase() {
     abstract fun faultEventDao(): FaultEventDao
 
     companion object {
+        // The migration list is referenced by name from
+        // app/src/androidTest/... TelemetryDatabaseMigrationTest. Surfaced as
+        // `internal` so a regression in `migrate()` shows up in CI before it
+        // ever runs against a user's on-device data.
+
         @Volatile
         private var INSTANCE: TelemetryDatabase? = null
 
@@ -45,7 +50,7 @@ abstract class TelemetryDatabase : RoomDatabase() {
          * surfaces those as "—" so the absence of data is honest rather than
          * the old heuristic's fake precision.
          */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE trips ADD COLUMN energyUsedWh REAL NOT NULL DEFAULT 0"
@@ -65,7 +70,7 @@ abstract class TelemetryDatabase : RoomDatabase() {
          * both new columns; the UI surfaces those as 0 / "—" rather than
          * fabricating heuristics.
          */
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE telemetry ADD COLUMN batteryTemperature INTEGER NOT NULL DEFAULT 0"
@@ -88,7 +93,7 @@ abstract class TelemetryDatabase : RoomDatabase() {
          * columns, DROP old, RENAME, recreate indices. The new table keeps
          * the same id space so foreign keys from elsewhere stay valid.
          */
-        private val MIGRATION_3_4 = object : Migration(3, 4) {
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
                     CREATE TABLE telemetry_new (
@@ -129,7 +134,7 @@ abstract class TelemetryDatabase : RoomDatabase() {
          * Trip Detail can surface them without a per-row scan of telemetry.
          * Pre-v5 trips default to 0; UI renders "—" for those.
          */
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE trips ADD COLUMN avgPowerW100 INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE trips ADD COLUMN maxPowerW100 INTEGER NOT NULL DEFAULT 0")
@@ -140,15 +145,38 @@ abstract class TelemetryDatabase : RoomDatabase() {
         }
 
         /**
+         * v5 → v6: persist per-sample derived fields (rpm, power).
+         *
+         * rpm and power are derived in TelemetryDerivations; live samples will
+         * carry the value computed at decode time. Persisting them means a
+         * future change to either formula (e.g. real motor-RPM wire channel,
+         * or a different power model) doesn't retroactively change historical
+         * trips — replay / CSV / Trip Detail read the value that was
+         * recorded.
+         *
+         * Both columns are nullable; pre-v6 rows carry NULL and
+         * TelemetryDerivations.decodeEntity falls back to recomputing them
+         * from the wire fields. That preserves historical chart shapes for
+         * old trips without bloating storage with backfilled derivations.
+         */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE telemetry ADD COLUMN rpm INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE telemetry ADD COLUMN powerW REAL DEFAULT NULL")
+            }
+        }
+
+        /**
          * All migrations live in this list. Adding a new one is append-only —
          * future SOH / fault-watchdog / eco-score work will declare
-         * `Migration(5, 6)` above and append it here.
+         * `Migration(6, 7)` above and append it here.
          */
-        private val MIGRATIONS = arrayOf(
+        internal val MIGRATIONS = arrayOf(
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
-            MIGRATION_4_5
+            MIGRATION_4_5,
+            MIGRATION_5_6
         )
 
         private fun buildDatabase(context: Context): TelemetryDatabase {
