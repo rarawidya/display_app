@@ -2,6 +2,7 @@ package com.example.displayapp
 
 import android.app.Application
 import com.example.displayapp.di.AppContainer
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,7 +15,17 @@ class DisplayApp : Application() {
     lateinit var appContainer: AppContainer
         private set
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Without an explicit handler, an uncaught throwable in any appScope.launch
+    // (e.g. DataStore IOException, DB locked during cold start) propagates to
+    // Thread.defaultUncaughtExceptionHandler and crashes the process before
+    // the launcher activity is even drawn. Log + swallow instead.
+    private val appScope = CoroutineScope(
+        SupervisorJob() +
+            Dispatchers.IO +
+            CoroutineExceptionHandler { _, t ->
+                Timber.e(t, "Background work in appScope failed")
+            }
+    )
 
     override fun onCreate() {
         super.onCreate()

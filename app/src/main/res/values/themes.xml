@@ -2,4 +2,10 @@
 <resources>
 
     <style name="Theme.DisplayApp" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.DisplayApp.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.DisplayApp</item>
+    </style>
 </resources>

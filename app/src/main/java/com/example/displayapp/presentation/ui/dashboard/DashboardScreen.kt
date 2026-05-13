@@ -44,21 +44,6 @@ import com.example.displayapp.ui.theme.EvBlue
 import com.example.displayapp.ui.theme.EvLime
 import com.example.displayapp.ui.theme.EvViolet
 
-/**
- * Drive screen — redesigned to match the consumer cockpit mockup.
- *
- * Layout (top → bottom):
- *   1. BrandHeader   (logo + wordmark + Connect pill + settings grid icon)
- *   2. SpeedometerGauge (semicircle with violet→magenta progress arc)
- *   3. VehicleRowCard ('GESITS G-1')
- *   4. 2×2 metric grid (Battery, Power, Current, Voltage)
- *
- * - Connection management still lives in the Scan screen; the Connect pill
- *   routes there via [onConnectionTap].
- * - Indicator lamps / mode selector / trip-stats footer were removed from
- *   this screen — the design favors a cleaner consumer look.
- * - Long-press anywhere toggles the diagnostics overlay (kept from prior UX).
- */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,

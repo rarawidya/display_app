@@ -2,7 +2,7 @@ package com.example.displayapp.presentation.ui.dashboard
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,21 +21,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.displayapp.R
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.ui.icons.EvIcons
-import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvBlueDeep
 import com.example.displayapp.ui.theme.EvGreen
 
 /**
@@ -42,10 +42,10 @@ import com.example.displayapp.ui.theme.EvGreen
  *
  * Layout:
  *   ┌───────────────────────────────────────────┐
- *   │ ◯ Display**App**       📶  🔵        ⚙   │
+ *   │ ◯ EV**Dash**           📶  🔵        ⚙   │
  *   └───────────────────────────────────────────┘
  *
- * - "App" is colored with the brand primary; "Display" uses on-surface text.
+ * - "Dash" is colored with the brand primary; "EV" uses on-surface text.
  * - The Bluetooth + Wi-Fi indicators each turn green when their channel is up
  *   and gray (with a "disconnect" glyph variant) when down.
  * - Gear opens Settings.
@@ -117,13 +117,16 @@ private fun BrandMark() {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Box(
+        Image(
+            // Use a plain raster drawable, not R.mipmap.ic_launcher: on API 26+
+            // the latter resolves to the <adaptive-icon> XML in mipmap-anydpi-v26,
+            // which painterResource cannot load (it only handles vector XML or
+            // raster bitmaps).
+            painter = painterResource(id = R.drawable.ic_brand),
+            contentDescription = null,
             modifier = Modifier
                 .size(26.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(listOf(EvBlueDeep, EvBlue))
-                )
+                .clip(RoundedCornerShape(6.dp))
         )
         val wordmark = buildAnnotatedString {
             withStyle(
@@ -131,13 +134,13 @@ private fun BrandMark() {
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
-            ) { append("Display") }
+            ) { append("EV") }
             withStyle(
                 SpanStyle(
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
-            ) { append("App") }
+            ) { append("Dash") }
         }
         Text(text = wordmark, fontSize = 19.sp)
     }

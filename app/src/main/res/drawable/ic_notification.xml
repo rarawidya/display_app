@@ -1,0 +1,15 @@
+<!--
+    Status-bar notification icon. Android tints the small icon white based on
+    its alpha channel, so this must be a single-colour vector with a
+    transparent background — a bitmap launcher icon would render as a solid
+    white blob. The lightning bolt nods to the EV theme.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13,2 L4,14 L11,14 L9,22 L20,10 L13,10 Z" />
+</vector>
