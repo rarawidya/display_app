@@ -100,37 +100,56 @@ fun ChartsContent(
     }
 }
 
+/**
+ * Two-row Charts header.
+ *
+ *   ┌───────────────────────────────────────────────────────────────┐
+ *   │ Telemetry                                          ● Live      │  ← primary
+ *   │ Realtime analytics · 80 samples                                │
+ *   │                                                                │
+ *   │ ● NORMAL                                                       │  ← secondary
+ *   └───────────────────────────────────────────────────────────────┘
+ *
+ * The realtime status sits on its own line, uncluttered, with the Live /
+ * Waiting chip aligned to its right — the primary "is data flowing" cue.
+ * The mode badge is demoted to a separate row underneath so it stops
+ * competing with the status text for visual weight.
+ *
+ * `Modifier.weight(1f)` on the title block lets long subtext wrap above
+ * the chip instead of pushing it off-screen on narrow phones.
+ */
 @Composable
 private fun Header(state: ChartsUiState) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalArrangement = Arrangement.spacedBy(Dim.sm)
     ) {
-        Column {
-            Text(
-                text = "Telemetry",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "Realtime analytics · ${state.timestamps.size} samples",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Mirrors the Drive page's active mode so the cockpit reads as
-            // one continuous system regardless of which tab is open.
-            ModeBadge(mode = state.vehicleMode)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Telemetry",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Realtime analytics · ${state.timestamps.size} samples",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             StatusChip(
                 text  = if (state.timestamps.isEmpty()) "Waiting" else "Live",
                 color = if (state.timestamps.isEmpty()) EvAmber else EvLime
             )
         }
+        // Mirrors the Drive page's active mode via the same canonical
+        // [com.example.displayapp.domain.model.VehicleData] stream. The
+        // badge owns no state — it reads `state.vehicleMode` and renders.
+        ModeBadge(mode = state.vehicleMode)
     }
 }
 
