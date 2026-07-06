@@ -36,6 +36,7 @@ import com.example.displayapp.presentation.ui.connection.BluetoothStatusPopover
 import com.example.displayapp.presentation.ui.dashboard.DashboardScreen
 import com.example.displayapp.presentation.ui.device.DeviceScanScreen
 import com.example.displayapp.presentation.ui.home.HomeScreen
+import com.example.displayapp.presentation.ui.home.LastRide
 import com.example.displayapp.presentation.ui.logs.LogsScreen
 import com.example.displayapp.presentation.ui.logs.TripDetailScreen
 import com.example.displayapp.presentation.ui.maps.NavigationScreen
@@ -217,8 +218,20 @@ private fun AppNavGraph(
                 }
             }
 
+            val recentTrips by container.tripRepository.observeAllTrips()
+                .collectAsStateWithLifecycle(initialValue = emptyList())
+            val lastRide = remember(recentTrips) {
+                recentTrips.firstOrNull { it.endTime != null }?.let { t ->
+                    LastRide(
+                        distanceMeters = t.distanceMeters,
+                        durationSec = ((t.endTime!! - t.startTime) / 1000L).coerceAtLeast(0L),
+                        startMs = t.startTime
+                    )
+                }
+            }
             HomeScreen(
                 viewModel = vm,
+                lastRide = lastRide,
                 deviceName = savedDevice?.name?.takeIf { it.isNotBlank() && it != "Unknown" } ?: "My Scooter",
                 onStartMonitoring = {
                     navController.navigateTopLevel(Destination.Drive)

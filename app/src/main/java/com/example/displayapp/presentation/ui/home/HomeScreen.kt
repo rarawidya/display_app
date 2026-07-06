@@ -1,5 +1,6 @@
 package com.example.displayapp.presentation.ui.home
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,8 +31,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -40,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.R
+import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
@@ -66,6 +74,13 @@ import java.time.LocalTime
  *    [TodaySummaryCard]). Uncalibrated current ⇒ no efficiency/range tile, etc.
  *  - Layout is proportional (Dim tokens) and centered/​capped on wide screens.
  */
+/** The most recent completed trip, surfaced in the "Last Ride" summary card. */
+data class LastRide(
+    val distanceMeters: Long,
+    val durationSec: Long,
+    val startMs: Long
+)
+
 @Composable
 fun HomeScreen(
     viewModel: DashboardViewModel,
@@ -74,6 +89,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenBluetooth: () -> Unit,
+    lastRide: LastRide? = null,
     onEditDevice: () -> Unit = onOpenSettings,
     onOpenNotifications: () -> Unit = {}
 ) {
@@ -81,6 +97,7 @@ fun HomeScreen(
     HomeContent(
         state = state,
         deviceName = deviceName,
+        lastRide = lastRide,
         onStartMonitoring = onStartMonitoring,
         onOpenSettings = onOpenSettings,
         onOpenHistory = onOpenHistory,
@@ -94,6 +111,7 @@ fun HomeScreen(
 private fun HomeContent(
     state: DashboardUiState,
     deviceName: String,
+    lastRide: LastRide?,
     onStartMonitoring: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -135,18 +153,20 @@ private fun HomeContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(IntrinsicSize.Max),
+                        .height(210.dp),
                     horizontalArrangement = Arrangement.spacedBy(Dim.md)
                 ) {
+                    // Last Ride is wider than Battery so its stats + map don't crowd
+                    // (mirrors the home_battery.png proportions).
                     BatteryCard(
                         state = state,
                         connected = connected,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
-                    TodayRideCard(
-                        state = state,
+                    LastRideCard(
+                        lastRide = lastRide,
                         onOpenHistory = onOpenHistory,
-                        modifier = Modifier.weight(1f).fillMaxHeight()
+                        modifier = Modifier.weight(1.35f).fillMaxHeight()
                     )
                 }
                 VehicleInfoCard(state = state)
@@ -175,7 +195,7 @@ private fun GreetingHeader(
     ) {
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(Dim.xs)
+            verticalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
             Text(
                 text = "${greeting()} 👋",
@@ -268,49 +288,35 @@ private fun HeroCard(
     onStartMonitoring: () -> Unit,
     onConnect: () -> Unit
 ) {
-    val primary = MaterialTheme.colorScheme.primary
-    val heroBrush = Brush.linearGradient(
-        listOf(
-            primary.copy(alpha = 0.20f),
-            primary.copy(alpha = 0.06f)
-        )
-    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(216.dp)
+            .height(200.dp)
             .clip(RoundedCornerShape(Dim.cardCorner))
-            .background(MaterialTheme.colorScheme.surface)
-            .background(heroBrush)
     ) {
-        // Soft blue halo centered behind the motor (matches home.png).
+        // Full-bleed hero artwork (scooter on a dark studio background) as the card bg.
+        Image(
+            painter = painterResource(id = R.drawable.heroimage),
+            contentDescription = "Your electric scooter",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        // Left scrim to deepen the dark side and keep the text/button crisp.
         Box(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = 8.dp)
-                .size(230.dp)
+                .fillMaxSize()
                 .background(
-                    brush = Brush.radialGradient(
-                        listOf(primary.copy(alpha = 0.24f), Color.Transparent)
-                    ),
-                    shape = CircleShape
+                    Brush.horizontalGradient(
+                        0f to Color.Black.copy(alpha = 0.55f),
+                        0.55f to Color.Black.copy(alpha = 0.15f),
+                        1f to Color.Transparent
+                    )
                 )
-        )
-        Image(
-            painter = painterResource(id = R.drawable.hero_motor),
-            contentDescription = "Your electric motorcycle",
-            contentScale = ContentScale.Fit,
-            alignment = Alignment.CenterEnd,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .offset(x = 14.dp)
-                .padding(vertical = Dim.sm)
         )
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .fillMaxWidth(0.52f)
+                .fillMaxWidth(0.58f)
                 .padding(start = Dim.xl, end = Dim.sm),
             verticalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
@@ -318,13 +324,13 @@ private fun HeroCard(
                 text = if (connected) "Ready to ride" else "Let's connect",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = Color.White
             )
             Text(
                 text = if (connected) "Your scooter is ready whenever you are."
                        else "Pair your scooter over Bluetooth to begin.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.82f)
             )
             Spacer(Modifier.height(Dim.xs))
             HeroButton(
@@ -406,64 +412,67 @@ private fun BatteryCard(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(Dim.lg),
-            verticalArrangement = Arrangement.spacedBy(Dim.sm)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "Battery",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = if (known) "$pct" else "—",
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (known) {
+            // Top group — title, big percentage + glyph, charge bar.
+            Column(verticalArrangement = Arrangement.spacedBy(Dim.sm)) {
+                Text(
+                    text = "Battery",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            text = "%",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = if (known) "$pct" else "—",
+                            style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 6.dp)
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (known) {
+                            Text(
+                                text = "%",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
+                    // Battery glyph, tinted to the charge state.
+                    androidx.compose.material3.Icon(
+                        imageVector = EvIcons.Battery,
+                        contentDescription = null,
+                        tint = if (known) fillColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(trackColor)
+                ) {
+                    if (known) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(pct / 100f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(50))
+                                .background(fillColor)
                         )
                     }
                 }
-                // Battery glyph sits beside the value, tinted to the charge state.
-                androidx.compose.material3.Icon(
-                    imageVector = EvIcons.Battery,
-                    contentDescription = null,
-                    tint = if (known) fillColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                    modifier = Modifier.size(32.dp)
-                )
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(trackColor)
-            ) {
-                if (known) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(pct / 100f)
-                            .fillMaxHeight()
-                            .clip(RoundedCornerShape(50))
-                            .background(fillColor)
-                    )
-                }
-            }
-            Spacer(Modifier.weight(1f))
+            // Bottom — estimated range, anchored to the card base.
             Column(verticalArrangement = Arrangement.spacedBy(Dim.xxs)) {
                 Text(
                     text = "Estimated Range",
@@ -489,16 +498,18 @@ private fun BatteryCard(
 }
 
 @Composable
-private fun TodayRideCard(
-    state: DashboardUiState,
+private fun LastRideCard(
+    lastRide: LastRide?,
     onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val app = LocalAppSettings.current
-    val distanceKm = state.tripStats.distanceKm
-    val durationSec = state.tripStats.durationSec
+    val distanceKm = (lastRide?.distanceMeters ?: 0L) / 1000f
     val distDisplay = if (app.speedUnit == com.example.displayapp.domain.model.SpeedUnit.MPH)
         distanceKm * 0.621371f else distanceKm
+    val distanceValue = if (lastRide != null) "%.1f".format(distDisplay) else "—"
+    val durationValue = if (lastRide != null) "${lastRide.durationSec / 60}" else "—"
+    val dateText = lastRide?.let { Formatters.dateTime(it.startMs, app.timeFormat) } ?: "No rides yet"
 
     Surface(
         shape = RoundedCornerShape(Dim.cardCorner),
@@ -511,7 +522,7 @@ private fun TodayRideCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Dim.lg),
-            verticalArrangement = Arrangement.spacedBy(Dim.sm)
+            verticalArrangement = Arrangement.spacedBy(Dim.xs)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -519,7 +530,7 @@ private fun TodayRideCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Today's Ride",
+                    text = "Last Ride",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -534,72 +545,120 @@ private fun TodayRideCard(
                         .clickable(onClick = onOpenHistory)
                 )
             }
-            Spacer(Modifier.weight(1f))
-            RideStat(
-                icon = EvIcons.Road,
-                tint = EvBlue,
-                value = "%.1f".format(distDisplay),
-                unit = app.speedUnit.distanceSuffix,
-                label = "Distance"
-            )
-            RideStat(
-                icon = EvIcons.Timer,
-                tint = EvViolet,
-                value = "${durationSec / 60}",
-                unit = "min",
-                label = "Duration"
-            )
+            // Day + time of the ride, sitting just below the title.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Dim.xxs)
+            ) {
+                androidx.compose.material3.Icon(
+                    imageVector = EvIcons.Timer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = dateText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(top = Dim.xs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(Dim.md)
+                ) {
+                    RideMetric(distanceValue, app.speedUnit.distanceSuffix, "Distance")
+                    RideMetric(durationValue, "min", "Duration")
+                }
+                RouteMini(
+                    modifier = Modifier
+                        .padding(start = Dim.sm)
+                        .fillMaxHeight()
+                        .width(80.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun RideStat(
-    icon: ImageVector,
-    tint: Color,
-    value: String,
-    unit: String,
-    label: String
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(CircleShape)
-                .background(tint.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
-        ) {
-            androidx.compose.material3.Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(Dim.xxs)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
-                Text(
-                    text = " $unit",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+private fun RideMetric(value: String, unit: String, label: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(Dim.xxs)) {
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1
             )
+            Text(
+                text = " $unit",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+/** Route/map thumbnail — a stylised street grid + trip line (no Maps API needed). */
+@Composable
+private fun RouteMini(modifier: Modifier = Modifier) {
+    val route = MaterialTheme.colorScheme.primary
+    val road = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+    val roadMinor = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
+    val bg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    val marker = MaterialTheme.colorScheme.surface
+    val startDot = EvGreen
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(Dim.md))
+            .background(bg)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            fun px(v: Float) = v.dp.toPx()
+
+            // Major streets — a slightly skewed grid so it reads as a real map.
+            drawLine(road, Offset(0f, h * 0.30f), Offset(w, h * 0.24f), strokeWidth = px(3f))
+            drawLine(road, Offset(0f, h * 0.68f), Offset(w, h * 0.74f), strokeWidth = px(3f))
+            drawLine(road, Offset(w * 0.32f, 0f), Offset(w * 0.26f, h), strokeWidth = px(3f))
+            drawLine(road, Offset(w * 0.74f, 0f), Offset(w * 0.80f, h), strokeWidth = px(3f))
+            // Minor + diagonal streets
+            drawLine(roadMinor, Offset(0f, h * 0.92f), Offset(w, h * 0.08f), strokeWidth = px(1.5f))
+            drawLine(roadMinor, Offset(w * 0.52f, 0f), Offset(w * 0.47f, h), strokeWidth = px(1.5f))
+            drawLine(roadMinor, Offset(0f, h * 0.50f), Offset(w, h * 0.48f), strokeWidth = px(1.5f))
+
+            // Trip route — a winding line snapping between the streets.
+            val p = Path().apply {
+                moveTo(w * 0.16f, h * 0.86f)
+                cubicTo(w * 0.32f, h * 0.66f, w * 0.22f, h * 0.52f, w * 0.44f, h * 0.46f)
+                cubicTo(w * 0.62f, h * 0.40f, w * 0.60f, h * 0.28f, w * 0.84f, h * 0.16f)
+            }
+            drawPath(
+                p, route,
+                style = Stroke(width = px(3.5f), cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+
+            // Start (green) + end (blue) markers, ringed in the card color for contrast.
+            drawCircle(marker, px(5f), Offset(w * 0.16f, h * 0.86f))
+            drawCircle(startDot, px(3.2f), Offset(w * 0.16f, h * 0.86f))
+            drawCircle(marker, px(5f), Offset(w * 0.84f, h * 0.16f))
+            drawCircle(route, px(3.2f), Offset(w * 0.84f, h * 0.16f))
         }
     }
 }

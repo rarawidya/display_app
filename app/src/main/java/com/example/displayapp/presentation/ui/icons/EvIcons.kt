@@ -350,47 +350,47 @@ object EvIcons {
     } }
 
     val Battery: ImageVector by lazy { vec("Battery") {
-        // Modern EV cell: hollow rounded body + lightning-bolt core + terminal.
-        // One EvenOdd path so the frame reads hollow and the bolt as a solid core —
-        // single tint, geometric, futuristic; matches the EV-blue theme.
+        // Modern EV cell — **vertical**: terminal on top, hollow rounded body,
+        // lightning-bolt core. One EvenOdd path so the frame reads hollow and the
+        // bolt as a solid core — single tint, geometric, futuristic.
         path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
-            // Outer body (rounded rectangle)
-            moveTo(5f, 6.5f)
-            lineTo(14f, 6.5f)
+            // Outer body (vertical rounded rectangle)
+            moveTo(9f, 6f)
+            lineTo(15f, 6f)
             arcToRelative(3f, 3f, 0f, false, true, 3f, 3f)
-            lineTo(17f, 14.5f)
+            lineTo(18f, 19f)
             arcToRelative(3f, 3f, 0f, false, true, -3f, 3f)
-            lineTo(5f, 17.5f)
+            lineTo(9f, 22f)
             arcToRelative(3f, 3f, 0f, false, true, -3f, -3f)
-            lineTo(2f, 9.5f)
+            lineTo(6f, 9f)
             arcToRelative(3f, 3f, 0f, false, true, 3f, -3f)
             close()
             // Inner cutout → hollow frame
-            moveTo(5.8f, 8.5f)
-            lineTo(13.2f, 8.5f)
+            moveTo(9.3f, 7.5f)
+            lineTo(14.7f, 7.5f)
             arcToRelative(1.8f, 1.8f, 0f, false, true, 1.8f, 1.8f)
-            lineTo(15f, 13.7f)
+            lineTo(16.5f, 18.7f)
             arcToRelative(1.8f, 1.8f, 0f, false, true, -1.8f, 1.8f)
-            lineTo(5.8f, 15.5f)
+            lineTo(9.3f, 20.5f)
             arcToRelative(1.8f, 1.8f, 0f, false, true, -1.8f, -1.8f)
-            lineTo(4f, 10.3f)
+            lineTo(7.5f, 9.3f)
             arcToRelative(1.8f, 1.8f, 0f, false, true, 1.8f, -1.8f)
             close()
             // Lightning-bolt core (solid)
-            moveTo(11f, 9f)
-            lineTo(7.5f, 12.8f)
-            lineTo(10f, 12.8f)
-            lineTo(9f, 15f)
-            lineTo(12.5f, 11.2f)
-            lineTo(10f, 11.2f)
+            moveTo(12.5f, 8.5f)
+            lineTo(9f, 14.2f)
+            lineTo(11.2f, 14.2f)
+            lineTo(10.5f, 19.5f)
+            lineTo(15f, 12.8f)
+            lineTo(12.6f, 12.8f)
             close()
-            // Terminal
-            moveTo(17f, 10f)
-            lineTo(18.8f, 10f)
-            arcToRelative(1.2f, 1.2f, 0f, false, true, 1.2f, 1.2f)
-            lineTo(20f, 12.8f)
-            arcToRelative(1.2f, 1.2f, 0f, false, true, -1.2f, 1.2f)
-            lineTo(17f, 14f)
+            // Terminal (top nub)
+            moveTo(10f, 6f)
+            lineTo(10f, 3.5f)
+            arcToRelative(1f, 1f, 0f, false, true, 1f, -1f)
+            lineTo(13f, 2.5f)
+            arcToRelative(1f, 1f, 0f, false, true, 1f, 1f)
+            lineTo(14f, 6f)
             close()
         }
     } }
