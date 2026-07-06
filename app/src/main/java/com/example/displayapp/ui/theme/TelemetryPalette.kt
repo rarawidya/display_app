@@ -92,7 +92,7 @@ private fun SeriesColors.lookup(metric: TelemetryMetric): Color = when (metric) 
     TelemetryMetric.Current        -> current
     TelemetryMetric.Power          -> power
     TelemetryMetric.Battery        -> battery
-    TelemetryMetric.EngineTemp     -> engineTemp
+    TelemetryMetric.MotorTemp     -> engineTemp
     TelemetryMetric.BatteryTemp    -> batteryTemp
     TelemetryMetric.ControllerTemp -> controllerTemp
     TelemetryMetric.WhPerKm        -> whPerKm

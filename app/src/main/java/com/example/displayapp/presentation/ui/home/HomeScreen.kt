@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,7 +40,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.R
-import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
@@ -132,9 +132,24 @@ private fun HomeContent(
                     onStartMonitoring = onStartMonitoring,
                     onConnect = onOpenBluetooth
                 )
-                QuickStatsCard(state = state, connected = connected)
-                VehicleHealthSection(state = state)
-                TodaySummaryCard(state = state, onOpenHistory = onOpenHistory)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(Dim.md)
+                ) {
+                    BatteryCard(
+                        state = state,
+                        connected = connected,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                    TodayRideCard(
+                        state = state,
+                        onOpenHistory = onOpenHistory,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                }
+                VehicleInfoCard(state = state)
             }
         }
     }
@@ -353,278 +368,135 @@ private fun HeroButton(label: String, icon: ImageVector, onClick: () -> Unit) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Quick stats strip — only cells with real data are rendered.               */
+/*  Battery + Today's ride — paired summary cards (see home_battery.png).      */
 /* -------------------------------------------------------------------------- */
 
-private data class QuickStat(
-    val icon: ImageVector,
-    val tint: Color,
-    val label: String,
-    val value: String,
-    val unit: String,
-    val caption: String,
-    val captionColor: Color
-)
-
 @Composable
-private fun QuickStatsCard(state: DashboardUiState, connected: Boolean) {
+private fun BatteryCard(
+    state: DashboardUiState,
+    connected: Boolean,
+    modifier: Modifier = Modifier
+) {
     val app = LocalAppSettings.current
-    val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
-    // Every cell here is live telemetry — with no active link there's nothing to
-    // show, so the whole strip is omitted rather than rendering stale zeros.
-    if (!connected) return
-    val stats = buildList {
-        if (state.batteryKnown) {
-            val pct = state.batteryPercent
-            val (cap, capColor) = when {
-                pct > 50 -> "Good" to EvGreen
-                pct > 20 -> "Fair" to EvAmber
-                else -> "Low" to EvRed
-            }
-            add(QuickStat(EvIcons.Battery, EvGreen, "Battery", "$pct", "%", cap, capColor))
-        }
-        state.efficiency.rangeKm?.let { km ->
-            val v = if (app.speedUnit == com.example.displayapp.domain.model.SpeedUnit.MPH) km * 0.621371f else km
-            add(
-                QuickStat(
-                    EvIcons.Road, EvBlue, "Range",
-                    EnergyFormatter.formatRangeKm(v), app.speedUnit.distanceSuffix,
-                    "Estimated", onVariant
-                )
-            )
-        }
-        // Temperature: prefer a real, non-zero wire channel (controller, then motor).
-        val tempC = when {
-            state.controllerTemperature > 0 -> state.controllerTemperature
-            state.temperature > 0 -> state.temperature
-            else -> 0
-        }
-        if (tempC > 0) {
-            val display = app.temperatureUnit.convertFromCelsius(tempC.toFloat())
-            val (cap, capColor) = when {
-                tempC < 50 -> "Normal" to EvBlue
-                tempC < 70 -> "Warm" to EvAmber
-                else -> "Hot" to EvRed
-            }
-            add(
-                QuickStat(
-                    EvIcons.Thermo, EvViolet, "Temperature",
-                    "%.0f".format(display), app.temperatureUnit.suffix, cap, capColor
-                )
-            )
-        }
-        if (state.connectionState == ConnectionState.CONNECTED) {
-            add(QuickStat(EvIcons.Refresh, EvBlue, "Last Sync", "Just now", "", "Updated", onVariant))
-        }
+    val known = connected && state.batteryKnown
+    val pct = state.batteryPercent.coerceIn(0, 100)
+    val fillColor = when {
+        !known -> MaterialTheme.colorScheme.outline
+        pct > 50 -> EvGreen
+        pct > 20 -> EvAmber
+        else -> EvRed
     }
-
-    if (stats.isEmpty()) return
+    val trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+    // Estimated range = remaining pack energy ÷ rolling Wh/km (EfficiencyTracker.
+    // computeRangeKm). Null until there's valid consumption data, so we show "—"
+    // rather than a fabricated number. Displayed in the user's distance unit.
+    val rangeKm = state.efficiency.rangeKm
+    val rangeValue = if (known && rangeKm != null) {
+        val v = if (app.speedUnit == com.example.displayapp.domain.model.SpeedUnit.MPH)
+            rangeKm * 0.621371f else rangeKm
+        "%.0f".format(v)
+    } else "—"
 
     Surface(
         shape = RoundedCornerShape(Dim.cardCorner),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 2.dp,
         shadowElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = Dim.lg, horizontal = Dim.sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            stats.forEachIndexed { i, stat ->
-                QuickStatCell(stat, Modifier.weight(1f))
-                if (i < stats.lastIndex) CellDivider()
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickStatCell(stat: QuickStat, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.padding(horizontal = Dim.xs),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Dim.xxs)
-    ) {
-        androidx.compose.material3.Icon(
-            imageVector = stat.icon,
-            contentDescription = null,
-            tint = stat.tint,
-            modifier = Modifier.size(22.dp)
-        )
-        Text(
-            text = stat.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1
-        )
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = stat.value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
-            )
-            if (stat.unit.isNotEmpty()) {
-                Text(
-                    text = " ${stat.unit}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Text(
-            text = stat.caption,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = stat.captionColor,
-            maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun CellDivider() {
-    Box(
-        modifier = Modifier
-            .size(width = 1.dp, height = 40.dp)
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
-    )
-}
-
-/** Taller, softer divider sized for the stacked Today's-Summary stat cells. */
-@Composable
-private fun SummaryDivider() {
-    Box(
-        modifier = Modifier
-            .size(width = 1.dp, height = 56.dp)
-            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
-    )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Vehicle health                                                            */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun VehicleHealthSection(state: DashboardUiState) {
-    val connected = state.connectionState == ConnectionState.CONNECTED
-    val allNormal = !state.faultActive
-    Column(verticalArrangement = Arrangement.spacedBy(Dim.sm)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Vehicle Health",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = if (allNormal) "All Systems Normal" else "Attention Needed",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (allNormal) EvGreen else EvAmber
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(Dim.sm)) {
-            HealthCard(
-                icon = EvIcons.Shield,
-                tint = if (state.faultActive) EvRed else EvGreen,
-                title = "Controller",
-                status = if (state.faultActive) "Fault" else "OK",
-                statusColor = if (state.faultActive) EvRed else EvGreen,
-                modifier = Modifier.weight(1f)
-            )
-            HealthCard(
-                icon = if (connected) EvIcons.Bluetooth else EvIcons.BluetoothOff,
-                tint = EvBlue,
-                title = "Bluetooth",
-                status = if (connected) "Connected" else "Offline",
-                statusColor = if (connected) EvBlue else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
-            HealthCard(
-                icon = EvIcons.Cpu,
-                tint = EvViolet,
-                title = "System",
-                status = if (connected) "Normal" else "Idle",
-                statusColor = EvViolet,
-                modifier = Modifier.weight(1f)
-            )
-            HealthCard(
-                icon = EvIcons.Pulse,
-                tint = if (state.faultActive) EvRed else EvGreen,
-                title = "Error",
-                status = if (state.faultActive) "#${state.faultCode}" else "None",
-                statusColor = if (state.faultActive) EvRed else EvGreen,
-                modifier = Modifier.weight(1f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun HealthCard(
-    icon: ImageVector,
-    tint: Color,
-    title: String,
-    status: String,
-    statusColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(Dim.lg),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-        shadowElevation = 2.dp,
         modifier = modifier
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = Dim.md, horizontal = Dim.xs),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(Dim.lg),
             verticalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
-            IconBubble(icon = icon, tint = tint)
             Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium,
+                text = "Battery",
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text(
-                text = status,
-                style = MaterialTheme.typography.labelSmall,
-                color = statusColor,
-                textAlign = TextAlign.Center,
-                maxLines = 1
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = if (known) "$pct" else "—",
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (known) {
+                        Text(
+                            text = "%",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    }
+                }
+                // Battery glyph sits beside the value, tinted to the charge state.
+                androidx.compose.material3.Icon(
+                    imageVector = EvIcons.Battery,
+                    contentDescription = null,
+                    tint = if (known) fillColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(trackColor)
+            ) {
+                if (known) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(pct / 100f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(50))
+                            .background(fillColor)
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Column(verticalArrangement = Arrangement.spacedBy(Dim.xxs)) {
+                Text(
+                    text = "Estimated Range",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = rangeValue,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = " ${app.speedUnit.distanceSuffix}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Today's summary — omitted entirely when there's no session data.          */
-/* -------------------------------------------------------------------------- */
-
 @Composable
-private fun TodaySummaryCard(state: DashboardUiState, onOpenHistory: () -> Unit) {
+private fun TodayRideCard(
+    state: DashboardUiState,
+    onOpenHistory: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val app = LocalAppSettings.current
     val distanceKm = state.tripStats.distanceKm
     val durationSec = state.tripStats.durationSec
-    val whPerKm = state.efficiency.whPerKm
-
-    val hasData = distanceKm > 0f || durationSec > 0L || whPerKm != null
-    if (!hasData) return
-
     val distDisplay = if (app.speedUnit == com.example.displayapp.domain.model.SpeedUnit.MPH)
         distanceKm * 0.621371f else distanceKm
 
@@ -633,13 +505,13 @@ private fun TodaySummaryCard(state: DashboardUiState, onOpenHistory: () -> Unit)
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 2.dp,
         shadowElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(Dim.lg),
-            verticalArrangement = Arrangement.spacedBy(Dim.md)
+            verticalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -647,111 +519,206 @@ private fun TodaySummaryCard(state: DashboardUiState, onOpenHistory: () -> Unit)
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Today's Summary",
+                    text = "Today's Ride",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                androidx.compose.material3.Icon(
+                    imageVector = EvIcons.ChevronRight,
+                    contentDescription = "View history",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onOpenHistory)
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            RideStat(
+                icon = EvIcons.Road,
+                tint = EvBlue,
+                value = "%.1f".format(distDisplay),
+                unit = app.speedUnit.distanceSuffix,
+                label = "Distance"
+            )
+            RideStat(
+                icon = EvIcons.Timer,
+                tint = EvViolet,
+                value = "${durationSec / 60}",
+                unit = "min",
+                label = "Duration"
+            )
+        }
+    }
+}
+
+@Composable
+private fun RideStat(
+    icon: ImageVector,
+    tint: Color,
+    value: String,
+    unit: String,
+    label: String
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(Dim.xxs)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
                 )
-                Row(
-                    modifier = Modifier.clickable(onClick = onOpenHistory),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Dim.xxs)
-                ) {
-                    Text(
-                        text = "View History",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    androidx.compose.material3.Icon(
-                        imageVector = EvIcons.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+                Text(
+                    text = " $unit",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Vehicle information — spec + live-status sheet (à la NIU / Ather app).     */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun VehicleInfoCard(state: DashboardUiState) {
+    val app = LocalAppSettings.current
+    val connected = state.connectionState == ConnectionState.CONNECTED
+    val dash = "—"
+
+    // A calm at-a-glance list (summary style, not live gauges). Only fields that
+    // appear nowhere else on Home live here — no value is shown twice.
+    fun temp(c: Int) = "%.0f %s".format(
+        app.temperatureUnit.convertFromCelsius(c.toFloat()), app.temperatureUnit.suffix
+    )
+    val modeValue = if (connected) modeLabel(state.vehicleMode) else dash
+    val motorTempValue = if (connected && state.temperature > 0) temp(state.temperature) else dash
+    val controllerTempValue = if (connected && state.controllerTemperature > 0)
+        temp(state.controllerTemperature) else dash
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Dim.sm)
+    ) {
+        // Section title sits above the card.
+        Text(
+            text = "Vehicle Information",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Surface(
+            shape = RoundedCornerShape(Dim.cardCorner),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Stacked sideways: the key channels sit in a row, split by separators.
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Dim.lg),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SummaryStat(
-                    icon = EvIcons.Road,
-                    tint = EvBlue,
-                    value = "%.1f".format(distDisplay),
-                    unit = app.speedUnit.distanceSuffix,
-                    label = "Distance",
-                    modifier = Modifier.weight(1f)
-                )
-                SummaryDivider()
-                SummaryStat(
-                    icon = EvIcons.Timer,
-                    tint = EvViolet,
-                    value = "${durationSec / 60}",
-                    unit = "min",
-                    label = "Duration",
-                    modifier = Modifier.weight(1f)
-                )
-                if (whPerKm != null) {
-                    SummaryDivider()
-                    SummaryStat(
-                        icon = EvIcons.Bolt,
-                        tint = EvGreen,
-                        value = EnergyFormatter.formatEfficiency(whPerKm),
-                        unit = "Wh/km",
-                        label = "Efficiency",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                VehicleStat(EvIcons.Drive, EvViolet, modeValue, "Riding Mode", Modifier.weight(1f))
+                VDivider()
+                VehicleStat(EvIcons.Thermo, EvAmber, motorTempValue, "Motor Temp", Modifier.weight(1f))
+                VDivider()
+                VehicleStat(EvIcons.Cpu, EvBlue, controllerTempValue, "Controller Temp", Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun SummaryStat(
+private fun VehicleStat(
     icon: ImageVector,
     tint: Color,
     value: String,
-    unit: String,
     label: String,
     modifier: Modifier = Modifier
 ) {
-    // Vertical cell: icon bubble on top, value + unit on one line, label below.
-    // Stacking vertically (rather than icon-beside-text) keeps every column wide
-    // enough that "Wh/km" and the label never wrap or clip in a ~1/3-width slot.
     Column(
         modifier = modifier.padding(horizontal = Dim.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(Dim.sm)
+        verticalArrangement = Arrangement.spacedBy(Dim.xs)
     ) {
-        IconBubble(icon = icon, tint = tint)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                softWrap = false
-            )
-            Text(
-                text = " $unit",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                softWrap = false
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(20.dp)
             )
         }
         Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+        Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            softWrap = false
+            textAlign = TextAlign.Center,
+            maxLines = 2
         )
     }
+}
+
+/** Vertical separator between the stacked-sideways vehicle stats. */
+@Composable
+private fun VDivider() {
+    Box(
+        modifier = Modifier
+            .size(width = 1.dp, height = 52.dp)
+            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+    )
+}
+
+private fun modeLabel(mode: com.example.displayapp.domain.model.VehicleMode) = when (mode) {
+    com.example.displayapp.domain.model.VehicleMode.PARK -> "Parked"
+    com.example.displayapp.domain.model.VehicleMode.ECO -> "Eco"
+    com.example.displayapp.domain.model.VehicleMode.NORMAL -> "Normal"
+    com.example.displayapp.domain.model.VehicleMode.SPORT -> "Sport"
+    com.example.displayapp.domain.model.VehicleMode.REGEN -> "Regen"
 }
 
 /* -------------------------------------------------------------------------- */

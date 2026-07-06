@@ -6,12 +6,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!--
-        neverForLocation: we connect to a known EV controller MAC via SPP. We
-        never use scan results to derive physical location, so the system can
-        skip the location-services-must-be-on check (Android 12+). Without
-        this flag, BluetoothAdapter.startDiscovery() silently returns false
-        when the user has location turned off, even though the runtime
-        permission is granted — which is what triggered "Couldn't start scan".
+        neverForLocation: we BLE-scan (filtered on the controller's service UUID)
+        only to find/reconnect the vehicle. We never derive physical location from
+        scan results, so the system can skip the location-services requirement on
+        Android 12+.
     -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
@@ -24,12 +22,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- BLE transport (GATT). The controller exposes telemetry as a BLE peripheral;
-         the app is the central. Marked not-required so Classic-SPP-only devices can
-         still install during the transitional dual-transport period. -->
+    <!-- BLE transport (GATT). The controller is a BLE peripheral; the app is the
+         central. Required — the app talks to the vehicle exclusively over BLE. -->
     <uses-feature
         android:name="android.hardware.bluetooth_le"
-        android:required="false" />
+        android:required="true" />
 
     <application
         android:name=".DisplayApp"

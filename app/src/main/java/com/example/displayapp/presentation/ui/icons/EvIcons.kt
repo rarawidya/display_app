@@ -350,12 +350,48 @@ object EvIcons {
     } }
 
     val Battery: ImageVector by lazy { vec("Battery") {
-        // Solid vertical battery silhouette (cap + body)
-        path(fill = SolidColor(Color.White)) {
-            // Cap
-            moveTo(10f, 2f); lineTo(14f, 2f); lineTo(14f, 4f); lineTo(10f, 4f); close()
-            // Body
-            moveTo(8f, 4.5f); lineTo(16f, 4.5f); lineTo(16f, 21.5f); lineTo(8f, 21.5f); close()
+        // Modern EV cell: hollow rounded body + lightning-bolt core + terminal.
+        // One EvenOdd path so the frame reads hollow and the bolt as a solid core —
+        // single tint, geometric, futuristic; matches the EV-blue theme.
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            // Outer body (rounded rectangle)
+            moveTo(5f, 6.5f)
+            lineTo(14f, 6.5f)
+            arcToRelative(3f, 3f, 0f, false, true, 3f, 3f)
+            lineTo(17f, 14.5f)
+            arcToRelative(3f, 3f, 0f, false, true, -3f, 3f)
+            lineTo(5f, 17.5f)
+            arcToRelative(3f, 3f, 0f, false, true, -3f, -3f)
+            lineTo(2f, 9.5f)
+            arcToRelative(3f, 3f, 0f, false, true, 3f, -3f)
+            close()
+            // Inner cutout → hollow frame
+            moveTo(5.8f, 8.5f)
+            lineTo(13.2f, 8.5f)
+            arcToRelative(1.8f, 1.8f, 0f, false, true, 1.8f, 1.8f)
+            lineTo(15f, 13.7f)
+            arcToRelative(1.8f, 1.8f, 0f, false, true, -1.8f, 1.8f)
+            lineTo(5.8f, 15.5f)
+            arcToRelative(1.8f, 1.8f, 0f, false, true, -1.8f, -1.8f)
+            lineTo(4f, 10.3f)
+            arcToRelative(1.8f, 1.8f, 0f, false, true, 1.8f, -1.8f)
+            close()
+            // Lightning-bolt core (solid)
+            moveTo(11f, 9f)
+            lineTo(7.5f, 12.8f)
+            lineTo(10f, 12.8f)
+            lineTo(9f, 15f)
+            lineTo(12.5f, 11.2f)
+            lineTo(10f, 11.2f)
+            close()
+            // Terminal
+            moveTo(17f, 10f)
+            lineTo(18.8f, 10f)
+            arcToRelative(1.2f, 1.2f, 0f, false, true, 1.2f, 1.2f)
+            lineTo(20f, 12.8f)
+            arcToRelative(1.2f, 1.2f, 0f, false, true, -1.2f, 1.2f)
+            lineTo(17f, 14f)
+            close()
         }
     } }
 

@@ -34,15 +34,6 @@ class DisplayApp : Application() {
         }
         appContainer = AppContainer(this)
 
-        // Apply the persisted transport choice (BLE vs Classic SPP) before anything
-        // connects. Home never auto-connects, so this completes well ahead of the
-        // first connect; a switch only actually happens once the user leaves the
-        // simulator, so setting the flag early is enough.
-        appScope.launch {
-            val useBle = appContainer.devicePreferences.bleTransport.first()
-            if (useBle) appContainer.setBleTransport(true)
-        }
-
         // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
             val retentionDays = appContainer.appPreferencesRepository.settings

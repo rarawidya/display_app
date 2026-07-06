@@ -37,10 +37,10 @@ object TelemetryConstants {
      * hardware. While false, the Drive tiles render those as "—" instead of a
      * misleading 0. Flip to true once firmware defines the current scale + sign.
      *
-     * DEMO MODE: currently `true` so the simulator's injected whole-amp currents
-     * light up Current / Power / Wh/km / Range (and the Home page Range +
-     * Avg. Efficiency stats). On real hardware these read garbage until the
-     * firmware calibrates the channel — set back to `false` before shipping.
+     * Real-hardware default: `false`. Per the firmware BLE spec, `motorCurrentRaw`
+     * is provisional and reads ~0 until road-calibrated, so current / power / Wh/km /
+     * range must show "—" rather than a misleading 0. (Temporarily set true only for
+     * simulator demos.)
      */
-    const val CURRENT_CHANNEL_CALIBRATED: Boolean = true
+    const val CURRENT_CHANNEL_CALIBRATED: Boolean = false
 }

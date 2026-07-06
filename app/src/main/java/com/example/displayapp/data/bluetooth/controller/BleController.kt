@@ -5,8 +5,11 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.os.ParcelUuid
+import com.example.displayapp.data.bluetooth.ble.BleConstants
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -33,9 +36,8 @@ import timber.log.Timber
 
 /**
  * BLE implementation of [BluetoothController] — the adapter/discovery plane for the
- * pairing sheet, mirroring [AndroidBluetoothController] but discovering via the
- * **BLE scanner** (`BluetoothLeScanner` + `ScanCallback`) instead of Classic
- * `ACTION_FOUND` inquiry.
+ * pairing sheet, discovering via the **BLE scanner** (`BluetoothLeScanner` +
+ * `ScanCallback`).
  *
  * The sheet UI ([com.example.displayapp.presentation.ui.connection.BluetoothManagementSections])
  * and [com.example.displayapp.presentation.viewmodel.BluetoothViewModel] are unchanged
@@ -43,10 +45,10 @@ import timber.log.Timber
  * changes and forget are identical to the Classic controller (the adapter is shared);
  * only the *discovery* mechanism differs.
  *
- * Discovery is **unfiltered**: the controller advertises no name and may not advertise
- * its service UUID (see docs/BLE_FIRMWARE_REQUIREMENTS.md §1.3), so filtering could
- * hide it. The user picks it from the RSSI-sorted list. `pairedDevices` surfaces
- * bonded LE/DUAL devices (usually none — this controller doesn't require bonding).
+ * Discovery is **filtered on service `0xAF00`** (per docs/EVDISPLAY_BLE_COMMUNICATION.md
+ * the board advertises it), so the sheet lists the vehicle ("EVdisplay", name from the
+ * scan response) rather than every BLE device, and scanning keeps working screen-off.
+ * `pairedDevices` surfaces bonded LE/DUAL devices (usually none — open GATT, no bonding).
  */
 @SuppressLint("MissingPermission")
 class BleController(private val context: Context) : BluetoothController {
@@ -177,10 +179,16 @@ class BleController(private val context: Context) : BluetoothController {
         if (_isScanning.value) return
         foundByAddress.clear()
         _discovered.value = emptyList()
+        // Filter on the controller's advertised service UUID (0xAF00) so the sheet
+        // lists the vehicle ("EVdisplay") rather than every BLE device nearby, and so
+        // scanning keeps working with the screen off.
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(BleConstants.SERVICE_UUID))
+            .build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        val ok = runCatching { scanner.startScan(null, settings, leScanCallback); true }.getOrDefault(false)
+        val ok = runCatching { scanner.startScan(listOf(filter), settings, leScanCallback); true }.getOrDefault(false)
         if (!ok) {
             _events.tryEmit(BluetoothControllerEvent.Error("Couldn't start scan — try again"))
             return

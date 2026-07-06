@@ -26,19 +26,6 @@ class DevicePreferences(private val context: Context) {
         )
     }
 
-    /**
-     * Persisted transport choice: true = BLE/GATT, false = Bluetooth Classic SPP.
-     * Applied at startup by [com.example.displayapp.DisplayApp] so the selection
-     * survives a restart. Defaults to false (SPP) until BLE is validated on hardware.
-     */
-    val bleTransport: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[KEY_BLE_TRANSPORT] ?: false
-    }
-
-    suspend fun setBleTransport(enabled: Boolean) {
-        context.dataStore.edit { prefs -> prefs[KEY_BLE_TRANSPORT] = enabled }
-    }
-
     suspend fun saveDevice(address: String, name: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_LAST_ADDRESS] = address
@@ -60,7 +47,6 @@ class DevicePreferences(private val context: Context) {
         private val KEY_LAST_ADDRESS = stringPreferencesKey("last_bt_address")
         private val KEY_LAST_NAME = stringPreferencesKey("last_bt_name")
         private val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect")
-        private val KEY_BLE_TRANSPORT = booleanPreferencesKey("ble_transport")
     }
 }
 

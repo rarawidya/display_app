@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.temperatureAlertLevel
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
@@ -249,25 +248,24 @@ private fun SpeedometerSection(state: DashboardUiState) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  EV telemetry grid — eight tiles, purely electric-vehicle data.            */
+/*  EV telemetry grid — real controller channels only (capnp.md).             */
 /*                                                                            */
-/*  Row 1: Power           | Current                                          */
-/*  Row 2: Voltage         | Engine Temp                                      */
-/*  Row 3: Battery Temp    | Controller Temp                                  */
-/*  Row 4: Wh/km           | Range                                            */
+/*  Row 1: Voltage         | Motor Temp                                       */
+/*  Row 2: Battery Temp    | Controller Temp                                  */
+/*                                                                            */
+/*  Power / Current / Wh/km / Range tiles are intentionally omitted: they all */
+/*  derive from motorCurrentRaw (@1), which the board sends as 0 (uncalibrated)*/
+/*  — so they'd be fake on real hardware. Only wire-backed fields are shown.   */
 /* -------------------------------------------------------------------------- */
 
 @Composable
 private fun TelemetryGrid(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    // All values come straight off canonical telemetry — no UI math. Power
-    // is derived in TelemetryMapper; temperatures are real wire channels.
+    // Only fields the controller actually provides: pack voltage + temperatures.
     val voltage = state.voltage
-    val current = state.current
-    val power   = state.power
 
     // Convert telemetry's °C readings to whatever unit the user picked.
-    val engineTemp     = app.temperatureUnit.convertFromCelsius(state.temperature.toFloat())
+    val motorTemp      = app.temperatureUnit.convertFromCelsius(state.temperature.toFloat())
     val batteryTemp    = app.temperatureUnit.convertFromCelsius(state.batteryTemperature.toFloat())
     val controllerTemp = app.temperatureUnit.convertFromCelsius(state.controllerTemperature.toFloat())
     val tempUnit       = app.temperatureUnit.suffix
@@ -282,29 +280,6 @@ private fun TelemetryGrid(state: DashboardUiState) {
             modifier = Modifier.height(IntrinsicSize.Max),
             horizontalArrangement = Arrangement.spacedBy(Dim.md)
         ) {
-            MetricOrDash(
-                available = state.currentAvailable,
-                icon = EvIcons.Plug,
-                label = "Power",
-                value = power,
-                unit = "Watt",
-                fractionDigits = 1,
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            )
-            MetricOrDash(
-                available = state.currentAvailable,
-                icon = EvIcons.Bolt,
-                label = "Current",
-                value = current,
-                unit = "A",
-                fractionDigits = 1,
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            )
-        }
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(Dim.md)
-        ) {
             PremiumMetricTile(
                 icon = EvIcons.Bolt,
                 label = "Voltage",
@@ -315,8 +290,8 @@ private fun TelemetryGrid(state: DashboardUiState) {
             )
             PremiumMetricTile(
                 icon = EvIcons.Thermo,
-                label = "Engine Temp",
-                value = engineTemp,
+                label = "Motor Temp",
+                value = motorTemp,
                 unit = tempUnit,
                 level = temperatureAlertLevel(state.temperature),
                 modifier = Modifier.weight(1f).fillMaxHeight()
@@ -341,25 +316,6 @@ private fun TelemetryGrid(state: DashboardUiState) {
                 value = controllerTemp,
                 unit = tempUnit,
                 level = temperatureAlertLevel(state.controllerTemperature),
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            )
-        }
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Max),
-            horizontalArrangement = Arrangement.spacedBy(Dim.md)
-        ) {
-            PremiumMetricTile(
-                icon = EvIcons.Plug,
-                label = "Wh/km",
-                valueText = EnergyFormatter.formatEfficiency(state.efficiency.whPerKm),
-                unit = "Wh/km",
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            )
-            PremiumMetricTile(
-                icon = EvIcons.Battery,
-                label = "Range",
-                valueText = EnergyFormatter.formatRangeKm(state.efficiency.rangeKm),
-                unit = "km",
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }

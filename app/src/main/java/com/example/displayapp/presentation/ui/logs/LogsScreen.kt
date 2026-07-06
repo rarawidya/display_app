@@ -69,8 +69,6 @@ import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvBlue
-import com.example.displayapp.ui.theme.EvGreen
-import com.example.displayapp.ui.theme.EvLime
 import com.example.displayapp.ui.theme.EvRed
 import java.io.File
 
@@ -305,7 +303,6 @@ private fun SummaryBand(summary: LogsSummary) {
     val app = LocalAppSettings.current
     val distanceLabel = app.speedUnit.formatDistance(summary.totalDistanceMeters)
     val avgSpeedLabel = app.speedUnit.formatSpeed(summary.avgSpeedKmh10 / 10f)
-    val energyLabel = if (summary.totalEnergyKwh > 0f) "%.1f kWh".format(summary.totalEnergyKwh) else "—"
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -313,9 +310,10 @@ private fun SummaryBand(summary: LogsSummary) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             SummaryStat("Trips", summary.tripCount.toString(), EvBlue)
-            SummaryStat("Distance", distanceLabel, EvLime)
+            // Theme-adaptive accent (bright EV-blue in dark, standard in light) so the
+            // distance reads cleanly in both themes — the old fixed neon lime did not.
+            SummaryStat("Distance", distanceLabel, MaterialTheme.colorScheme.primary)
             SummaryStat("Avg speed", avgSpeedLabel, EvBlue)
-            SummaryStat("Energy", energyLabel, EvGreen)
         }
     }
 }

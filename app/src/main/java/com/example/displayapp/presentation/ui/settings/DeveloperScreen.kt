@@ -156,7 +156,6 @@ private fun DeveloperContent(
                     onDynamicColor = onDynamicColor
                 )
                 BleProbeSection()
-                BleTransportSection()
                 SimulatorSection(
                     app = state.app,
                     onScenario = onSimulatorScenario
@@ -320,66 +319,6 @@ private fun uuidShort(u: java.util.UUID): String {
     else s.substringBefore('-')
 }
 
-/* -------------------------------------------------------------------------- */
-/*  BLE transport (experimental) — routes the live pipeline over GATT.         */
-/*  Phase 1 harness: proves the unchanged Repository/UI render BLE telemetry.   */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun BleTransportSection() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val container = remember { (context.applicationContext as DisplayApp).appContainer }
-
-    val connState by container.vehicleRepository.connectionState.collectAsStateWithLifecycle()
-    val data by container.vehicleRepository.vehicleData.collectAsStateWithLifecycle()
-    var bleOn by remember { mutableStateOf(container.useBleTransport) }
-
-    SettingsSection(title = "BLE transport (experimental)") {
-        SwitchRow(
-            title = "Route telemetry over BLE",
-            subtitle = "GATT ${uuidShortHex()} instead of SPP · dev only, SPP is default",
-            checked = bleOn,
-            onCheckedChange = {
-                bleOn = it
-                container.setBleTransport(it)
-                scope.launch { container.devicePreferences.setBleTransport(it) }
-            }
-        )
-        SectionDivider()
-        ActionRow(
-            title = "Connect over BLE",
-            subtitle = "Scan for 0xAF00 → subscribe 0xAF08 (bypasses the foreground service)",
-            onClick = {
-                scope.launch {
-                    container.setBleTransport(true)
-                    bleOn = true
-                    container.devicePreferences.setBleTransport(true)
-                    container.switchDataSource(simulator = false)
-                    container.vehicleRepository.connect("")
-                }
-            }
-        )
-        ActionRow(
-            title = "Disconnect BLE",
-            subtitle = "Stop the BLE session",
-            onClick = { container.vehicleRepository.disconnect() }
-        )
-        SectionDivider()
-        Text(
-            text = "State: $connState\n" +
-                "speed=${data.speed} km/h   batt=${data.batteryPercent}%   " +
-                "${data.voltage} V   rpm=${data.rpm}",
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
-        )
-    }
-}
-
-private fun uuidShortHex(): String = "0xAF00/0xAF08"
 
 @Composable
 private fun BleDeviceRow(entry: BleGattProbe.ScanEntry, onClick: () -> Unit) {

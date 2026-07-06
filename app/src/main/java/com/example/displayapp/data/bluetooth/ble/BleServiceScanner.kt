@@ -4,24 +4,24 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.os.ParcelUuid
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
- * Locates the controller for a (re)connect.
+ * Locates the controller for a (re)connect by scanning for its advertised service
+ * UUID [BleConstants.SERVICE_UUID] (`0xAF00`).
  *
- * The controller uses a **resolvable-private (rotating) address** and — per the probe
- * — may not advertise its service UUID, so we can neither trust a stored MAC forever
- * nor rely on a `ScanFilter`. Strategy, in order of preference:
- *   1. exact match on [preferAddress] (the address the user just picked, still current);
- *   2. any device advertising [BleConstants.SERVICE_UUID] (works only if the firmware
- *      puts the UUID in the advertisement — see docs/BLE_FIRMWARE_REQUIREMENTS.md §1.3);
- *   3. otherwise null — reconnect can't identify the device without one of the above.
- *
- * Scan is **unfiltered** so case 1 works even when the service UUID isn't advertised.
+ * Per the firmware spec (`docs/EVDISPLAY_BLE_COMMUNICATION.md`) the board advertises
+ * `0xAF00` (AD type 0x03) with a **public, stable** address, so:
+ *  - the scan is **filtered** on `0xAF00` — which (unlike an unfiltered scan) keeps
+ *    delivering results while the screen is off, so background reconnect works;
+ *  - every result is a controller, so we take the [preferAddress] match if present
+ *    (stable MAC ⇒ reliable), otherwise the strongest signal.
  */
 class BleServiceScanner(private val adapter: BluetoothAdapter?) {
 
@@ -32,17 +32,16 @@ class BleServiceScanner(private val adapter: BluetoothAdapter?) {
     ): BluetoothDevice? {
         val scanner = adapter?.bluetoothLeScanner ?: return null
         val result = CompletableDeferred<BluetoothDevice?>()
-        var serviceMatch: BluetoothDevice? = null
+        var best: ScanResult? = null
 
         val cb = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, r: ScanResult) {
+                // Filter guarantees r advertises 0xAF00 → it is a controller.
                 if (preferAddress != null && r.device.address == preferAddress) {
                     if (!result.isCompleted) result.complete(r.device)
                     return
                 }
-                val advertisesService = r.scanRecord?.serviceUuids
-                    ?.any { it.uuid == BleConstants.SERVICE_UUID } == true
-                if (advertisesService && serviceMatch == null) serviceMatch = r.device
+                if (best == null || r.rssi > best!!.rssi) best = r
             }
             override fun onScanFailed(errorCode: Int) {
                 Timber.w("BLE service scan failed: $errorCode")
@@ -50,13 +49,16 @@ class BleServiceScanner(private val adapter: BluetoothAdapter?) {
             }
         }
 
+        val filter = ScanFilter.Builder()
+            .setServiceUuid(ParcelUuid(BleConstants.SERVICE_UUID))
+            .build()
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         return try {
-            scanner.startScan(null, settings, cb) // unfiltered — see class doc
-            withTimeoutOrNull(timeoutMs) { result.await() } ?: serviceMatch
+            scanner.startScan(listOf(filter), settings, cb)
+            withTimeoutOrNull(timeoutMs) { result.await() } ?: best?.device
         } catch (e: SecurityException) {
             Timber.e(e, "BLE scan permission denied")
             null

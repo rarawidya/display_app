@@ -131,7 +131,7 @@ private fun Header(state: ChartsUiState) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Telemetry",
+                    text = "Charts",
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -202,7 +202,7 @@ private fun displayLatest(
             val suffix = if (metric == TelemetryMetric.Speed) app.speedUnit.suffix else app.speedUnit.distanceSuffix
             metric.format.format(v) to suffix
         }
-        TelemetryMetric.EngineTemp,
+        TelemetryMetric.MotorTemp,
         TelemetryMetric.BatteryTemp,
         TelemetryMetric.ControllerTemp -> {
             val v = app.temperatureUnit.convertFromCelsius(latest)

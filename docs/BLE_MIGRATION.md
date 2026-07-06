@@ -168,9 +168,78 @@ firmware/hardware team:**
     to advertise the service UUID** (or a stable name) — see
     `docs/BLE_FIRMWARE_REQUIREMENTS.md` §1.3 / §2. Until then, reconnect works within a
     session and while the address is unchanged.
-- **Phase 4 — Field-test** reconnect / MTU / bonding / rotating-address on real
-  hardware; tune. *In progress once the harness is exercised on the controller.*
-- **Phase 5 — Retire** the SPP classes (or keep them for dual-mode). *Not started.*
+- **Phase 3b — Aligned to the firmware spec + productionized** ✅ **DONE.** The firmware
+  team's `docs/EVDISPLAY_BLE_COMMUNICATION.md` confirmed the controller advertises
+  service `0xAF00`, has a **public/stable address**, and is named **`EVdisplay`** — which
+  dissolves the earlier "rotating address / unadvertised UUID" blockers (an unrelated
+  Fast-Pair device had confused the probe). Changes:
+  - Both scanners (`BleServiceScanner`, `BleController`) now use a **`ScanFilter` on
+    `0xAF00`** → reliable discovery, screen-off-capable reconnect, and the sheet lists
+    "EVdisplay" instead of every BLE device.
+  - **BLE is now the default transport** (`AppContainer.useBleTransport = true`); SPP is
+    retained as a code-level rollback (flip the flag).
+  - Removed the experimental Developer "BLE transport" harness + its persisted flag
+    (the normal Home → Connect Bluetooth flow now uses BLE). The BLE GATT **probe** is
+    kept as a diagnostic.
+  - Reverted `CURRENT_CHANNEL_CALIBRATED` to `false` (real `motorCurrentRaw` is ~0 until
+    calibrated → show "—"); unit tests green.
+  - Decode verified: the firmware §5e golden frame is byte-identical to the passing
+    `VotolTelemetryFrameTest`.
+- **Phase 4 — Field-test on real hardware** ✅ **DONE.** Confirmed a live connection to
+  the `EVdisplay` controller over BLE via the normal Home → Connect Bluetooth flow;
+  telemetry renders through the unchanged pipeline.
+- **Phase 5 — Retire the SPP classes** ✅ **DONE.** Deleted `SppDataSource`,
+  `SppSocketClient`, the Classic `BluetoothScanner`, and `AndroidBluetoothController`;
+  simplified `AppContainer` (no transport flag/selector — `createDelegate` is
+  simulator-or-BLE, `bluetoothController` is `BleController`); set
+  `uses-feature bluetooth_le` to `required="true"` and refreshed the manifest comments.
+  Kept the shared `ReconnectPolicy`, `Crc16`, protocol layer, and `SwitchableDataSource`
+  (still used for the simulator↔BLE swap). Compiles; full unit-test suite green.
+
+  > **Follow-up:** `CLAUDE.md` still describes the transport as Bluetooth Classic
+  > SPP/RFCOMM in several places (architecture table, Gotchas, the frame-watchdog note).
+  > It should be updated to describe BLE/GATT — not done here to keep this change scoped.
+
+---
+
+## 5a. BLE audit (post-Phase-3) — findings & status
+
+Adversarial audit of the BLE transport.
+
+**Firmware-gated blockers (cannot be fixed in the app alone):**
+- **B1 — Screen-off reconnect is broken.** Android does not deliver **unfiltered**
+  scan results while the screen is off; a `ScanFilter` is required. With a rotating
+  RPA and (per probe) no advertised service UUID, no filter can match — so a drop with
+  the screen off can't reconnect, defeating the foreground-service "record with screen
+  off" case. **Fix requires firmware to advertise service `0xAF00`** → then we scan
+  with a `ScanFilter` (screen-off capable).
+- **B2 — No stable identity ⇒ no durable auto-reconnect.** A resolvable-private
+  address is re-identifiable only via the bonding IRK; the app doesn't bond and the
+  service UUID isn't advertised, so after the address rotates neither the saved MAC nor
+  a scan can find the controller. **Fix: firmware advertises the service UUID, or uses
+  a public/static address, or the app bonds.**
+
+Both are documented for firmware in `BLE_FIRMWARE_REQUIREMENTS.md` §1.3 / §2.
+
+**App-side bugs fixed in this pass:**
+- Re-`connect()` leaked the previous `BluetoothGatt` / left a stray callback → now
+  cancels the job **and** closes the old client before a new attempt.
+- Concurrent loss paths (watchdog / onDisconnected / scan-fail) could spawn **parallel
+  reconnect loops** → `handleConnectionLost` now cancels the prior attempt first.
+- Watchdog false-tripped on a **slow first notification** → added an initial-data grace
+  (`INITIAL_DATA_TIMEOUT_MS`) until the first byte arrives.
+- `setCharacteristicNotification(...)` return value was ignored → now fails the connect
+  cleanly instead of "subscribed but silent".
+- Shared flags marked `@Volatile`; adapter-off handling posted onto the connection
+  scope (off the binder thread).
+
+**Known residual (non-blocking, tracked):**
+- Full single-thread confinement of `BleDataSource` state (belt-and-suspenders over the
+  `@Volatile` + idempotent-close approach).
+- Rapid reconnect scans could hit Android's 5-scans/30s throttle in a tight window.
+- Neither `BluetoothController` impl calls `release()` on transport switch (pre-existing
+  singleton pattern; receivers persist for process life).
+- No bonding-required fallback (matches the observed "no bond" profile).
 
 ---
 

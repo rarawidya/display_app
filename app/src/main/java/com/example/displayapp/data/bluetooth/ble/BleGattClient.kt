@@ -12,7 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
- * Low-level BLE GATT client — the LE analogue of `SppSocketClient`.
+ * Low-level BLE GATT client — owns the socket-level connection to the controller.
  *
  * Owns a single [BluetoothGatt] and runs the connect → MTU → discover → enable-CCCD
  * handshake as a **strictly serialized callback chain** (Android's GATT stack allows
@@ -78,7 +78,10 @@ class BleGattClient(
                     Timber.e("BLE telemetry characteristic ${BleConstants.TX_CHAR_UUID} not found")
                     if (!ready.isCompleted) ready.complete(false); return
                 }
-                g.setCharacteristicNotification(ch, true)
+                if (!g.setCharacteristicNotification(ch, true)) {
+                    Timber.e("BLE: setCharacteristicNotification rejected for ${ch.uuid}")
+                    if (!ready.isCompleted) ready.complete(false); return
+                }
                 val cccd = ch.getDescriptor(BleConstants.CCCD_UUID)
                 if (cccd == null) {
                     if (!ready.isCompleted) ready.complete(false); return

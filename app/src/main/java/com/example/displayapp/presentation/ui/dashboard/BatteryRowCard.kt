@@ -41,20 +41,18 @@ import com.example.displayapp.ui.theme.EvRed
  *   ┌──────────────────────────────────────────────┐
  *   │ 🔋 Battery                            80 %   │
  *   │ ██████████████████░░░░░░░░░░ (animated bar)  │
- *   │ Range ~ 64 km                                │
  *   └──────────────────────────────────────────────┘
  *
  * - Percentage and bar fill animate independently from telemetry noise via
  *   [animateFloatAsState], so they read as smooth instead of jittery at 20 Hz.
  * - Fill color follows [AlertLevel]: blue/green for healthy, amber on warning,
  *   red when critical — drivers parse the color cue peripherally.
- * - [maxRangeKm] is a static assumption (no manufacturer range in domain yet);
- *   change in one place if a real range field gets added to telemetry.
+ * - Only the SoC (`batteryPercent`, a real wire field) is shown; a range
+ *   estimate was removed because the controller provides no range channel.
  */
 @Composable
 fun BatteryRowCard(
     batteryPercent: Int,
-    maxRangeKm: Int = 80,
     known: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -70,7 +68,6 @@ fun BatteryRowCard(
         targetValue = clamped / 100f,
         label = "batteryFraction"
     )
-    val estimatedRangeKm = (animatedFraction * maxRangeKm).toInt()
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -132,24 +129,6 @@ fun BatteryRowCard(
                 fraction = animatedFraction,
                 color = fillColor
             )
-
-            // Range estimate
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "Range",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "~ $estimatedRangeKm km",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
         }
     }
 }

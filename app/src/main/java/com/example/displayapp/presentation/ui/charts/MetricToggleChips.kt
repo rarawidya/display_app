@@ -44,7 +44,7 @@ fun MetricToggleChips(
             .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(if (compact) Dim.xs else Dim.sm)
     ) {
-        for (metric in TelemetryMetric.entries) {
+        for (metric in TelemetryMetric.displayable) {
             val selected = metric in state.selectedMetrics
             val focused  = selected && metric == state.focusedMetric
             MetricChip(

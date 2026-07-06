@@ -3,17 +3,16 @@ package com.example.displayapp.data.bluetooth.ble
 import java.util.UUID
 
 /**
- * BLE GATT contract for the controller.
+ * BLE GATT contract for the controller — **confirmed by firmware**
+ * (`docs/EVDISPLAY_BLE_COMMUNICATION.md`, v1.0, SG2002 + AIC8800D80).
  *
- * These UUIDs were **discovered from the real device** (Developer → BLE GATT probe,
- * 2026-07-06) and are pending formal confirmation from the firmware team — see
- * `docs/BLE_FIRMWARE_REQUIREMENTS.md`. Centralised here so a firmware change is a
- * one-line edit, not a hunt across the transport code.
+ * Device: name `EVdisplay` (scan response), **public/stable address**, advertises
+ * service `0xAF00`, open GATT (no bonding). MTU 247 required for one-notification-
+ * per-frame (44-byte frames). Centralised here so any firmware change is a one-line edit.
  *
- * Observed profile:
  *   SERVICE 0xAF00
  *     • 0xAF08  NOTIFY  + CCCD   → telemetry stream (board → phone)   [TX]
- *     • 0xAF07  WRITE_NR         → command channel (phone → board)    [RX, unused v1]
+ *     • 0xAF07  WRITE / WRITE_NR → command channel (phone → board)    [RX, unused v1]
  */
 object BleConstants {
 

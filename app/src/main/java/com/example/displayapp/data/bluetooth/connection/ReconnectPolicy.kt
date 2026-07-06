@@ -13,7 +13,7 @@ import timber.log.Timber
  * minutes before conceding DISCONNECTED (previously only ~1 min / 5 attempts, which
  * gave up on an EV that was merely ignition-cycled or briefly out of range). A truly
  * absent device still stops eventually rather than draining the battery forever;
- * turning the adapter off short-circuits this immediately (see SppDataSource).
+ * turning the adapter off short-circuits this immediately (see BleDataSource).
  */
 class ReconnectPolicy(
     private val baseDelayMs: Long = 2000L,

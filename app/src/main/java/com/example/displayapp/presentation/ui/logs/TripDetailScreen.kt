@@ -49,7 +49,6 @@ import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.components.mode.ModeBadge
 import com.example.displayapp.presentation.ui.icons.EvIcons
-import com.example.displayapp.presentation.ui.logs.components.EnergySummaryCard
 import com.example.displayapp.presentation.ui.logs.components.StaticTelemetryChart
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
 import com.example.displayapp.ui.theme.Dim
@@ -312,17 +311,11 @@ private fun DetailBody(state: TripDetailUiState) {
     val app = LocalAppSettings.current
     HeroSummaryCard(state = state)
 
-    EnergySummaryCard(
-        energyUsedWh = state.energyUsedWh,
-        energyRegenWh = state.energyRegenWh,
-        distanceMeters = state.distanceMeters,
-        ratePerKwh = state.ratePerKwh
-    )
-
-    // Trip Detail is the analytics center — every chart series matches one
-    // TelemetryMetric in the unified vocabulary. Series are SI (km/h, °C);
-    // conversion is applied at label time via displayConverter so toggling
-    // km/h↔mph in Settings updates labels without rebuilding the dataset.
+    // Trip Detail charts only real controller channels (capnp.md). Power / Current /
+    // Wh-per-km / energy come from motorCurrentRaw (@1, sent 0) and Battery Temp is
+    // absent from the v1 wire, so those charts + the energy card were removed.
+    // Series are SI (km/h, °C); conversion is applied at label time via
+    // displayConverter so toggling km/h↔mph updates labels without rebuilding data.
     val speedConverter: (Float) -> Float = { app.speedUnit.convertFromKmh(it) }
     val tempConverter: (Float) -> Float = { app.temperatureUnit.convertFromCelsius(it) }
     StaticTelemetryChart(
@@ -334,25 +327,11 @@ private fun DetailBody(state: TripDetailUiState) {
         displayConverter = speedConverter
     )
     StaticTelemetryChart(
-        title = TelemetryMetric.Power.displayName,
-        unit = TelemetryMetric.Power.unit,
-        series = state.powerSeries,
-        color = TelemetryMetric.Power.seriesColor(),
-        latestFormat = TelemetryMetric.Power.format
-    )
-    StaticTelemetryChart(
         title = TelemetryMetric.Voltage.displayName,
         unit = TelemetryMetric.Voltage.unit,
         series = state.voltageSeries,
         color = TelemetryMetric.Voltage.seriesColor(),
         latestFormat = TelemetryMetric.Voltage.format
-    )
-    StaticTelemetryChart(
-        title = TelemetryMetric.Current.displayName,
-        unit = TelemetryMetric.Current.unit,
-        series = state.currentSeries,
-        color = TelemetryMetric.Current.seriesColor(),
-        latestFormat = TelemetryMetric.Current.format
     )
     StaticTelemetryChart(
         title = TelemetryMetric.Battery.displayName,
@@ -362,19 +341,11 @@ private fun DetailBody(state: TripDetailUiState) {
         latestFormat = TelemetryMetric.Battery.format
     )
     StaticTelemetryChart(
-        title = TelemetryMetric.EngineTemp.displayName,
+        title = TelemetryMetric.MotorTemp.displayName,
         unit = app.temperatureUnit.suffix,
         series = state.temperatureSeries,
-        color = TelemetryMetric.EngineTemp.seriesColor(),
-        latestFormat = TelemetryMetric.EngineTemp.format,
-        displayConverter = tempConverter
-    )
-    StaticTelemetryChart(
-        title = TelemetryMetric.BatteryTemp.displayName,
-        unit = app.temperatureUnit.suffix,
-        series = state.batteryTempSeries,
-        color = TelemetryMetric.BatteryTemp.seriesColor(),
-        latestFormat = TelemetryMetric.BatteryTemp.format,
+        color = TelemetryMetric.MotorTemp.seriesColor(),
+        latestFormat = TelemetryMetric.MotorTemp.format,
         displayConverter = tempConverter
     )
     StaticTelemetryChart(
@@ -396,24 +367,8 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
     val maxSpeedLabel = app.speedUnit.formatSpeed(state.maxSpeedKmh10 / 10f)
     val batteryLabel = "${state.startBattery}% → ${state.endBattery?.toString() ?: "—"}%"
 
-    // v5 analytics — render "—" for pre-v5 trips where the column defaulted to 0.
-    val hasPowerAgg = state.avgPowerW != 0f || state.maxPowerW != 0f
-    val avgPowerLabel = if (hasPowerAgg) "%.0f W".format(state.avgPowerW) else "—"
-    val maxPowerLabel = if (hasPowerAgg) "%.0f W".format(state.maxPowerW) else "—"
-    val hasPeakTemps =
-        state.peakMotorTempC != 0 || state.peakBatteryTempC != 0 || state.peakControllerTempC != 0
-    val tempSuffix = app.temperatureUnit.suffix
-    val peakTempLabel = if (hasPeakTemps) {
-        val m = app.temperatureUnit.convertFromCelsius(state.peakMotorTempC.toFloat()).toInt()
-        val b = app.temperatureUnit.convertFromCelsius(state.peakBatteryTempC.toFloat()).toInt()
-        val c = app.temperatureUnit.convertFromCelsius(state.peakControllerTempC.toFloat()).toInt()
-        "$m$tempSuffix / $b$tempSuffix / $c$tempSuffix"
-    } else "—"
-
-    val speedColor      = TelemetryMetric.Speed.seriesColor()
-    val batteryColor    = TelemetryMetric.Battery.seriesColor()
-    val powerColor      = TelemetryMetric.Power.seriesColor()
-    val engineTempColor = TelemetryMetric.EngineTemp.seriesColor()
+    val speedColor   = TelemetryMetric.Speed.seriesColor()
+    val batteryColor = TelemetryMetric.Battery.seriesColor()
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -471,18 +426,12 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
 
             Spacer(Modifier.height(0.dp))
 
-            // Pairs of metrics — keeps the card compact while showing everything.
-            // ENERGY moved to its own EnergySummaryCard below the hero.
+            // Speed + battery are the real wire-backed trip aggregates. Power/energy
+            // stats were removed (derived from the 0-valued current channel).
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat(label = "AVG", value = avgSpeedLabel, accent = speedColor)
                 Stat(label = "MAX", value = maxSpeedLabel, accent = speedColor)
                 Stat(label = "BATT", value = batteryLabel, accent = batteryColor)
-            }
-            // v5 unified analytics row — same shape, new metrics.
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Stat(label = "AVG PWR", value = avgPowerLabel, accent = powerColor)
-                Stat(label = "MAX PWR", value = maxPowerLabel, accent = powerColor)
-                Stat(label = "PEAK T°", value = peakTempLabel, accent = engineTempColor)
             }
         }
     }

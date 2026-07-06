@@ -30,9 +30,9 @@ import timber.log.Timber
 import kotlin.coroutines.coroutineContext
 
 /**
- * Bluetooth **Low Energy** telemetry source — the GATT-based sibling of `SppDataSource`,
- * implementing the same [BluetoothDataSource] contract so everything above the seam
- * (repository, ViewModels, UI, protocol parsing) is unchanged.
+ * Bluetooth **Low Energy** telemetry source — implements the [BluetoothDataSource]
+ * contract so everything above the seam (repository, ViewModels, UI, protocol parsing)
+ * is unchanged.
  *
  * Flow: scan for [BleConstants.SERVICE_UUID] → [BleGattClient] connect + subscribe →
  * notification bytes → [incomingData] → the same `FrameDecoder` upstream.
@@ -55,10 +55,14 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private var connectionJob: Job? = null
     private val reconnectPolicy = ReconnectPolicy()
 
-    private var targetAddress: String? = null
-    private var intentionalDisconnect = false
+    @Volatile private var targetAddress: String? = null
+    @Volatile private var intentionalDisconnect = false
 
     @Volatile private var lastDataElapsedMs: Long = 0L
+    // Distinguishes "connected but first notification not in yet" from "link stalled",
+    // so a slow first frame (CCCD enable + conn-interval negotiation) doesn't false-trip
+    // the watchdog into a needless reconnect.
+    @Volatile private var firstByteSeen: Boolean = false
 
     private val _incomingData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 256)
     override val incomingData: SharedFlow<ByteArray> = _incomingData.asSharedFlow()
@@ -71,14 +75,17 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     override val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>> = _discoveredDevices.asStateFlow()
 
-    /* ---- adapter-off awareness (same contract as SppDataSource) ---- */
+    /* ---- adapter-off awareness: drop straight to DISCONNECTED when BT turns off ---- */
 
     private var adapterReceiverRegistered = false
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
             if (intent?.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
-                BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> handleAdapterOff()
+                // Post onto the connection scope so adapter-off serializes with the
+                // reconnect logic instead of mutating shared state from the binder thread.
+                BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF ->
+                    scope.launch { handleAdapterOff() }
             }
         }
     }
@@ -125,7 +132,12 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     }
 
     private fun doConnect() {
+        // Tear down any prior attempt first: cancel its coroutine AND close its GATT,
+        // so re-entering connect (or a reconnect after a fresh connect) never leaks a
+        // BluetoothGatt or leaves a stray callback armed against the old session.
         connectionJob?.cancel()
+        gattClient?.close()
+        gattClient = null
         connectionJob = scope.launch {
             if (intentionalDisconnect) return@launch
             _connectionState.value = ConnectionState.CONNECTING
@@ -143,6 +155,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
                 context = context,
                 onBytes = { chunk ->
                     lastDataElapsedMs = SystemClock.elapsedRealtime()
+                    firstByteSeen = true
                     _incomingData.tryEmit(chunk)
                 },
                 onDisconnected = { scope.launch { handleConnectionLost() } }
@@ -158,6 +171,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
             _connectionState.value = ConnectionState.CONNECTED
             reconnectPolicy.reset()
             lastDataElapsedMs = SystemClock.elapsedRealtime()
+            firstByteSeen = false
             Timber.i("BLE connected + subscribed to ${BleConstants.TX_CHAR_UUID}")
 
             runFrameWatchdog(client)
@@ -170,7 +184,10 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
             delay(WATCHDOG_POLL_INTERVAL_MS)
             if (_connectionState.value != ConnectionState.CONNECTED) return
             val silent = SystemClock.elapsedRealtime() - lastDataElapsedMs
-            if (silent >= FRAME_WATCHDOG_TIMEOUT_MS) {
+            // Grace period before the first byte: subscribe + conn-interval negotiation
+            // can legitimately delay the first notification past the steady-state timeout.
+            val timeout = if (firstByteSeen) FRAME_WATCHDOG_TIMEOUT_MS else INITIAL_DATA_TIMEOUT_MS
+            if (silent >= timeout) {
                 Timber.w("BLE frame watchdog tripped (${silent}ms silent) — dropping")
                 client.close()
                 handleConnectionLost()
@@ -191,6 +208,9 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         }
         _connectionState.value = ConnectionState.RECONNECTING
         val delayMs = reconnectPolicy.nextDelayMs()
+        // Cancel any prior attempt before scheduling this one, so concurrent loss paths
+        // (watchdog / onDisconnected / scan-fail) can't spawn parallel reconnect loops.
+        connectionJob?.cancel()
         connectionJob = scope.launch {
             delay(delayMs)
             doConnect()
@@ -211,5 +231,6 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private companion object {
         const val WATCHDOG_POLL_INTERVAL_MS = 1_000L
         const val FRAME_WATCHDOG_TIMEOUT_MS = 3_000L
+        const val INITIAL_DATA_TIMEOUT_MS = 8_000L
     }
 }

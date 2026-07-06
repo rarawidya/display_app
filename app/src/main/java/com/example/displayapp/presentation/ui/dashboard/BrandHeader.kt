@@ -23,10 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.displayapp.domain.model.ConnectionState
@@ -38,12 +35,11 @@ import com.example.displayapp.ui.theme.EvGreen
  *
  * Layout:
  *   ┌───────────────────────────────────────────┐
- *   │ ◯ EV**Dash**           📶  🔵        ⚙   │
+ *   │ Telemetry                  🔵        ⚙   │
  *   └───────────────────────────────────────────┘
  *
- * - "Dash" is colored with the brand primary; "EV" uses on-surface text.
- * - The Bluetooth + Wi-Fi indicators each turn green when their channel is up
- *   and gray (with a "disconnect" glyph variant) when down.
+ * - The Bluetooth indicator turns green when the link is up and gray (with a
+ *   "disconnect" glyph variant) when down.
  * - Gear opens Settings.
  *
  * Designed to sit flush with the status bar — minimal vertical footprint, no
@@ -71,12 +67,6 @@ fun BrandHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            StatusIcon(
-                icon = if (wifiConnected) EvIcons.Wifi else EvIcons.WifiOff,
-                connected = wifiConnected,
-                contentDescription = if (wifiConnected) "Wi-Fi connected" else "Wi-Fi disconnected",
-                onClick = { /* no-op — system Wi-Fi isn't user-managed from here */ }
-            )
             // Bluetooth icon has two gestures + an anchored slot for the popover.
             // Tap → small popover with status + quick action.
             // Long-press → BluetoothQuickSheet (full management).
@@ -109,26 +99,12 @@ fun BrandHeader(
 
 @Composable
 private fun BrandMark() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        val wordmark = buildAnnotatedString {
-            withStyle(
-                SpanStyle(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
-                )
-            ) { append("EV") }
-            withStyle(
-                SpanStyle(
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-            ) { append("Dash") }
-        }
-        Text(text = wordmark, fontSize = 19.sp)
-    }
+    Text(
+        text = "Drive Telemetry",
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.Bold,
+        fontSize = 19.sp
+    )
 }
 
 /* -------------------------------------------------------------------------- */

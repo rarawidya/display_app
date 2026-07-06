@@ -28,7 +28,7 @@ enum class TelemetryMetric(
     Current(       "Current",         "A",     "%.1f"),
     Power(         "Power",           "W",     "%.0f"),
     Battery(       "Battery",         "%",     "%.0f", 0f..100f),
-    EngineTemp(    "Engine Temp",     "°C",    "%.0f"),
+    MotorTemp(     "Motor Temp",     "°C",    "%.0f"),
     BatteryTemp(   "Battery Temp",    "°C",    "%.0f"),
     ControllerTemp("Controller Temp", "°C",    "%.0f"),
     WhPerKm(       "Wh/km",           "Wh/km", "%.0f"),
@@ -46,7 +46,7 @@ enum class TelemetryMetric(
         Current        -> live.vehicle.current
         Power          -> live.vehicle.power
         Battery        -> live.vehicle.batteryPercent.toFloat()
-        EngineTemp     -> live.vehicle.temperature.toFloat()
+        MotorTemp     -> live.vehicle.temperature.toFloat()
         BatteryTemp    -> live.vehicle.batteryTemperature.toFloat()
         ControllerTemp -> live.vehicle.controllerTemperature.toFloat()
         WhPerKm        -> live.efficiency.whPerKm
@@ -60,4 +60,17 @@ enum class TelemetryMetric(
      */
     val isPersistedPerSample: Boolean
         get() = this != WhPerKm && this != EstRange
+
+    companion object {
+        /**
+         * Metrics backed by a **real controller wire field** (capnp.md) — the only
+         * ones the UI should plot. Excluded: [Current]/[Power]/[WhPerKm]/[EstRange]
+         * (all derive from `motorCurrentRaw @1`, which the board sends as 0 →
+         * uncalibrated) and [BatteryTemp] (absent from the v1 wire, always 0).
+         * The enum keeps those entries so persistence/CSV/decode stay intact; they
+         * just never surface as selectable series.
+         */
+        val displayable: List<TelemetryMetric> =
+            listOf(Speed, Rpm, Voltage, Battery, MotorTemp, ControllerTemp)
+    }
 }
