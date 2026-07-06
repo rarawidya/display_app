@@ -3,14 +3,22 @@ package com.example.displayapp.data.protocol
 import timber.log.Timber
 
 /**
- * State-machine frame decoder for the binary telemetry protocol.
+ * State-machine frame decoder for the EVdashboard (Votol) telemetry protocol.
  *
- * Frame format:
- *   [SYNC_HI: 0xCA] [SYNC_LO: 0xFE] [LEN_LO] [LEN_HI] [PAYLOAD...] [CRC_LO] [CRC_HI]
+ * Frame format (capnp.md §2):
+ *   [SYNC: 0xAA] [LEN: uint8] [PAYLOAD...] [CRC_LO] [CRC_HI]
  *
- * The decoder processes bytes one-at-a-time (or in chunks), accumulates a complete frame,
- * validates CRC, and emits the payload via the callback. On corruption, it resyncs by
- * searching for the next SYNC pair.
+ * - SYNC is a single `0xAA` byte; scan for it to (re)synchronise.
+ * - LEN is a single unsigned byte (payload length). Always trust it — never
+ *   hardcode 40; the frame grows if the schema gains fields.
+ * - CRC16-CCITT is computed over `LEN || PAYLOAD` (the length byte followed by
+ *   the payload) and transmitted little-endian.
+ *
+ * The decoder processes bytes one-at-a-time (or in chunks), accumulates a
+ * complete frame, validates CRC, and emits the payload via the callback. On
+ * corruption it resyncs by searching for the next SYNC byte — a `0xAA` can
+ * legitimately occur inside the payload, so a failed CRC just keeps scanning
+ * and the next real frame resyncs.
  *
  * Thread-safety: NOT thread-safe. Call [feed] from a single coroutine.
  */
@@ -20,16 +28,14 @@ class FrameDecoder(
     private val onSyncLoss: () -> Unit = {}
 ) {
     private enum class State {
-        SYNC_HI,
-        SYNC_LO,
-        LENGTH_LO,
-        LENGTH_HI,
+        SYNC,
+        LENGTH,
         PAYLOAD,
         CRC_LO,
         CRC_HI
     }
 
-    private var state = State.SYNC_HI
+    private var state = State.SYNC
     private var payloadLength = 0
     private var payloadIndex = 0
     private var payload = ByteArray(MAX_PAYLOAD)
@@ -48,43 +54,25 @@ class FrameDecoder(
     }
 
     fun reset() {
-        state = State.SYNC_HI
+        state = State.SYNC
         payloadIndex = 0
     }
 
     private fun processByte(b: Int) {
         when (state) {
-            State.SYNC_HI -> {
-                if (b == SYNC_BYTE_HI) {
-                    state = State.SYNC_LO
+            State.SYNC -> {
+                if (b == SYNC_BYTE) {
+                    state = State.LENGTH
                 }
             }
 
-            State.SYNC_LO -> {
-                if (b == SYNC_BYTE_LO) {
-                    state = State.LENGTH_LO
-                } else if (b == SYNC_BYTE_HI) {
-                    // Stay in SYNC_LO — could be 0xCA 0xCA 0xFE sequence
-                    state = State.SYNC_LO
-                } else {
-                    syncLosses++
-                    onSyncLoss()
-                    state = State.SYNC_HI
-                }
-            }
-
-            State.LENGTH_LO -> {
+            State.LENGTH -> {
                 payloadLength = b
-                state = State.LENGTH_HI
-            }
-
-            State.LENGTH_HI -> {
-                payloadLength = payloadLength or (b shl 8)
                 if (payloadLength == 0 || payloadLength > MAX_PAYLOAD) {
                     Timber.w("Invalid payload length: $payloadLength, resyncing")
                     syncLosses++
                     onSyncLoss()
-                    state = State.SYNC_HI
+                    state = State.SYNC
                 } else {
                     if (payload.size < payloadLength) {
                         payload = ByteArray(payloadLength)
@@ -120,24 +108,24 @@ class FrameDecoder(
                     onCrcError()
                 }
 
-                state = State.SYNC_HI
+                state = State.SYNC
             }
         }
     }
 
     private fun computeFrameCrc(): Int {
-        // CRC covers the 2-byte length field + payload
-        val crcBuffer = ByteArray(2 + payloadLength)
+        // CRC covers the 1-byte length field + payload (capnp.md §2).
+        val crcBuffer = ByteArray(1 + payloadLength)
         crcBuffer[0] = (payloadLength and 0xFF).toByte()
-        crcBuffer[1] = ((payloadLength shr 8) and 0xFF).toByte()
-        System.arraycopy(payload, 0, crcBuffer, 2, payloadLength)
+        System.arraycopy(payload, 0, crcBuffer, 1, payloadLength)
         return Crc16.compute(crcBuffer)
     }
 
     companion object {
-        const val SYNC_BYTE_HI = 0xCA
-        const val SYNC_BYTE_LO = 0xFE
-        const val MAX_PAYLOAD = 512
+        const val SYNC_BYTE = 0xAA
+
+        // LEN is a uint8, so the payload can never exceed 255 bytes on the wire.
+        const val MAX_PAYLOAD = 255
     }
 }
 

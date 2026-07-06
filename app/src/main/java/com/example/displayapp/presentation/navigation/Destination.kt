@@ -12,6 +12,9 @@ sealed class Destination(val route: String) {
     /** Pre-connect device picker. Start destination — gates entry to the cockpit. */
     data object Scan   : Destination("scan")
 
+    /** Landing overview shown after connect — hero CTA, health, today's summary. */
+    data object Home   : Destination("home")
+
     data object Drive  : Destination("drive")
     data object Charts : Destination("charts")
     data object Logs   : Destination("logs")
@@ -41,6 +44,7 @@ data class TopLevel(
 )
 
 val BottomTabs = listOf(
+    TopLevel(Destination.Home,   "Home",  EvIcons.Home),
     TopLevel(Destination.Drive,  "Drive", EvIcons.Drive),
     TopLevel(Destination.Charts, "Chart", EvIcons.Charts),
     TopLevel(Destination.Logs,   "Logs",  EvIcons.Logs)

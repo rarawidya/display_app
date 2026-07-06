@@ -34,6 +34,15 @@ class DisplayApp : Application() {
         }
         appContainer = AppContainer(this)
 
+        // Apply the persisted transport choice (BLE vs Classic SPP) before anything
+        // connects. Home never auto-connects, so this completes well ahead of the
+        // first connect; a switch only actually happens once the user leaves the
+        // simulator, so setting the flag early is enough.
+        appScope.launch {
+            val useBle = appContainer.devicePreferences.bleTransport.first()
+            if (useBle) appContainer.setBleTransport(true)
+        }
+
         // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
             val retentionDays = appContainer.appPreferencesRepository.settings
@@ -49,6 +58,16 @@ class DisplayApp : Application() {
         if (appContainer.useSimulator) {
             appScope.launch {
                 appContainer.sampleTripSeeder.seedIfEmpty()
+            }
+        }
+
+        // If Simulator mode is on, open the simulated session at launch so
+        // telemetry streams immediately — otherwise the fake source is selected
+        // but idle (nothing calls connect() on it) and every screen reads
+        // "Disconnected". The Settings toggle drives the same path at runtime.
+        appScope.launch {
+            if (appContainer.appPreferencesRepository.settings.first().simulatorMode) {
+                appContainer.setSimulatorSession(true)
             }
         }
     }

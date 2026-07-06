@@ -5,65 +5,66 @@ import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.model.VehicleMode
 
 /**
- * Single source of truth for *derived* telemetry fields (rpm, power) and for
- * the wire-int → SI-unit decode pattern.
+ * Single source of truth for *derived* telemetry fields and for the
+ * persisted-entity → SI decode pattern.
  *
  * Architectural rule (Phase 1 audit):
  *   Every metric displayed on Drive / Charts / Logs / Trip Detail / CSV /
  *   replay must come from one canonical derivation. No screen, ViewModel, or
  *   exporter may re-implement these formulas locally.
  *
- * To add a new derived field (e.g. SoC fraction, motor torque):
- *   1. Add the pure formula here as a top-level function with documented
- *      units in / units out.
- *   2. Call it from [TelemetryMapper.map] (live decode) and from
- *      [decodeEntity] (replay/CSV/Trip Detail decode).
- *   3. Never re-derive at the consumer site — read `VehicleData.theField`.
+ * ── Wire vs. persistence scaling (read this before touching the helpers) ──
+ * There are TWO integer encodings and they are deliberately independent:
+ *
+ *   • WIRE (board → phone): `VotolTelemetry` already carries SI-adjacent
+ *     fields. rpm and speedKmh are DIRECT integers; voltage is deci-volts;
+ *     current is raw counts. The wire decode lives in [TelemetryMapper], which
+ *     reads those fields straight off the frame — it does NOT go through the
+ *     entity helpers below.
+ *
+ *   • PERSISTENCE (Room): [com.example.displayapp.data.persistence.TelemetryLogger]
+ *     re-encodes a decoded [VehicleData] into `TelemetryEntity` with its own
+ *     fixed-point scaling (speed×10, voltage×100, current×100). [decodeEntity]
+ *     inverts exactly that scaling. This encoding is a storage detail and is
+ *     intentionally decoupled from the wire, so a wire-format revision never
+ *     forces a Room migration.
  *
  * Semantics — see also CLAUDE.md and `telemetry.capnp`:
  *
- *   rpm:    a display-layer rotational proxy, `speedKmh × 100`. Unit-agnostic;
- *           it does NOT represent true motor electrical frequency. If a
- *           future thermal / torque model needs real RPM, add it as a
- *           separate wire channel rather than overloading this one.
+ *   rpm:    now a REAL wire field (`VotolTelemetry.rpm`). It is no longer
+ *           derived as speed×100 for live frames. [rpmFromSpeedKmh] survives
+ *           ONLY as the legacy fallback for pre-v6 persisted rows that stored
+ *           no rpm column.
  *
- *   power:  instantaneous bus power in Watts, `voltage × current`. Sign
- *           convention: positive = discharge (drawing from pack),
- *           negative = regen (returning to pack). The wire-level sign comes
- *           from the controller's signed Int16 current channel — see
- *           `TelemetryFrame.current` in telemetry.capnp.
+ *   power:  instantaneous bus power in Watts, `voltage × current`. Because the
+ *           board currently sends `motorCurrentRaw = 0` (uncalibrated), power
+ *           is inert until firmware defines the current scale and sign.
  */
 object TelemetryDerivations {
 
     /**
-     * Canonical RPM derivation. Input is **integer km/h** (matches
-     * [VehicleData.speed]); output is the same display-proxy used by every
-     * surface.
+     * Legacy RPM derivation. Kept only for the [decodeEntity] fallback on
+     * pre-v6 rows recorded before rpm was persisted (and before rpm was a wire
+     * field). Live frames read [VotolTelemetry.rpm] directly.
      */
     fun rpmFromSpeedKmh(speedKmh: Int): Int = speedKmh * 100
 
     /**
      * Canonical instantaneous power derivation. Inputs are already in SI
      * (volts, amps); output is watts with the same float-rounding everywhere.
-     *
-     * Don't pre-multiply the wire integers and divide afterwards — call this
-     * with the SI floats you already decoded so power on Drive (live) matches
-     * power in Trip Detail (replay) bit-for-bit.
      */
     fun powerFromVoltsAmps(voltageV: Float, currentA: Float): Float =
         voltageV * currentA
 
-    /**
-     * Wire-int → SI conversions. Centralized so a future schema rev (e.g.
-     * voltage scaled to ×1000 for 1mV precision) updates one place.
-     */
-    fun speedKmhFromWire(speedInt10: Int): Int = speedInt10 / 10
-    fun voltageFromWire(voltageInt100: Int): Float = voltageInt100 / 100f
-    fun currentFromWire(currentInt100: Int): Float = currentInt100 / 100f
+    /* ---- Persisted-entity fixed-point → SI (inverse of TelemetryLogger) ---- */
+
+    fun speedKmhFromEntity(speedInt10: Int): Int = speedInt10 / 10
+    fun voltageFromEntity(voltageInt100: Int): Float = voltageInt100 / 100f
+    fun currentFromEntity(currentInt100: Int): Float = currentInt100 / 100f
 
     /**
      * Decode a persisted [TelemetryEntity] back into the same [VehicleData]
-     * shape the live mapper would emit for these wire values.
+     * shape the live mapper would emit for these values.
      *
      * This is the bridge that keeps replay, CSV, and Trip Detail aligned with
      * the live pipeline — all of them should call this rather than touching
@@ -72,13 +73,13 @@ object TelemetryDerivations {
      * Schema v6+ rows carry persisted [TelemetryEntity.rpm] /
      * [TelemetryEntity.powerW]; we read those verbatim so a future change to
      * the derivation formula does not retroactively alter recorded trips.
-     * Pre-v6 rows have NULL in both columns — we fall back to recomputing
-     * from the wire fields, preserving the historical chart shape.
+     * Pre-v6 rows have NULL in both columns — we fall back to recomputing from
+     * the stored fields, preserving the historical chart shape.
      */
     fun decodeEntity(entity: TelemetryEntity): VehicleData {
-        val speedKmh = speedKmhFromWire(entity.speed)
-        val voltageV = voltageFromWire(entity.voltage)
-        val currentA = currentFromWire(entity.current)
+        val speedKmh = speedKmhFromEntity(entity.speed)
+        val voltageV = voltageFromEntity(entity.voltage)
+        val currentA = currentFromEntity(entity.current)
         return VehicleData(
             speed = speedKmh,
             batteryPercent = entity.battery,

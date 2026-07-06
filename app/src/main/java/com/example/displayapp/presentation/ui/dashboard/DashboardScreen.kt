@@ -153,11 +153,13 @@ private fun DashboardPortrait(
             onBluetoothLongPress = onBluetoothLongPress,
             bluetoothAnchor = bluetoothAnchor
         )
+        // Warning-lamp strip mirrors the physical cluster's top telltale row.
+        TelltaleRow(state = state)
         SpeedometerSection(state = state)
         // Drive-mode selector sits directly below the speedometer so quick-
         // glance recognition has the gauge + active mode in one frame.
         ModeCard(mode = state.vehicleMode)
-        BatteryRowCard(batteryPercent = state.batteryPercent)
+        BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown)
         TelemetryGrid(state = state)
         MiniMapCard(
             viewModel = mapsViewModel,
@@ -197,6 +199,7 @@ private fun DashboardLandscape(
             onBluetoothLongPress = onBluetoothLongPress,
             bluetoothAnchor = bluetoothAnchor
         )
+        TelltaleRow(state = state)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Dim.lg)
@@ -216,7 +219,7 @@ private fun DashboardLandscape(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Dim.md)
             ) {
-                BatteryRowCard(batteryPercent = state.batteryPercent)
+                BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown)
                 TelemetryGrid(state = state)
             }
         }
@@ -279,7 +282,8 @@ private fun TelemetryGrid(state: DashboardUiState) {
             modifier = Modifier.height(IntrinsicSize.Max),
             horizontalArrangement = Arrangement.spacedBy(Dim.md)
         ) {
-            PremiumMetricTile(
+            MetricOrDash(
+                available = state.currentAvailable,
                 icon = EvIcons.Plug,
                 label = "Power",
                 value = power,
@@ -287,7 +291,8 @@ private fun TelemetryGrid(state: DashboardUiState) {
                 fractionDigits = 1,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
-            PremiumMetricTile(
+            MetricOrDash(
+                available = state.currentAvailable,
                 icon = EvIcons.Bolt,
                 label = "Current",
                 value = current,
@@ -321,7 +326,8 @@ private fun TelemetryGrid(state: DashboardUiState) {
             modifier = Modifier.height(IntrinsicSize.Max),
             horizontalArrangement = Arrangement.spacedBy(Dim.md)
         ) {
-            PremiumMetricTile(
+            MetricOrDash(
+                available = state.batteryTempAvailable,
                 icon = EvIcons.Battery,
                 label = "Battery Temp",
                 value = batteryTemp,
@@ -357,6 +363,45 @@ private fun TelemetryGrid(state: DashboardUiState) {
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }
+    }
+}
+
+/**
+ * A metric tile that shows its animated numeric readout when [available], and a
+ * static "—" otherwise — for wire fields the current protocol can't provide
+ * (uncalibrated current/power, absent battery-temp). Avoids presenting a
+ * meaningless 0 as if it were a real reading.
+ */
+@Composable
+private fun MetricOrDash(
+    available: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: Float,
+    unit: String,
+    modifier: Modifier = Modifier,
+    level: com.example.displayapp.presentation.state.AlertLevel =
+        com.example.displayapp.presentation.state.AlertLevel.NORMAL,
+    fractionDigits: Int = 0
+) {
+    if (available) {
+        PremiumMetricTile(
+            icon = icon,
+            label = label,
+            value = value,
+            unit = unit,
+            modifier = modifier,
+            level = level,
+            fractionDigits = fractionDigits
+        )
+    } else {
+        PremiumMetricTile(
+            icon = icon,
+            label = label,
+            valueText = "—",
+            unit = unit,
+            modifier = modifier
+        )
     }
 }
 

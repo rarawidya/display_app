@@ -5,43 +5,57 @@ import com.example.displayapp.domain.model.VehicleMode
 import timber.log.Timber
 
 /**
- * Maps a decoded Cap'n Proto [TelemetryFrame] to the canonical [VehicleData]
- * domain model. Owns wire-format conversion only — all *derivations* (rpm,
- * power) route through [TelemetryDerivations] so every surface in the app
- * (Drive, Charts, Trip Detail, replay, CSV) reads bit-identical values.
+ * Maps a decoded [TelemetrySchema.VotolTelemetry] wire frame to the canonical
+ * [VehicleData] domain model. Owns wire-format conversion only.
  *
- * Phase 1 audit invariant: this is the ONE place that translates a live
- * wire frame into VehicleData. Nothing downstream may re-derive rpm or
- * power locally; they read the fields off VehicleData / TelemetryEntity
- * and trust [TelemetryDerivations.decodeEntity] for persisted samples.
+ * Phase 1 audit invariant: this is the ONE place that translates a live wire
+ * frame into VehicleData. rpm and speedKmh now arrive as real wire fields, so
+ * they are read straight off the frame (not derived); power is still computed
+ * via [TelemetryDerivations] so live and replay agree bit-for-bit.
+ *
+ * Wire-field handling notes (see capnp.md / telemetry.capnp):
+ *  - `batteryDeciVolts` → volts (÷10).
+ *  - `motorCurrentRaw` is raw counts (currently 0, uncalibrated) — carried
+ *    through as-is so power/energy stay wired, but they read ~0 until the
+ *    firmware defines a scale and sign.
+ *  - `batteryPercent == 255` means "not yet known" (SoC CAN frame silent for
+ *    ~1 s after MCU boot). We hold the previous value rather than show 0 %.
+ *  - Battery pack temperature is NOT on this wire (v1); [VehicleData] keeps the
+ *    field for UI/persistence continuity, populated 0 (unknown).
  */
 class TelemetryMapper {
 
     fun map(payload: ByteArray, previous: VehicleData): VehicleData? {
         return try {
             val frame = TelemetrySchema.readFrom(payload)
-            val speedKmh = TelemetryDerivations.speedKmhFromWire(frame.speed)
-            val voltageV = TelemetryDerivations.voltageFromWire(frame.voltage)
-            val currentA = TelemetryDerivations.currentFromWire(frame.current)
+            val voltageV = frame.batteryDeciVolts / 10f
+            val currentA = frame.motorCurrentRaw.toFloat()
+
+            val batteryPercent =
+                if (frame.batteryPercent == BATTERY_PERCENT_UNKNOWN) previous.batteryPercent
+                else frame.batteryPercent.coerceIn(0, 100)
+
             VehicleData(
-                speed = speedKmh,
-                batteryPercent = frame.battery.coerceIn(0, 100),
+                speed = frame.speedKmh,
+                batteryPercent = batteryPercent,
                 voltage = voltageV,
                 current = currentA,
-                temperature = frame.temperature,
-                batteryTemperature = frame.batteryTemperature,
-                controllerTemperature = frame.controllerTemperature,
-                vehicleMode = mapMode(frame.mode),
-                rpm = TelemetryDerivations.rpmFromSpeedKmh(speedKmh),
+                temperature = frame.motorTempC,
+                // Not on the v1 wire — unknown until firmware adds a channel.
+                batteryTemperature = 0,
+                controllerTemperature = frame.controllerTempC,
+                vehicleMode = mapMode(frame.driveMode),
+                rpm = frame.rpm,
                 power = TelemetryDerivations.powerFromVoltsAmps(voltageV, currentA),
-                // Wall-clock at decode time, not `frame.timestamp`.
-                //
-                // `frame.timestamp` is a UInt32 millis count (wraps every ~49 days)
-                // and is currently relative to MCU boot — see telemetry.capnp:14. Fine
-                // for wire-side ordering, but Logs/replay/CSV need monotonic absolute
-                // time. Phase 3 will introduce a per-trip `bootEpochMs` so we can honor
-                // the MCU clock while keeping replay deterministic; for now wall-clock
-                // is the only reliable absolute reference.
+                faultCode = frame.faultCode,
+                flags = frame.flags,
+                seq = frame.seq,
+                // Availability per wire-protocol v1 capabilities (capnp.md).
+                currentAvailable = TelemetryConstants.CURRENT_CHANNEL_CALIBRATED,
+                batteryTempAvailable = false, // no battery-temp channel on the v1 wire
+                batteryKnown = frame.batteryPercent != BATTERY_PERCENT_UNKNOWN,
+                // Wall-clock at decode time. The wire has no timestamp field;
+                // `seq` covers frame ordering / drop detection instead.
                 timestamp = System.currentTimeMillis()
             )
         } catch (e: Exception) {
@@ -50,12 +64,15 @@ class TelemetryMapper {
         }
     }
 
+    /** Wire drive mode: 1 = Eco, 2 = Urban, 3 = Sport (capnp.md §3). */
     private fun mapMode(value: Int): VehicleMode = when (value) {
-        0 -> VehicleMode.PARK
         1 -> VehicleMode.ECO
-        2 -> VehicleMode.NORMAL
+        2 -> VehicleMode.NORMAL   // "Urban" on the cluster; NORMAL in the domain enum
         3 -> VehicleMode.SPORT
-        4 -> VehicleMode.REGEN
         else -> VehicleMode.PARK
+    }
+
+    private companion object {
+        const val BATTERY_PERCENT_UNKNOWN = 255
     }
 }

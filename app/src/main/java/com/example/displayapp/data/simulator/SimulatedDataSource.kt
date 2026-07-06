@@ -98,24 +98,42 @@ class SimulatedDataSource(
         tick++
         val sf = scenarioGenerator.generate(tick)
 
-        val speedFixed = (sf.speedKmh * 10).toInt().coerceIn(0, 2000).toShort()
-        val voltageFixed = (sf.voltageV * 100).toInt().coerceIn(0, 65535).toShort()
-        val currentFixed = (sf.currentA * 100).toInt().coerceIn(-32768, 32767).toShort()
+        val speedKmh = sf.speedKmh.toInt().coerceIn(0, 65535).toShort()
+        // Board publishes speedKmh = rpm * 83 / 1000; invert so the wire pair stays
+        // self-consistent (rpm ≈ speed * 12.05).
+        val rpm = (sf.speedKmh * 1000.0 / 83.0).toInt().coerceIn(0, 65535).toShort()
+        val batteryDeciVolts = (sf.voltageV * 10).toInt().coerceIn(0, 65535).toShort()
+        // Real firmware sends motorCurrentRaw = 0 (uncalibrated). The simulator sends
+        // whole-amp counts so the Drive power/current tiles show plausible motion.
+        val motorCurrentRaw = sf.currentA.toInt().coerceIn(-32768, 32767).toShort()
 
-        val timestamp = ((System.currentTimeMillis() - bootTimeMs) and 0xFFFFFFFFL).toInt()
+        // flags: engineRunning while connected, moving when there's road speed,
+        // brake when the pack is taking regen current (decelerating).
+        var flags = 0x01
+        if (sf.speedKmh > 0.5) flags = flags or 0x04
+        if (sf.currentA < -1.0) flags = flags or 0x02
 
         val capnpPayload = TelemetrySchema.buildMessage {
-            setTimestamp(timestamp)
-            setSpeed(speedFixed)
-            setBattery(sf.battery.coerceIn(0, 100).toByte())
-            setVoltage(voltageFixed)
-            setCurrent(currentFixed)
-            setTemperature(sf.tempC.coerceIn(-128, 127).toByte())
-            setMode(sf.mode.toShort())
-            setBatteryTemperature(sf.batteryTempC.coerceIn(-128, 127).toByte())
-            setControllerTemperature(sf.controllerTempC.coerceIn(-128, 127).toByte())
+            setBatteryDeciVolts(batteryDeciVolts)
+            setMotorCurrentRaw(motorCurrentRaw)
+            setRpm(rpm)
+            setSpeedKmh(speedKmh)
+            setControllerTempC(sf.controllerTempC.coerceIn(-128, 127).toByte())
+            setMotorTempC(sf.tempC.coerceIn(-128, 127).toByte())
+            setDriveMode(wireDriveMode(sf.mode))
+            setFlags(flags.toByte())
+            setFaultCode(0)
+            setSeq((tick and 0xFFFFFFFFL).toInt())
+            setBatteryPercent(sf.battery.coerceIn(0, 100).toByte())
         }
 
         return FrameEncoder.encode(capnpPayload)
+    }
+
+    /** VehicleMode ordinal (0-4) → wire driveMode (1 Eco / 2 Urban / 3 Sport). */
+    private fun wireDriveMode(modeOrdinal: Int): Byte = when (modeOrdinal) {
+        1 -> 1 // ECO
+        3 -> 3 // SPORT
+        else -> 2 // PARK / NORMAL / REGEN → Urban
     }
 }

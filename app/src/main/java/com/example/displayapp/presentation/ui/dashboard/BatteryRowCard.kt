@@ -55,6 +55,7 @@ import com.example.displayapp.ui.theme.EvRed
 fun BatteryRowCard(
     batteryPercent: Int,
     maxRangeKm: Int = 80,
+    known: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val clamped = batteryPercent.coerceIn(0, 100)
@@ -108,18 +109,21 @@ fun BatteryRowCard(
                     )
                 }
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // SoC unknown (wire sends 255 for ~1 s after board boot) → "—".
                     Text(
-                        text = "$clamped",
+                        text = if (known) "$clamped" else "—",
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(
-                        text = "%",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
+                    if (known) {
+                        Text(
+                            text = "%",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
                 }
             }
 

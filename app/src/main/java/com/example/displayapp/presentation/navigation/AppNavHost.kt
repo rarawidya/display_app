@@ -35,6 +35,7 @@ import com.example.displayapp.presentation.ui.connection.BluetoothQuickSheet
 import com.example.displayapp.presentation.ui.connection.BluetoothStatusPopover
 import com.example.displayapp.presentation.ui.dashboard.DashboardScreen
 import com.example.displayapp.presentation.ui.device.DeviceScanScreen
+import com.example.displayapp.presentation.ui.home.HomeScreen
 import com.example.displayapp.presentation.ui.logs.LogsScreen
 import com.example.displayapp.presentation.ui.logs.TripDetailScreen
 import com.example.displayapp.presentation.ui.maps.NavigationScreen
@@ -80,7 +81,7 @@ fun AppNavHost(
     val currentDestination = backStack?.destination
     val currentRoute = currentDestination?.route
 
-    val cockpitRoutes = setOf(Destination.Drive.route, Destination.Charts.route, Destination.Logs.route)
+    val cockpitRoutes = setOf(Destination.Home.route, Destination.Drive.route, Destination.Charts.route, Destination.Logs.route)
     // Hide the bottom bar on Navigation too — it's a fullscreen immersive surface.
     val showBottomBar = currentRoute in cockpitRoutes
 
@@ -112,7 +113,7 @@ private fun AppNavGraph(
 
     NavHost(
         navController = navController,
-        startDestination = Destination.Scan.route,
+        startDestination = Destination.Home.route,
         modifier = Modifier.fillMaxSize().padding(contentPadding),
         // Cheap cross-tab transitions — keep them quick so realtime UX feels snappy
         enterTransition = {
@@ -145,10 +146,10 @@ private fun AppNavGraph(
             val connectionState by container.vehicleRepository.connectionState
                 .collectAsStateWithLifecycle()
 
-            // Auto-navigate to Drive when the connection becomes live.
+            // Auto-navigate to Home when the connection becomes live.
             LaunchedEffect(connectionState) {
                 if (connectionState == ConnectionState.CONNECTED) {
-                    navController.navigate(Destination.Drive.route) {
+                    navController.navigate(Destination.Home.route) {
                         popUpTo(Destination.Scan.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -160,7 +161,7 @@ private fun AppNavGraph(
             DeviceScanScreen(
                 viewModel = btVm,
                 onNavigateToDashboard = {
-                    navController.navigate(Destination.Drive.route) {
+                    navController.navigate(Destination.Home.route) {
                         popUpTo(Destination.Scan.route) { inclusive = true }
                         launchSingleTop = true
                     }
@@ -172,6 +173,74 @@ private fun AppNavGraph(
                 },
                 onBack = if (canGoBack) ({ navController.popBackStack() }) else null
             )
+        }
+
+        composable(Destination.Home.route) {
+            val vm: DashboardViewModel = viewModel(
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository)
+            )
+            val btVm: BluetoothViewModel = viewModel(
+                factory = BluetoothViewModelFactory(
+                    controller = container.bluetoothController,
+                    repository = container.vehicleRepository,
+                    devicePreferences = container.devicePreferences,
+                    appContext = context.applicationContext
+                )
+            )
+            // Vehicle name for the greeting — last connected device, else a friendly default.
+            val savedDevice by container.devicePreferences.lastDevice
+                .collectAsStateWithLifecycle(initialValue = null)
+
+            // Bluetooth pairing sheet — the Home page's scan/pair surface.
+            var showSheet by rememberSaveable { mutableStateOf(false) }
+
+            // Prompt to turn Bluetooth ON once when the Home page first appears.
+            // Only fires when the adapter is actually off and we already hold the
+            // connect permission (launching ACTION_REQUEST_ENABLE without it throws).
+            val enableLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                btVm.onEnableResult(result.resultCode == android.app.Activity.RESULT_OK)
+            }
+            var promptedEnable by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                if (promptedEnable) return@LaunchedEffect
+                promptedEnable = true
+                val connectGranted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S ||
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.BLUETOOTH_CONNECT
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val adapterOff = container.bluetoothController.adapterState.value ==
+                    com.example.displayapp.data.bluetooth.controller.AdapterState.OFF
+                if (connectGranted && adapterOff) {
+                    runCatching { enableLauncher.launch(btVm.enableIntent()) }
+                }
+            }
+
+            HomeScreen(
+                viewModel = vm,
+                deviceName = savedDevice?.name?.takeIf { it.isNotBlank() && it != "Unknown" } ?: "My Scooter",
+                onStartMonitoring = {
+                    navController.navigateTopLevel(Destination.Drive)
+                },
+                onOpenSettings = {
+                    navController.navigate(Destination.Settings.route) { launchSingleTop = true }
+                },
+                onOpenHistory = {
+                    navController.navigateTopLevel(Destination.Logs)
+                },
+                onOpenBluetooth = { showSheet = true },
+                onEditDevice = {
+                    navController.navigate(Destination.Scan.route) { launchSingleTop = true }
+                }
+            )
+
+            if (showSheet) {
+                BluetoothQuickSheet(
+                    viewModel = btVm,
+                    onDismiss = { showSheet = false }
+                )
+            }
         }
 
         composable(Destination.Drive.route) {
@@ -272,7 +341,7 @@ private fun AppNavGraph(
                     diagnosticsRepository = container.diagnosticsRepository,
                     storageProvider = container.storageInfoProvider,
                     permissionProvider = container.permissionStatusProvider,
-                    onSimulatorModeChange = { useSim -> container.switchDataSource(simulator = useSim) },
+                    onSimulatorModeChange = { useSim -> container.setSimulatorSession(useSim) },
                     onSimulatorScenarioChange = { scenario ->
                         container.simulatorScenario = scenario
                         container.restartDataSource()
@@ -307,7 +376,7 @@ private fun AppNavGraph(
                     diagnosticsRepository = container.diagnosticsRepository,
                     storageProvider = container.storageInfoProvider,
                     permissionProvider = container.permissionStatusProvider,
-                    onSimulatorModeChange = { useSim -> container.switchDataSource(simulator = useSim) },
+                    onSimulatorModeChange = { useSim -> container.setSimulatorSession(useSim) },
                     onSimulatorScenarioChange = { scenario ->
                         container.simulatorScenario = scenario
                         container.restartDataSource()

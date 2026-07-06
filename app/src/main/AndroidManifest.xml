@@ -24,6 +24,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- BLE transport (GATT). The controller exposes telemetry as a BLE peripheral;
+         the app is the central. Marked not-required so Classic-SPP-only devices can
+         still install during the transitional dual-transport period. -->
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+
     <application
         android:name=".DisplayApp"
         android:allowBackup="true"

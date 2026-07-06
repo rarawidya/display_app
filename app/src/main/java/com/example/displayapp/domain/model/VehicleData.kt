@@ -37,7 +37,26 @@ data class VehicleData(
     val timestamp: Long = System.currentTimeMillis(),
     // Derived at decode-time — see class doc.
     val rpm: Int = 0,
-    val power: Float = 0f
+    val power: Float = 0f,
+    // ── VotolTelemetry wire fields (capnp.md §3) ─────────────────────────────
+    // Carried live from the frame. Not yet persisted — decodeEntity leaves them
+    // at their defaults for replayed samples until a Room migration adds columns.
+    /** Controller fault bitfield (`@7 faultCode`); 0 = no fault. */
+    val faultCode: Long = 0,
+    /** Status bitfield (`@8 flags`): bit0 engineRunning, bit1 brake, bit2 moving, bit3 reverse. */
+    val flags: Int = 0,
+    /** Rolling frame counter (`@9 seq`) for drop detection. */
+    val seq: Long = 0,
+    // ── Field availability (so the UI shows "—" instead of misleading zeros) ──
+    // Default true: persisted rows decoded via TelemetryDerivations.decodeEntity
+    // keep showing their recorded values. The live mapper sets these per the
+    // wire protocol's current capabilities.
+    /** False when the current channel is uncalibrated (→ current & power unknown). */
+    val currentAvailable: Boolean = true,
+    /** False when battery-pack temperature is absent from the wire. */
+    val batteryTempAvailable: Boolean = true,
+    /** False when SoC is not yet known (wire `batteryPercent == 255`). */
+    val batteryKnown: Boolean = true
 )
 
 /**

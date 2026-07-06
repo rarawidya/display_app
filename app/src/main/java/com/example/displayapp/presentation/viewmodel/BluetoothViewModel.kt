@@ -167,9 +167,11 @@ class BluetoothViewModel(
     /* --------------- state assembly --------------- */
 
     private fun build(a: Adapter, l: Live): BluetoothUiState {
-        val connectedAddress = if (l.connection == ConnectionState.CONNECTED ||
-            l.connection == ConnectionState.CONNECTING ||
-            l.connection == ConnectionState.RECONNECTING) l.saved?.address else null
+        // Only a live CONNECTED link counts as "connected". Treating CONNECTING /
+        // RECONNECTING as connected made the sheet + status line read "Connected to X"
+        // for the entire multi-minute reconnect window after the device had actually
+        // dropped — the exact "still shows connected" symptom users hit.
+        val connectedAddress = if (l.connection == ConnectionState.CONNECTED) l.saved?.address else null
 
         val connectedUi: UiDevice? = connectedAddress?.let { addr ->
             val name = a.paired.firstOrNull { it.address == addr }?.name

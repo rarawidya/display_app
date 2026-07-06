@@ -1,67 +1,68 @@
-@0xb528e8e18b9e73a1;
+@0xf0e5f2ff4f178d2a;
 
-# EV Telemetry Frame Schema
-# Used for real-time vehicle data over Bluetooth Classic SPP.
+# EVDISPLAY (Votol) Telemetry Frame Schema — App-facing protocol.
 #
-# Wire format: Each Cap'n Proto message is wrapped in a frame:
-#   [0xCA 0xFE] [LENGTH:uint16-LE] [PAYLOAD:capnp-message] [CRC16-CCITT:uint16-LE]
+# This is the canonical, FROZEN schema published by the firmware team in
+# `capnp.md` (v1, 2026-07-03). The app decodes exactly these fields off the
+# Bluetooth-Classic SPP stream. Do NOT renumber, reorder, retype, or delete
+# ordinals @0..@10 — new telemetry (odometer, throttle, BMS, timestamps, turn
+# signals…) is APPENDED at @11+, which grows the frame LEN.
 #
-# All numeric values use fixed-point integers for MCU compatibility.
-# To compile for C (STM32/ESP32): capnp compile -oc telemetry.capnp
-# To compile for Java:            capnp compile -ojava telemetry.capnp
+# Board → phone, telemetry uplink only (~10 Hz). No downlink is defined in v1.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-#  Protocol invariants (Phase 1 audit) — read alongside CLAUDE.md.
+#  Wire framing (see capnp.md §2)
 # ─────────────────────────────────────────────────────────────────────────────
+#   [SYNC:0xAA] [LEN:uint8] [PAYLOAD:LEN bytes] [CRC16-CCITT:uint16-LE]
 #
-# CURRENT / REGEN SIGN CONVENTION
-#   The signed `current` field carries the *battery's* perspective:
-#     current > 0 → discharge (energy LEAVING the pack)
-#     current < 0 → regen     (energy ENTERING the pack via regenerative braking)
-#   `power = voltage × current` therefore mirrors the same sign — positive
-#   under propulsion, negative under regen. Every Wh / range / efficiency
-#   calculator in the app assumes this convention; flipping it on the MCU
-#   side will silently invert energy-used vs energy-regen totals.
+#   SYNC   = 0xAA single frame-start byte (scan for it to resync).
+#   LEN    = payload length in bytes (uint8). Currently 40; grows if the schema
+#            gains fields. ALWAYS trust LEN — never hardcode 40.
+#   CRC16  = CRC16-CCITT (poly 0x1021, init 0xFFFF, MSB-first, NO final XOR),
+#            computed over LEN || PAYLOAD, transmitted little-endian.
+#   Total frame length = LEN + 4 bytes.
 #
-# DERIVED FIELDS (RPM, POWER)
-#   Neither `rpm` nor `power` is on the wire — both are derived once in
-#   `TelemetryDerivations` (data/protocol/TelemetryDerivations.kt) and read
-#   off `VehicleData` everywhere else. Definitions:
-#     rpm   = speedKmh × 100   (a display proxy, NOT true motor electrical
-#                               frequency; if the firmware ever needs real
-#                               RPM, add it as a new wire field rather than
-#                               overloading this one)
-#     power = voltage × current (Watts; sign per the convention above)
+#   PAYLOAD is one unpacked, single-segment Cap'n Proto `VotolTelemetry`
+#   message: 8-byte segment header + 8-byte root pointer + 3 data words (24 B).
 #
-# TIMESTAMPS
-#   The wire `timestamp` field is currently MCU-boot-relative (wraps every
-#   ~49 days). The app does NOT use it for absolute time — TelemetryMapper
-#   stamps each VehicleData with `System.currentTimeMillis()` at decode.
-#   Phase 3 introduces a per-trip `bootEpochMs` so that recorded samples
-#   can carry MCU-relative deltas while replay still resolves to absolute
-#   wall-clock. Until then, do not rely on `frame.timestamp` for trip math.
+# ─────────────────────────────────────────────────────────────────────────────
+#  Field semantics / trust (see capnp.md §3)
+# ─────────────────────────────────────────────────────────────────────────────
+#   batteryDeciVolts  0.1 V units (÷10 → volts).                     CONFIRMED
+#   motorCurrentRaw   raw counts; scale/location TBD, currently 0.   TODO
+#   rpm               motor rpm / speed proxy.                       PROVISIONAL
+#   speedKmh          km/h, direct (firmware derives rpm*83/1000).   PROVISIONAL
+#   controllerTempC   whole °C, direct.                             CANDIDATE
+#   motorTempC        whole °C, direct.                              CONFIRMED
+#   driveMode         1 / 2 / 3 (Eco / Urban / Sport).               CONFIRMED
+#   faultCode         controller fault bitfield, currently 0.        PROVISIONAL
+#   flags             bitfield (see below).                          CONFIRMED
+#   seq               rolling frame counter (drop detection).
+#   batteryPercent    0-100 % SoC, or 255 = NOT-YET-KNOWN (show --). CONFIRMED
 #
-# RETIRED SLOTS
-#   Field numbers @6 (odometer) and @8 (indicators) are intentionally retired
-#   — the app integrates distance from speed × dt and no longer surfaces
-#   blinker / headlamp state. The slots remain reserved so existing MCU
-#   firmware that still emits them continues to decode (bytes silently
-#   dropped). New fields MUST take fresh slot numbers; never reuse 6 or 8.
-struct TelemetryFrame {
-  timestamp             @0 :UInt32;     # Milliseconds since controller boot (NOT wall-clock)
-  speed                 @1 :UInt16;     # km/h * 10  (e.g., 45.2 km/h = 452)
-  battery               @2 :UInt8;      # State of charge 0-100 %
-  voltage               @3 :UInt16;     # Volts * 100 (e.g., 72.50V = 7250)
-  current               @4 :Int16;      # Amps * 100  (POSITIVE = discharge, NEGATIVE = regen)
-  temperature           @5 :Int8;       # Motor temp in Celsius
-  mode                  @7 :VehicleMode;# Current drive mode
-  batteryTemperature    @9 :Int8;       # Battery pack temp in Celsius
-  controllerTemperature @10 :Int8;      # Motor controller temp in Celsius
-}
+#   `flags` bits (UInt8): 0 engineRunning · 1 brake · 2 moving ·
+#                         3 reverse gear · 4-7 reserved.
+#
+# NOTE — divergences from the app's previous internal schema, kept here so the
+# canonical-invariant docs stay honest:
+#   • rpm and speedKmh are now REAL wire fields — the app no longer derives
+#     rpm = speed×100. Both are read straight off the frame.
+#   • current is raw counts (currently 0), NOT signed amps. Bus power (V×I) and
+#     the energy/regen integrators are therefore inert until firmware calibrates
+#     `motorCurrentRaw` and defines its sign.
+#   • battery pack temperature is NOT on this wire (v1). VehicleData keeps the
+#     field for UI/persistence continuity but the mapper sets it 0 (unknown).
 
-enum VehicleMode {
-  park   @0;
-  eco    @1;
-  normal @2;
-  sport  @3;
+struct VotolTelemetry {
+  batteryDeciVolts @0 :UInt16;   # battery voltage, 0.1 V units (809 = 80.9 V)
+  motorCurrentRaw  @1 :Int16;    # motor current, raw counts (currently 0)
+  rpm              @2 :UInt16;   # motor rpm / speed proxy
+  speedKmh         @3 :UInt16;   # km/h (firmware: rpm * 83 / 1000)
+  controllerTempC  @4 :Int8;     # controller temp, whole deg C
+  motorTempC       @5 :Int8;     # motor temp, whole deg C
+  driveMode        @6 :UInt8;    # 1 = Eco, 2 = Urban, 3 = Sport
+  faultCode        @7 :UInt32;   # controller fault bitfield (currently 0)
+  flags            @8 :UInt8;    # bit0 engineRunning, bit1 brake, bit2 moving, bit3 reverse
+  seq              @9 :UInt32;   # rolling frame counter (drop detection)
+  batteryPercent   @10 :UInt8;   # state-of-charge 0-100 %, or 255 = not yet known
 }

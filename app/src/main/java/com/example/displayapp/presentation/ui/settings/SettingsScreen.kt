@@ -6,14 +6,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -23,7 +20,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -53,11 +49,7 @@ import com.example.displayapp.data.persistence.StorageInfo
 import com.example.displayapp.data.preferences.SavedDevice
 import com.example.displayapp.domain.model.AppSettings
 import com.example.displayapp.domain.model.ConnectionState
-import com.example.displayapp.domain.model.RetentionPeriod
-import com.example.displayapp.domain.model.SpeedUnit
-import com.example.displayapp.domain.model.TemperatureUnit
 import com.example.displayapp.domain.model.ThemeMode
-import com.example.displayapp.domain.model.TimeFormat
 import com.example.displayapp.presentation.state.SettingsUiState
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.settings.components.ActionRow
@@ -102,15 +94,10 @@ fun SettingsScreen(
         state = state,
         onBack = onBack,
         onThemeMode = viewModel::setThemeMode,
-        onSpeedUnit = viewModel::setSpeedUnit,
-        onTempUnit  = viewModel::setTemperatureUnit,
-        onTimeFormat = viewModel::setTimeFormat,
-        onRetention  = viewModel::setRetention,
         onAutoConnect = viewModel::setAutoConnect,
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
         onClearTrips = viewModel::clearTripHistory,
-        onClearCache = viewModel::clearExportsCache,
         onUnlockDeveloper = viewModel::unlockDeveloperMode,
         onOpenDeveloper = onOpenDeveloper,
         onManagePermissions = {
@@ -125,15 +112,10 @@ fun SettingsContent(
     state: SettingsUiState,
     onBack: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
-    onSpeedUnit: (SpeedUnit) -> Unit,
-    onTempUnit: (TemperatureUnit) -> Unit,
-    onTimeFormat: (TimeFormat) -> Unit,
-    onRetention: (RetentionPeriod) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
     onForgetDevice: () -> Unit,
     onSimulatorMode: (Boolean) -> Unit,
     onClearTrips: () -> Unit,
-    onClearCache: () -> Unit,
     onUnlockDeveloper: () -> Unit,
     onOpenDeveloper: () -> Unit,
     onManagePermissions: () -> Unit
@@ -187,17 +169,9 @@ fun SettingsContent(
                     onForgetDevice = onForgetDevice,
                     onSimulatorMode = onSimulatorMode
                 )
-                UnitsSection(
-                    app = state.app,
-                    onSpeedUnit = onSpeedUnit,
-                    onTempUnit = onTempUnit,
-                    onTimeFormat = onTimeFormat
-                )
-                HistorySection(app = state.app, onRetention = onRetention)
                 StorageSection(
                     storage = state.storage,
-                    onClearTrips = onClearTrips,
-                    onClearCache = onClearCache
+                    onClearTrips = onClearTrips
                 )
                 PermissionsSection(state = state, onManage = onManagePermissions)
                 AboutSection(
@@ -320,78 +294,15 @@ private fun ConnectionSection(
 }
 
 /* -------------------------------------------------------------------------- */
-/*  3. Units                                                                   */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun UnitsSection(
-    app: AppSettings,
-    onSpeedUnit: (SpeedUnit) -> Unit,
-    onTempUnit: (TemperatureUnit) -> Unit,
-    onTimeFormat: (TimeFormat) -> Unit
-) {
-    SettingsSection(title = "Units") {
-        ChoiceRow(
-            title = "Speed & distance",
-            options = SpeedUnit.entries,
-            selected = app.speedUnit,
-            onSelected = onSpeedUnit,
-            labelFor = { it.label }
-        )
-        SectionDivider()
-        ChoiceRow(
-            title = "Temperature",
-            options = TemperatureUnit.entries,
-            selected = app.temperatureUnit,
-            onSelected = onTempUnit,
-            labelFor = { it.label }
-        )
-        SectionDivider()
-        ChoiceRow(
-            title = "Time format",
-            options = TimeFormat.entries,
-            selected = app.timeFormat,
-            onSelected = onTimeFormat,
-            labelFor = { it.label }
-        )
-    }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  4. History (retention)                                                     */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun HistorySection(app: AppSettings, onRetention: (RetentionPeriod) -> Unit) {
-    SettingsSection(title = "History") {
-        ChoiceRow(
-            title = "Trip retention",
-            options = RetentionPeriod.entries,
-            selected = app.retention,
-            onSelected = onRetention,
-            labelFor = { it.label },
-            descriptionFor = {
-                when (it) {
-                    RetentionPeriod.FOREVER -> "Trips are never deleted automatically"
-                    else -> "Trips older than ${it.label} are removed on app launch"
-                }
-            }
-        )
-    }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  5. Storage                                                                 */
+/*  3. Storage                                                                 */
 /* -------------------------------------------------------------------------- */
 
 @Composable
 private fun StorageSection(
     storage: StorageInfo?,
-    onClearTrips: () -> Unit,
-    onClearCache: () -> Unit
+    onClearTrips: () -> Unit
 ) {
     var confirmTrips by remember { mutableStateOf(false) }
-    var confirmCache by remember { mutableStateOf(false) }
 
     SettingsSection(title = "Storage") {
         ValueRow(
@@ -400,22 +311,11 @@ private fun StorageSection(
             subtitle = storage?.let { "${it.tripCount} trips · ${it.telemetrySampleCount} samples" }
         )
         SectionDivider()
-        ValueRow(
-            title = "Exported CSVs",
-            value = storage?.let { it.format(it.exportsBytes) } ?: "—"
-        )
-        SectionDivider()
         ActionRow(
             title = "Clear trip history",
             subtitle = "Removes all trips and telemetry — cannot be undone",
             leadingTint = EvRed,
             onClick = { confirmTrips = true }
-        )
-        SectionDivider()
-        ActionRow(
-            title = "Clear exports cache",
-            subtitle = "Removes generated CSV files",
-            onClick = { confirmCache = true }
         )
     }
 
@@ -427,15 +327,6 @@ private fun StorageSection(
             confirmLabel = "Delete",
             onDismiss = { confirmTrips = false },
             onConfirm = onClearTrips
-        )
-    }
-    if (confirmCache) {
-        ConfirmDialog(
-            title = "Clear exports cache?",
-            message = "Deletes generated CSV files. Your trip data stays intact.",
-            confirmLabel = "Delete",
-            onDismiss = { confirmCache = false },
-            onConfirm = onClearCache
         )
     }
 }
@@ -498,8 +389,6 @@ private fun AboutSection(
         ) {
             ValueRow(title = "Version", value = state.appVersion.ifBlank { "—" })
         }
-        SectionDivider()
-        ValueRow(title = "Build", value = state.appBuildNumber.ifBlank { "—" })
 
         if (devUnlocked) {
             SectionDivider()
@@ -509,21 +398,5 @@ private fun AboutSection(
                 onClick = onOpenDeveloper
             )
         }
-    }
-    Spacer(Modifier.height(Dim.md))
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = "EV cockpit · made for night drives",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
     }
 }

@@ -29,4 +29,18 @@ object TelemetryConstants {
      * the integrators recompute on those samples.
      */
     const val MAX_REPLAY_DELAY_MS: Long = 2_000L
+
+    /**
+     * Whether the wire `motorCurrentRaw` channel is calibrated. It is NOT in
+     * protocol v1 — capnp.md marks it "TODO, currently sent 0", so current,
+     * bus power (V×I), and the derived Wh/km + range are meaningless on real
+     * hardware. While false, the Drive tiles render those as "—" instead of a
+     * misleading 0. Flip to true once firmware defines the current scale + sign.
+     *
+     * DEMO MODE: currently `true` so the simulator's injected whole-amp currents
+     * light up Current / Power / Wh/km / Range (and the Home page Range +
+     * Avg. Efficiency stats). On real hardware these read garbage until the
+     * firmware calibrates the channel — set back to `false` before shipping.
+     */
+    const val CURRENT_CHANNEL_CALIBRATED: Boolean = true
 }

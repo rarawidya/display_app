@@ -2,7 +2,6 @@ package com.example.displayapp.presentation.ui.dashboard
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,14 +23,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.displayapp.R
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.ui.theme.EvGreen
@@ -117,17 +113,6 @@ private fun BrandMark() {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Image(
-            // Use a plain raster drawable, not R.mipmap.ic_launcher: on API 26+
-            // the latter resolves to the <adaptive-icon> XML in mipmap-anydpi-v26,
-            // which painterResource cannot load (it only handles vector XML or
-            // raster bitmaps).
-            painter = painterResource(id = R.drawable.ic_brand),
-            contentDescription = null,
-            modifier = Modifier
-                .size(26.dp)
-                .clip(RoundedCornerShape(6.dp))
-        )
         val wordmark = buildAnnotatedString {
             withStyle(
                 SpanStyle(

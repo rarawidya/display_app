@@ -3,7 +3,10 @@ package com.example.displayapp.di
 import android.content.Context
 import android.content.pm.PackageManager
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
+import com.example.displayapp.data.bluetooth.SwitchableDataSource
+import com.example.displayapp.data.bluetooth.ble.BleDataSource
 import com.example.displayapp.data.bluetooth.controller.AndroidBluetoothController
+import com.example.displayapp.data.bluetooth.controller.BleController
 import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
@@ -146,20 +149,32 @@ class AppContainer(private val context: Context) {
         SampleTripSeeder(tripDao, telemetryDao)
     }
 
-    // Bluetooth data source
-    private var _dataSource: BluetoothDataSource? = null
+    // Bluetooth data source.
+    //
+    // The repository binds to a single [SwitchableDataSource] facade whose identity
+    // never changes; switching simulator ↔ real swaps the delegate *inside* it, so
+    // the repository (and every ViewModel observing it) always talks to the active
+    // source. Before this facade the repository captured the first delegate forever,
+    // making switchDataSource() a silent no-op — real-device connects kept running
+    // the simulator and disconnects never moved the UI off CONNECTED.
+    /**
+     * Experimental: route the real (non-simulator) transport over BLE/GATT instead
+     * of Bluetooth Classic SPP. Off by default — SPP stays the shipping path until
+     * the BLE transport is validated against the controller. Toggled from Developer.
+     */
+    var useBleTransport: Boolean = false
 
-    val bluetoothDataSource: BluetoothDataSource
-        get() {
-            if (_dataSource == null) {
-                _dataSource = if (useSimulator) {
-                    SimulatedDataSource(simulatorScenario)
-                } else {
-                    SppDataSource(context)
-                }
-            }
-            return _dataSource!!
-        }
+    private fun createDelegate(): BluetoothDataSource = when {
+        useSimulator -> SimulatedDataSource(simulatorScenario)
+        useBleTransport -> BleDataSource(context)
+        else -> SppDataSource(context)
+    }
+
+    private val switchableDataSource: SwitchableDataSource by lazy {
+        SwitchableDataSource(createDelegate())
+    }
+
+    val bluetoothDataSource: BluetoothDataSource get() = switchableDataSource
 
     val telemetryMapper: TelemetryMapper by lazy { TelemetryMapper() }
 
@@ -168,14 +183,25 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Adapter-level Bluetooth surface for the quick-settings sheet. Owns
-     * receivers for ACTION_STATE_CHANGED / ACTION_FOUND / ACTION_BOND_STATE_CHANGED.
-     * Independent from [bluetoothDataSource] so the sheet's lifecycle never
-     * interferes with the SPP connection pipeline.
+     * Adapter-level Bluetooth surface for the quick-settings sheet. Owns receivers
+     * for adapter state / discovery / bond changes. Independent from
+     * [bluetoothDataSource] so the sheet's lifecycle never interferes with the
+     * connection pipeline.
+     *
+     * Two implementations — Classic (`ACTION_FOUND` inquiry) and BLE
+     * (`BluetoothLeScanner`) — selected to match the active transport. Each is
+     * created lazily, so the BLE one only registers receivers once BLE is toggled on.
+     * A ViewModel created before a transport switch keeps its controller; reopening
+     * the sheet picks up the current one.
      */
-    val bluetoothController: BluetoothController by lazy {
+    private val classicBluetoothController: BluetoothController by lazy {
         AndroidBluetoothController(context.applicationContext)
     }
+    private val bleBluetoothController: BluetoothController by lazy {
+        BleController(context.applicationContext)
+    }
+    val bluetoothController: BluetoothController
+        get() = if (useBleTransport) bleBluetoothController else classicBluetoothController
 
     /**
      * Live efficiency state (rolling Wh/km, range estimate, instant power).
@@ -190,10 +216,39 @@ class AppContainer(private val context: Context) {
     }
 
     fun switchDataSource(simulator: Boolean) {
-        if (simulator == useSimulator && _dataSource != null) return
-        _dataSource?.close()
-        _dataSource = null
+        val alreadyMatches = simulator == useSimulator &&
+            switchableDataSource.active.let { active ->
+                when {
+                    simulator -> active is SimulatedDataSource
+                    useBleTransport -> active is BleDataSource
+                    else -> active is SppDataSource
+                }
+            }
+        if (alreadyMatches) return
         useSimulator = simulator
+        switchableDataSource.swap(createDelegate())
+    }
+
+    /**
+     * Start/stop a live **simulator session** from the Settings toggle.
+     *
+     * Selecting the simulator source alone leaves it idle (DISCONNECTED) — nothing
+     * ever calls [VehicleRepository.connect] on it, unlike the real-device path which
+     * goes through [com.example.displayapp.service.TelemetryService]. So turning the
+     * toggle on also opens a session so telemetry streams immediately; turning it off
+     * swaps back to the real transport, and that swap tears the simulator down (see
+     * [SwitchableDataSource.swap]), so no explicit disconnect is needed.
+     */
+    suspend fun setSimulatorSession(useSim: Boolean) {
+        switchDataSource(simulator = useSim)
+        if (useSim) vehicleRepository.connect(SIMULATOR_SESSION_ADDRESS)
+    }
+
+    /** Flip the real transport between SPP and BLE. Swaps live if not on the simulator. */
+    fun setBleTransport(enabled: Boolean) {
+        if (enabled == useBleTransport) return
+        useBleTransport = enabled
+        if (!useSimulator) switchableDataSource.swap(createDelegate())
     }
 
     /**
@@ -201,8 +256,11 @@ class AppContainer(private val context: Context) {
      * changes and the running SimulatedDataSource needs to be replaced.
      */
     fun restartDataSource() {
-        _dataSource?.close()
-        _dataSource = null
-        // Next read of bluetoothDataSource lazy-creates with the current useSimulator + simulatorScenario.
+        switchableDataSource.swap(createDelegate())
+    }
+
+    companion object {
+        /** Synthetic address for the simulated session — ignored by SimulatedDataSource. */
+        private const val SIMULATOR_SESSION_ADDRESS = "SIMULATOR"
     }
 }

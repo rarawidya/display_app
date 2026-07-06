@@ -1,7 +1,10 @@
 package com.example.displayapp.presentation.ui.icons
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
@@ -459,6 +462,206 @@ object EvIcons {
             lineTo(15f, 8f)
             horizontalLineToRelative(-2f)
             close()
+        }
+    } }
+
+    // ------------------------------------------------------------------
+    // Telltale / warning lamps — driven by VotolTelemetry `flags`/`faultCode`.
+    // Each uses EvenOdd fill so the exclamation reads as a punched hole,
+    // keeping the glyph a single tint-able shape (see TelltaleRow).
+    // ------------------------------------------------------------------
+
+    /** Warning triangle with exclamation — controller fault / MIL. */
+    val Warning: ImageVector by lazy { vec("Warning") {
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            // Triangle body.
+            moveTo(12f, 3f); lineTo(22f, 20.5f); lineTo(2f, 20.5f); close()
+            // Exclamation stem (hole).
+            moveTo(11f, 9.5f); lineTo(13f, 9.5f); lineTo(13f, 15f); lineTo(11f, 15f); close()
+            // Exclamation dot (hole).
+            moveTo(11f, 16.5f); lineTo(13f, 16.5f); lineTo(13f, 18.5f); lineTo(11f, 18.5f); close()
+        }
+    } }
+
+    /** Filled disc with exclamation — brake warning lamp. */
+    val Brake: ImageVector by lazy { vec("Brake") {
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            // Disc (two semicircle arcs).
+            moveTo(21f, 12f)
+            arcToRelative(9f, 9f, 0f, true, true, -18f, 0f)
+            arcToRelative(9f, 9f, 0f, true, true, 18f, 0f)
+            close()
+            // Exclamation stem (hole).
+            moveTo(11f, 6.5f); lineTo(13f, 6.5f); lineTo(13f, 13f); lineTo(11f, 13f); close()
+            // Exclamation dot (hole).
+            moveTo(11f, 15f); lineTo(13f, 15f); lineTo(13f, 17f); lineTo(11f, 17f); close()
+        }
+    } }
+
+    // ------------------------------------------------------------------
+    // Home-screen glyphs — notifications, rename, health + summary tiles.
+    // Material paths (Apache 2.0) where noted; stroke-drawn where a thin
+    // line reads better than a filled silhouette.
+    // ------------------------------------------------------------------
+
+    /** Notification bell — Material "notifications". */
+    val Bell: ImageVector by lazy { vec("Bell") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 22f)
+            curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+            horizontalLineToRelative(-4f)
+            curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
+            close()
+            moveTo(18f, 16f)
+            verticalLineToRelative(-5f)
+            curveToRelative(0f, -3.07f, -1.64f, -5.64f, -4.5f, -6.32f)
+            verticalLineTo(4f)
+            curveToRelative(0f, -0.83f, -0.67f, -1.5f, -1.5f, -1.5f)
+            reflectiveCurveToRelative(-1.5f, 0.67f, -1.5f, 1.5f)
+            verticalLineToRelative(0.68f)
+            curveTo(7.63f, 5.36f, 6f, 7.92f, 6f, 11f)
+            verticalLineToRelative(5f)
+            lineToRelative(-2f, 2f)
+            verticalLineToRelative(1f)
+            horizontalLineToRelative(16f)
+            verticalLineToRelative(-1f)
+            lineToRelative(-2f, -2f)
+            close()
+        }
+    } }
+
+    /** Pencil — Material "edit". */
+    val Edit: ImageVector by lazy { vec("Edit") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(3f, 17.25f)
+            verticalLineTo(21f)
+            horizontalLineToRelative(3.75f)
+            lineTo(17.81f, 9.94f)
+            lineToRelative(-3.75f, -3.75f)
+            lineTo(3f, 17.25f)
+            close()
+            moveTo(20.71f, 7.04f)
+            curveToRelative(0.39f, -0.39f, 0.39f, -1.02f, 0f, -1.41f)
+            lineToRelative(-2.34f, -2.34f)
+            curveToRelative(-0.39f, -0.39f, -1.02f, -0.39f, -1.41f, 0f)
+            lineToRelative(-1.83f, 1.83f)
+            lineToRelative(3.75f, 3.75f)
+            lineToRelative(1.83f, -1.83f)
+            close()
+        }
+    } }
+
+    /** Shield with a check punched out — controller health. */
+    val Shield: ImageVector by lazy { vec("Shield") {
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            moveTo(12f, 2f)
+            lineTo(4f, 5f)
+            verticalLineToRelative(6f)
+            curveToRelative(0f, 5f, 3.4f, 9.6f, 8f, 11f)
+            curveToRelative(4.6f, -1.4f, 8f, -6f, 8f, -11f)
+            verticalLineTo(5f)
+            close()
+            // check (hole)
+            moveTo(10.6f, 15.6f)
+            lineTo(7.4f, 12.4f)
+            lineTo(8.8f, 11f)
+            lineTo(10.6f, 12.8f)
+            lineTo(15.2f, 8.2f)
+            lineTo(16.6f, 9.6f)
+            close()
+        }
+    } }
+
+    /** Processor / chip — system health. */
+    val Cpu: ImageVector by lazy { vec("Cpu") {
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            moveTo(7f, 7f); horizontalLineToRelative(10f); verticalLineToRelative(10f); horizontalLineToRelative(-10f); close()
+            moveTo(10f, 10f); horizontalLineToRelative(4f); verticalLineToRelative(4f); horizontalLineToRelative(-4f); close()
+        }
+        path(fill = SolidColor(Color.White)) {
+            moveTo(9f, 4f); horizontalLineToRelative(1.5f); verticalLineToRelative(2f); horizontalLineToRelative(-1.5f); close()
+            moveTo(13.5f, 4f); horizontalLineToRelative(1.5f); verticalLineToRelative(2f); horizontalLineToRelative(-1.5f); close()
+            moveTo(9f, 18f); horizontalLineToRelative(1.5f); verticalLineToRelative(2f); horizontalLineToRelative(-1.5f); close()
+            moveTo(13.5f, 18f); horizontalLineToRelative(1.5f); verticalLineToRelative(2f); horizontalLineToRelative(-1.5f); close()
+            moveTo(4f, 9f); horizontalLineToRelative(2f); verticalLineToRelative(1.5f); horizontalLineToRelative(-2f); close()
+            moveTo(4f, 13.5f); horizontalLineToRelative(2f); verticalLineToRelative(1.5f); horizontalLineToRelative(-2f); close()
+            moveTo(18f, 9f); horizontalLineToRelative(2f); verticalLineToRelative(1.5f); horizontalLineToRelative(-2f); close()
+            moveTo(18f, 13.5f); horizontalLineToRelative(2f); verticalLineToRelative(1.5f); horizontalLineToRelative(-2f); close()
+        }
+    } }
+
+    /** Heartbeat / activity line — error-state tile. */
+    val Pulse: ImageVector by lazy { vec("Pulse") {
+        path(
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            moveTo(3f, 12f); lineTo(8f, 12f); lineTo(10.5f, 6f); lineTo(13.5f, 18f); lineTo(16f, 12f); lineTo(21f, 12f)
+        }
+    } }
+
+    /** Perspective road — range / distance tiles. */
+    val Road: ImageVector by lazy { vec("Road") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(6f, 4f); lineTo(8f, 4f); lineTo(6.5f, 20f); lineTo(4f, 20f); close()
+            moveTo(16f, 4f); lineTo(18f, 4f); lineTo(20f, 20f); lineTo(17.5f, 20f); close()
+            moveTo(11.25f, 4f); lineTo(12.75f, 4f); lineTo(12.6f, 7f); lineTo(11.4f, 7f); close()
+            moveTo(11.15f, 9f); lineTo(12.85f, 9f); lineTo(12.7f, 13f); lineTo(11.3f, 13f); close()
+            moveTo(11.05f, 15f); lineTo(12.95f, 15f); lineTo(12.8f, 20f); lineTo(11.2f, 20f); close()
+        }
+    } }
+
+    /** Circular refresh arrow — "last sync". Material "refresh". */
+    val Refresh: ImageVector by lazy { vec("Refresh") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(17.65f, 6.35f)
+            curveTo(16.2f, 4.9f, 14.21f, 4f, 12f, 4f)
+            curveToRelative(-4.42f, 0f, -7.99f, 3.58f, -7.99f, 8f)
+            reflectiveCurveToRelative(3.57f, 8f, 7.99f, 8f)
+            curveToRelative(3.73f, 0f, 6.84f, -2.55f, 7.73f, -6f)
+            horizontalLineToRelative(-2.08f)
+            curveToRelative(-0.82f, 2.33f, -3.04f, 4f, -5.65f, 4f)
+            curveToRelative(-3.31f, 0f, -6f, -2.69f, -6f, -6f)
+            reflectiveCurveToRelative(2.69f, -6f, 6f, -6f)
+            curveToRelative(1.66f, 0f, 3.14f, 0.69f, 4.22f, 1.78f)
+            lineTo(13f, 11f)
+            horizontalLineToRelative(7f)
+            verticalLineTo(4f)
+            lineToRelative(-2.35f, 2.35f)
+            close()
+        }
+    } }
+
+    /** Stopwatch — trip duration. Material "timer". */
+    val Timer: ImageVector by lazy { vec("Timer") {
+        path(fill = SolidColor(Color.White), pathFillType = PathFillType.EvenOdd) {
+            moveTo(15f, 1f); horizontalLineTo(9f); verticalLineToRelative(2f); horizontalLineToRelative(6f); close()
+            moveTo(11f, 14f); horizontalLineToRelative(2f); verticalLineTo(8f); horizontalLineToRelative(-2f); close()
+            moveTo(19.03f, 7.39f)
+            lineToRelative(1.42f, -1.42f)
+            curveToRelative(-0.43f, -0.51f, -0.9f, -0.99f, -1.41f, -1.41f)
+            lineToRelative(-1.42f, 1.42f)
+            curveTo(16.07f, 4.74f, 14.12f, 4f, 12f, 4f)
+            curveToRelative(-4.97f, 0f, -9f, 4.03f, -9f, 9f)
+            reflectiveCurveToRelative(4.02f, 9f, 9f, 9f)
+            reflectiveCurveToRelative(9f, -4.03f, 9f, -9f)
+            curveToRelative(0f, -2.12f, -0.74f, -4.07f, -1.97f, -5.61f)
+            close()
+            moveTo(12f, 20f)
+            curveToRelative(-3.87f, 0f, -7f, -3.13f, -7f, -7f)
+            reflectiveCurveToRelative(3.13f, -7f, 7f, -7f)
+            reflectiveCurveToRelative(7f, 3.13f, 7f, 7f)
+            reflectiveCurveToRelative(-3.13f, 7f, -7f, 7f)
+            close()
+        }
+    } }
+
+    /** Chevron pointing right, in a lighter weight than [ChevronRight]. */
+    val ArrowForward: ImageVector by lazy { vec("ArrowForward") {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 11f); lineTo(16.17f, 11f); lineTo(10.59f, 5.41f); lineTo(12f, 4f); lineTo(20f, 12f); lineTo(12f, 20f); lineTo(10.59f, 18.59f); lineTo(16.17f, 13f); lineTo(4f, 13f); close()
         }
     } }
 }

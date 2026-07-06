@@ -32,6 +32,16 @@ data class DashboardUiState(
     val leftIndicator: Boolean = false,
     val rightIndicator: Boolean = false,
     val headlamp: Boolean = false,
+    // ── Warning-lamp telltales, decoded from VotolTelemetry flags/faultCode ──
+    val engineRunning: Boolean = false,  // flags bit0
+    val brakeActive: Boolean = false,    // flags bit1
+    val reverseActive: Boolean = false,  // flags bit3
+    val faultActive: Boolean = false,    // faultCode != 0
+    val faultCode: Long = 0,
+    // Field availability — drives "—" vs a numeric readout on the Drive tiles.
+    val currentAvailable: Boolean = true,     // current & power
+    val batteryTempAvailable: Boolean = true,
+    val batteryKnown: Boolean = true,         // SoC (false while wire sends 255)
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val diagnostics: DiagnosticsState = DiagnosticsState(),
     val tripStats: TripStatsState = TripStatsState(),

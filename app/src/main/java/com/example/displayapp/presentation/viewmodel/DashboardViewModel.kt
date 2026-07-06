@@ -118,6 +118,16 @@ class DashboardViewModel(
             controllerTemperature = data.controllerTemperature,
             batteryTemperature = data.batteryTemperature,
             vehicleMode = data.vehicleMode,
+            // Warning-lamp telltales — decode the wire `flags` bitfield and
+            // `faultCode` (capnp.md §3). No UI-side bit math downstream.
+            engineRunning = data.flags and FLAG_ENGINE_RUNNING != 0,
+            brakeActive = data.flags and FLAG_BRAKE != 0,
+            reverseActive = data.flags and FLAG_REVERSE != 0,
+            faultActive = data.faultCode != 0L,
+            faultCode = data.faultCode,
+            currentAvailable = data.currentAvailable,
+            batteryTempAvailable = data.batteryTempAvailable,
+            batteryKnown = data.batteryKnown,
             connectionState = connectionState,
             diagnostics = DiagnosticsState(
                 framesPerSecond = diag.framesPerSecond,
@@ -136,9 +146,12 @@ class DashboardViewModel(
                 distanceKm = sessionDistanceKm.toFloat(),
                 durationSec = durationSec
             ),
+            // Wh/km and range derive from bus power; with the current channel
+            // uncalibrated they'd read a misleading 0 / infinite range, so hold
+            // them at "—" (null) until current is trustworthy.
             efficiency = EfficiencyState(
-                whPerKm = efficiency.whPerKm,
-                rangeKm = efficiency.rangeKm
+                whPerKm = if (data.currentAvailable) efficiency.whPerKm else null,
+                rangeKm = if (data.currentAvailable) efficiency.rangeKm else null
             )
         )
     }
@@ -173,6 +186,13 @@ class DashboardViewModel(
         sessionDistanceKm = 0.0
         sessionLastSpeed = 0
         sessionLastTimestampMs = 0L
+    }
+
+    private companion object {
+        // VotolTelemetry `flags` bit masks (capnp.md §3).
+        const val FLAG_ENGINE_RUNNING = 0x01
+        const val FLAG_BRAKE = 0x02
+        const val FLAG_REVERSE = 0x08
     }
 
     private fun trackFps() {
