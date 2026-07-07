@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.TelemetrySeriesStyle
 import com.example.displayapp.ui.theme.seriesColor
@@ -137,8 +138,9 @@ private fun MetricChip(
             color = labelColor
         )
         if (!compact && selected && latest != null) {
+            val (valueText, unitText) = displayLatest(metric, latest, LocalAppSettings.current)
             Text(
-                text = "${metric.format.format(latest)} ${metric.unit}",
+                text = "$valueText $unitText",
                 style = MaterialTheme.typography.labelMedium,
                 color = color
             )

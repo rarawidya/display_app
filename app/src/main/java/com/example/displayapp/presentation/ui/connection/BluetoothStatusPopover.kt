@@ -71,8 +71,11 @@ fun BluetoothStatusPopover(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         val showDisconnect = connectionState == ConnectionState.CONNECTED
+        // Don't offer Reconnect while a connect/reconnect is already in flight —
+        // tapping it would race a second connect against the active attempt.
         val showReconnect = connectionState != ConnectionState.CONNECTED &&
             connectionState != ConnectionState.CONNECTING &&
+            connectionState != ConnectionState.RECONNECTING &&
             previouslyConnectedName != null &&
             adapterState == AdapterState.ON
 

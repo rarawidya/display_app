@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.ui.theme.LocalTelemetryPalette
 import com.example.displayapp.ui.theme.TelemetrySeriesStyle
 
@@ -45,6 +46,9 @@ fun RealtimeLineChart(
     val seriesColors = remember(palette) {
         TelemetryMetric.entries.associateWith { palette.colorOf(it) }
     }
+    // Captured into the DrawScope so Y-axis tick labels honor the mph/°F
+    // preference (datasets stay SI; only the label converts).
+    val appSettings = LocalAppSettings.current
 
     val axisColor   = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
     val baselineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
@@ -230,7 +234,7 @@ fun RealtimeLineChart(
                     val y = plotTop + plotH * frac
                     drawAxisLabel(
                         measurer = measurer,
-                        text = state.focusedMetric.format.format(tickValue),
+                        text = displayLatest(state.focusedMetric, tickValue, appSettings).first,
                         style = focusLabelStyle,
                         anchorX = plotLeft - 8.dp.toPx(),
                         centerY = y,

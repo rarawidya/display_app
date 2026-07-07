@@ -91,7 +91,12 @@ class LogsViewModel(
     /*  Swipe-to-delete + Undo                                                */
     /* ---------------------------------------------------------------------- */
 
-    private var commitDeleteJob: Job? = null
+    // One commit job PER pending trip. A single shared job was wrong: swiping a
+    // second trip within the undo window cancelled the first trip's commit while
+    // it was still hidden from the list — so it was neither deleted nor visible
+    // (orphaned until the VM was recreated). Keyed by trip id so each commits
+    // independently and Undo only cancels its own.
+    private val commitDeleteJobs = mutableMapOf<Long, Job>()
 
     /**
      * Marks a trip as pending-delete (hides it from the list immediately) and
@@ -101,16 +106,17 @@ class LogsViewModel(
     fun requestDelete(tripId: Long) {
         _pendingDelete.value = _pendingDelete.value + tripId
         _pendingUndo.value = tripId
-        commitDeleteJob?.cancel()
-        commitDeleteJob = viewModelScope.launch {
+        commitDeleteJobs.remove(tripId)?.cancel()
+        commitDeleteJobs[tripId] = viewModelScope.launch {
             delay(UNDO_WINDOW_MS)
             commitDelete(tripId)
+            commitDeleteJobs.remove(tripId)
         }
     }
 
     fun undoDelete() {
         val id = _pendingUndo.value ?: return
-        commitDeleteJob?.cancel()
+        commitDeleteJobs.remove(id)?.cancel()
         _pendingDelete.value = _pendingDelete.value - id
         _pendingUndo.value = null
     }

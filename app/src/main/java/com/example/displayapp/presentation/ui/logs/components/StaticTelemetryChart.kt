@@ -166,7 +166,7 @@ private fun ChartCanvas(
 
         // Find min/max to normalize
         var min = Float.MAX_VALUE
-        var max = Float.MIN_VALUE
+        var max = -Float.MAX_VALUE
         for (v in series) {
             if (v < min) min = v
             if (v > max) max = v
@@ -259,7 +259,7 @@ fun MiniSparkline(
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (series.size < 2) return@Canvas
             var min = Float.MAX_VALUE
-            var max = Float.MIN_VALUE
+            var max = -Float.MAX_VALUE
             for (v in series) {
                 if (v < min) min = v
                 if (v > max) max = v
@@ -295,7 +295,7 @@ private data class QuickStats(val min: Float, val max: Float, val last: Float)
 private fun quickStats(series: FloatArray): QuickStats {
     if (series.isEmpty()) return QuickStats(0f, 0f, Float.NaN)
     var min = Float.MAX_VALUE
-    var max = Float.MIN_VALUE
+    var max = -Float.MAX_VALUE
     for (v in series) {
         if (v < min) min = v
         if (v > max) max = v

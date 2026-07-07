@@ -186,10 +186,12 @@ private fun TelemetryCard(
 }
 
 /**
- * Converts the raw latest value into the user's chosen unit + supplies the
- * matching suffix. Voltage / Current / Battery are unit-invariant.
+ * Converts the raw SI value into the user's chosen unit + supplies the matching
+ * suffix. Voltage / Current / Battery are unit-invariant. Shared across the
+ * charts package (focus headline, chips, Y-axis, fullscreen) so every label on
+ * the Charts surface honors the same km/h↔mph and °C↔°F preference.
  */
-private fun displayLatest(
+internal fun displayLatest(
     metric: TelemetryMetric,
     latest: Float?,
     app: AppSettings

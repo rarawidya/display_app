@@ -290,19 +290,10 @@ private fun AppNavGraph(
                     BluetoothStatusPopover(
                         expanded = showPopover,
                         adapterState = btState.adapterState,
-                        connectionState = btState.connected?.let {
-                            // Map UiDeviceState back to ConnectionState for the
-                            // popover, which renders a simpler model.
-                            when (it.state) {
-                                com.example.displayapp.presentation.state.UiDeviceState.CONNECTED ->
-                                    ConnectionState.CONNECTED
-                                com.example.displayapp.presentation.state.UiDeviceState.CONNECTING ->
-                                    ConnectionState.CONNECTING
-                                com.example.displayapp.presentation.state.UiDeviceState.RECONNECTING ->
-                                    ConnectionState.RECONNECTING
-                                else -> ConnectionState.DISCONNECTED
-                            }
-                        } ?: ConnectionState.DISCONNECTED,
+                        // Use the raw live state so CONNECTING/RECONNECTING aren't
+                        // collapsed to DISCONNECTED (which offered a "Reconnect"
+                        // button racing an in-flight reconnect).
+                        connectionState = btState.connectionState,
                         connectedName = btState.connected?.name,
                         previouslyConnectedName = btState.previouslyConnected?.name,
                         onDismiss = { showPopover = false },

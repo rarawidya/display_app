@@ -188,9 +188,22 @@ fun BluetoothManagementSections(
         adapterState = state.adapterState,
         statusLine = state.statusLine,
         onToggle = { wantOn ->
-            // Android 13+ no longer lets apps disable() the adapter — route to settings.
-            if (wantOn) enableLauncher.launch(viewModel.enableIntent())
-            else enableLauncher.launch(viewModel.disableIntent())
+            if (wantOn) {
+                // ACTION_REQUEST_ENABLE throws SecurityException on Android 12+
+                // without BLUETOOTH_CONNECT — request it first instead of crashing.
+                val hasConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (hasConnect) {
+                    enableLauncher.launch(viewModel.enableIntent())
+                } else {
+                    viewModel.surfaceError("Allow the Nearby devices permission to turn Bluetooth on")
+                    permissionLauncher.launch(scanPermissions)
+                }
+            } else {
+                // Android 13+ no longer lets apps disable() the adapter — route to settings.
+                enableLauncher.launch(viewModel.disableIntent())
+            }
         }
     )
 

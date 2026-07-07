@@ -43,13 +43,15 @@ class DashboardViewModel(
     private val _showDiagnostics = MutableStateFlow(false)
     val showDiagnostics: StateFlow<Boolean> = _showDiagnostics
 
-    // FPS is still computed here (one tick per vehicleData emission) but the
-    // resulting value is pushed into DiagnosticsRepository so the snapshot is
-    // the single canonical source — Settings and the overlay read the same
-    // number. Local frameCount is just the windowed accumulator; the count
-    // itself is held in DiagnosticsRepository.framesDecoded.
+    // FPS is computed here off *distinct wire frames* and pushed into
+    // DiagnosticsRepository so the snapshot is the single canonical source —
+    // Settings and the overlay read the same number. The upstream combine
+    // re-emits whenever ANY input (efficiency/diag/rssi) ticks, not once per
+    // frame, so we dedupe by vehicleData identity before counting; otherwise
+    // FPS reads 2–3× the true rate.
     private var frameCount = 0
     private var lastFpsTime = System.currentTimeMillis()
+    private var lastCountedFrame: VehicleData? = null
 
     // Rolling trip summary (resets on disconnect).
     // Distance is integrated from speed × dt — schema-first telemetry has no
@@ -69,7 +71,7 @@ class DashboardViewModel(
         diagnosticsRepository.snapshot,
         repository.rssi
     ) { vehicleData, connectionState, efficiency, diag, rssi ->
-        trackFps()
+        trackFps(vehicleData)
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
         mapToUiState(vehicleData, connectionState, diag, efficiency, rssi)
@@ -203,8 +205,13 @@ class DashboardViewModel(
         const val FLAG_REVERSE = 0x08
     }
 
-    private fun trackFps() {
-        frameCount++
+    private fun trackFps(frame: VehicleData) {
+        // Count only distinct frames; combine re-emits on efficiency/diag/rssi
+        // changes that reuse the same vehicleData instance.
+        if (frame !== lastCountedFrame) {
+            frameCount++
+            lastCountedFrame = frame
+        }
         val now = System.currentTimeMillis()
         val elapsed = now - lastFpsTime
         if (elapsed >= 1000) {

@@ -1,6 +1,7 @@
 package com.example.displayapp.presentation.state
 
 import com.example.displayapp.data.bluetooth.controller.AdapterState
+import com.example.displayapp.domain.model.ConnectionState
 
 /**
  * Section-aware view of a single device row inside the Bluetooth quick sheet.
@@ -38,6 +39,13 @@ enum class UiDeviceState {
 
 data class BluetoothUiState(
     val adapterState: AdapterState = AdapterState.OFF,
+    /**
+     * Raw live link state from the repository. Unlike [connected] (non-null only
+     * when fully CONNECTED), this preserves CONNECTING/RECONNECTING so headers
+     * and popovers can reflect an in-flight connect/reconnect instead of
+     * collapsing it to "Disconnected".
+     */
+    val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     /** Currently connected device, if any. Shown at the top of the list. */
     val connected: UiDevice? = null,
     /** Last-used auto-connect device that isn't currently connected. */

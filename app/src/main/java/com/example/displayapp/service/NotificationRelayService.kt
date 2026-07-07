@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -35,16 +36,41 @@ class NotificationRelayService : NotificationListenerService() {
     private lateinit var prefs: AppPreferencesRepository
     private var ownPackage: String = ""
 
+    /** Sealed feed of listener callbacks. */
+    private sealed interface Event {
+        val sbn: StatusBarNotification
+        data class Posted(override val sbn: StatusBarNotification) : Event
+        data class Removed(override val sbn: StatusBarNotification) : Event
+    }
+
+    // A single ordered queue drained by one consumer. Independent launch{}-per-
+    // callback let a dismissal overtake its own post (board is latest-wins by id,
+    // so a stale post landing after the dismiss re-shows a cleared banner).
+    private val events = Channel<Event>(Channel.UNLIMITED)
+
     override fun onCreate() {
         super.onCreate()
         val container = (application as DisplayApp).appContainer
         sender = container.phoneNotificationSender
         prefs = container.appPreferencesRepository
         ownPackage = packageName
+        scope.launch {
+            for (event in events) {
+                if (!relayEnabled()) continue
+                val notification = when (event) {
+                    is Event.Posted ->
+                        NotificationClassifier.classify(event.sbn, appLabel(event.sbn.packageName))
+                            ?: continue
+                    is Event.Removed -> NotificationClassifier.dismissal(event.sbn)
+                }
+                sender.send(notification)
+            }
+        }
         Timber.tag(TAG).i("Notification listener created")
     }
 
     override fun onDestroy() {
+        events.close()
         scope.cancel()
         super.onDestroy()
     }
@@ -52,21 +78,13 @@ class NotificationRelayService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val n = sbn ?: return
         if (n.packageName == ownPackage) return // don't mirror our own notifications
-        scope.launch {
-            if (!relayEnabled()) return@launch
-            val notification = NotificationClassifier.classify(n, appLabel(n.packageName))
-                ?: return@launch
-            sender.send(notification)
-        }
+        events.trySend(Event.Posted(n))
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         val n = sbn ?: return
         if (n.packageName == ownPackage) return
-        scope.launch {
-            if (!relayEnabled()) return@launch
-            sender.send(NotificationClassifier.dismissal(n))
-        }
+        events.trySend(Event.Removed(n))
     }
 
     private suspend fun relayEnabled(): Boolean =

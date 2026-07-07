@@ -3,6 +3,7 @@ package com.example.displayapp.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.energy.EfficiencyTracker
+import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.repository.VehicleRepository
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.LiveTelemetry
@@ -54,6 +55,7 @@ class ChartsViewModel(
 
     private var lastEmitMs = 0L
     private var lastSnapshot: LiveTelemetry = LiveTelemetry()
+    private var lastIngestedFrame: VehicleData? = null
 
     init {
         viewModelScope.launch {
@@ -98,6 +100,15 @@ class ChartsViewModel(
     private fun ingest(live: LiveTelemetry) {
         val ts = live.vehicle.timestamp.takeIf { it > 0L } ?: return
         lastSnapshot = live
+        // combine(vehicle, efficiency) re-emits on efficiency-only updates that
+        // reuse the same vehicle frame. Don't push a duplicate point (it would
+        // double the sample count and fill the ring buffer at 2× rate); just
+        // refresh the snapshot so rolling values still surface.
+        if (live.vehicle === lastIngestedFrame) {
+            emitSnapshot(force = false)
+            return
+        }
+        lastIngestedFrame = live.vehicle
         push(timestamps, ts)
         for (metric in TelemetryMetric.entries) {
             val value = metric.valueFrom(live) ?: Float.NaN

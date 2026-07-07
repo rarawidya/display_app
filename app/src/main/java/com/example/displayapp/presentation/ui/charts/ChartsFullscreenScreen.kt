@@ -35,6 +35,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.displayapp.presentation.state.ChartsUiState
 import com.example.displayapp.presentation.state.TelemetryMetric
+import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.state.TimeRange
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.ui.theme.Dim
@@ -195,6 +196,7 @@ private fun CloseButton(onClick: () -> Unit) {
 
 @Composable
 private fun FocusInline(metric: TelemetryMetric, latest: Float?, color: Color) {
+    val (latestText, unitText) = displayLatest(metric, latest, LocalAppSettings.current)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Dim.sm)
@@ -212,12 +214,12 @@ private fun FocusInline(metric: TelemetryMetric, latest: Float?, color: Color) {
         )
         Spacer(Modifier.width(Dim.xs))
         Text(
-            text = if (latest != null) metric.format.format(latest) else "—",
+            text = latestText,
             style = MaterialTheme.typography.titleLarge,
             color = color
         )
         Text(
-            text = metric.unit,
+            text = unitText,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

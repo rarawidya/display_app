@@ -18,6 +18,8 @@ import com.example.displayapp.presentation.state.BluetoothUiState
 import com.example.displayapp.presentation.state.UiDevice
 import com.example.displayapp.presentation.state.UiDeviceState
 import com.example.displayapp.service.TelemetryService
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -119,13 +121,32 @@ class BluetoothViewModel(
     /** Surface an error from a caller that owns its own UI flow (e.g. permission denial). */
     fun surfaceError(message: String) { _error.value = message }
 
+    private var pendingTimeoutJob: Job? = null
+
     fun connect(address: String, name: String) {
         _error.value = null
         _pendingAddress.value = address
+        // Safety net: if the attempt never produces a state transition (e.g. the
+        // service can't even reach CONNECTING), clear the spinner so it can't
+        // wedge indefinitely. Generous so a slow-but-real connect isn't cut off.
+        pendingTimeoutJob?.cancel()
+        pendingTimeoutJob = viewModelScope.launch {
+            delay(PENDING_CONNECT_TIMEOUT_MS)
+            if (_pendingAddress.value == address &&
+                repository.connectionState.value != ConnectionState.CONNECTED
+            ) {
+                _pendingAddress.value = null
+                _error.value = "Couldn't connect — try again"
+            }
+        }
         startForegroundService(TelemetryService.startIntent(appContext, address, name))
     }
 
     fun disconnect() {
+        // Clear any in-flight pending spinner so a user-initiated disconnect
+        // doesn't trip the collector's "Couldn't connect" error path.
+        pendingTimeoutJob?.cancel()
+        _pendingAddress.value = null
         appContext.startService(TelemetryService.stopIntent(appContext))
     }
 
@@ -225,6 +246,7 @@ class BluetoothViewModel(
 
         return BluetoothUiState(
             adapterState = a.state,
+            connectionState = l.connection,
             connected = connectedUi,
             previouslyConnected = previouslyConnectedUi,
             autoConnect = l.saved?.autoConnect ?: true,
@@ -249,6 +271,12 @@ class BluetoothViewModel(
         } else {
             appContext.startService(intent)
         }
+    }
+
+    private companion object {
+        // Well beyond a worst-case scan + GATT connect so it only fires when an
+        // attempt is genuinely wedged, never mid-connect.
+        const val PENDING_CONNECT_TIMEOUT_MS = 45_000L
     }
 }
 
