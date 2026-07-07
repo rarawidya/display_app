@@ -350,6 +350,8 @@ private fun AppNavGraph(
                         container.simulatorScenario = scenario
                         container.restartDataSource()
                     },
+                    onRunNavDemo = { container.startNavDemo() },
+                    onStopNavDemo = { container.stopNavDemo() },
                     appVersion = versionName,
                     appBuildNumber = buildNumber
                 )
@@ -385,6 +387,8 @@ private fun AppNavGraph(
                         container.simulatorScenario = scenario
                         container.restartDataSource()
                     },
+                    onRunNavDemo = { container.startNavDemo() },
+                    onStopNavDemo = { container.stopNavDemo() },
                     appVersion = versionName,
                     appBuildNumber = buildNumber
                 )

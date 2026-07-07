@@ -37,6 +37,8 @@ class RouteNavigator(
     private val provider: NavigationProvider,
     private val transport: BluetoothDataSource,
     private val scope: CoroutineScope,
+    /** Monotonic clock for send throttling; injectable for deterministic tests. */
+    private val now: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
     private var sessionJob: Job? = null
     private var seq = 0
@@ -99,7 +101,7 @@ class RouteNavigator(
         val maneuverKey = maneuverKey(p)
         val maneuverChanged = maneuverKey != lastManeuverKey
         val stateChanged = p.state != lastState
-        val heartbeatDue = SystemClock.elapsedRealtime() - lastSendMs >= sendIntervalMs(p)
+        val heartbeatDue = now() - lastSendMs >= sendIntervalMs(p)
 
         if (maneuverChanged || stateChanged || heartbeatDue) {
             transport.writeNav(
@@ -108,7 +110,7 @@ class RouteNavigator(
             )
             lastManeuverKey = maneuverKey
             lastState = p.state
-            lastSendMs = SystemClock.elapsedRealtime()
+            lastSendMs = now()
         }
 
         if (p.state.isTerminal) stopInternal(sendCancel = false)

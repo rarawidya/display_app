@@ -56,9 +56,17 @@ class SettingsViewModel(
     private val permissionProvider: PermissionStatusProvider,
     private val onSimulatorModeChange: suspend (Boolean) -> Unit,
     private val onSimulatorScenarioChange: suspend (TelemetryScenario) -> Unit,
+    private val onRunNavDemo: () -> Unit,
+    private val onStopNavDemo: () -> Unit,
     appVersion: String,
     appBuildNumber: String
 ) : ViewModel() {
+
+    /** Developer: play the scripted navigation route → BLE nav frames (0xAF06). */
+    fun runNavDemo() = onRunNavDemo()
+
+    /** Developer: stop the navigation demo. */
+    fun stopNavDemo() = onStopNavDemo()
 
     private val _storage = MutableStateFlow<StorageInfo?>(null)
     private val _permissions = MutableStateFlow(permissionProvider.snapshot())
@@ -214,6 +222,8 @@ class SettingsViewModelFactory(
     private val permissionProvider: PermissionStatusProvider,
     private val onSimulatorModeChange: suspend (Boolean) -> Unit,
     private val onSimulatorScenarioChange: suspend (TelemetryScenario) -> Unit,
+    private val onRunNavDemo: () -> Unit,
+    private val onStopNavDemo: () -> Unit,
     private val appVersion: String,
     private val appBuildNumber: String
 ) : ViewModelProvider.Factory {
@@ -225,6 +235,7 @@ class SettingsViewModelFactory(
                 themeRepository, appPreferences, devicePreferences, vehicleRepository,
                 diagnosticsRepository, storageProvider, permissionProvider,
                 onSimulatorModeChange, onSimulatorScenarioChange,
+                onRunNavDemo, onStopNavDemo,
                 appVersion, appBuildNumber
             ) as T
         }

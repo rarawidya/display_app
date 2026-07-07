@@ -90,6 +90,8 @@ fun DeveloperScreen(
         onResetDiagnostics = viewModel::resetDiagnostics,
         onSimulatorScenario = viewModel::setSimulatorScenario,
         onDynamicColor = viewModel::setDynamicColor,
+        onRunNavDemo = viewModel::runNavDemo,
+        onStopNavDemo = viewModel::stopNavDemo,
         onLock = {
             viewModel.lockDeveloperMode()
             onBack()
@@ -106,6 +108,8 @@ private fun DeveloperContent(
     onResetDiagnostics: () -> Unit,
     onSimulatorScenario: (TelemetryScenario) -> Unit,
     onDynamicColor: (Boolean) -> Unit,
+    onRunNavDemo: () -> Unit,
+    onStopNavDemo: () -> Unit,
     onLock: () -> Unit
 ) {
     Scaffold(
@@ -160,6 +164,10 @@ private fun DeveloperContent(
                 SimulatorSection(
                     app = state.app,
                     onScenario = onSimulatorScenario
+                )
+                NavigationDemoSection(
+                    onRunNavDemo = onRunNavDemo,
+                    onStopNavDemo = onStopNavDemo
                 )
                 DiagnosticsSection(
                     app = state.app,
@@ -404,6 +412,31 @@ private fun SimulatorSection(
 /* -------------------------------------------------------------------------- */
 /*  Diagnostics counters                                                       */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/*  Navigation demo — provider-agnostic RouteNavigator over the sim provider    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun NavigationDemoSection(
+    onRunNavDemo: () -> Unit,
+    onStopNavDemo: () -> Unit
+) {
+    SettingsSection(title = "Navigation demo") {
+        ActionRow(
+            title = "Run scripted route",
+            subtitle = "Streams RouteSummary + NavInstruction frames to the nav " +
+                "channel (0xAF06). In simulator mode, watch logcat tag \"NavSim\".",
+            onClick = onRunNavDemo
+        )
+        SectionDivider()
+        ActionRow(
+            title = "Stop navigation",
+            subtitle = "Sends a cancel frame and clears the board's nav UI",
+            onClick = onStopNavDemo
+        )
+    }
+}
 
 @Composable
 private fun DiagnosticsSection(

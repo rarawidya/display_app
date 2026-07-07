@@ -10,6 +10,8 @@ import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
+import com.example.displayapp.data.navigation.RouteNavigator
+import com.example.displayapp.data.navigation.SimulatedNavigationProvider
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
@@ -37,9 +39,16 @@ import com.example.displayapp.domain.repository.AppPreferencesRepository
 import com.example.displayapp.domain.repository.LocationRepository
 import com.example.displayapp.domain.repository.ThemeRepository
 import com.example.displayapp.domain.repository.TripRepository
+import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.repository.VehicleRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 class AppContainer(private val context: Context) {
+
+    /** App-lived scope for container-owned coroutines (e.g. the nav demo). */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     var useSimulator: Boolean = true
     var simulatorScenario: TelemetryScenario = TelemetryScenario.CITY_CRUISE
@@ -236,6 +245,27 @@ class AppContainer(private val context: Context) {
      */
     fun restartDataSource() {
         switchableDataSource.swap(createDelegate())
+    }
+
+    /**
+     * Provider-agnostic navigation orchestrator wired to the hardware-free
+     * [SimulatedNavigationProvider] for the Developer-screen demo. Streams
+     * NavInstruction/RouteSummary frames through the active transport's nav channel
+     * (`0xAF06`); in simulator mode `SimulatedDataSource` logs them (`NavSim` tag).
+     * Swap the provider for a real routing-SDK adapter to go live.
+     */
+    private val navDemoNavigator: RouteNavigator by lazy {
+        RouteNavigator(SimulatedNavigationProvider(), bluetoothDataSource, appScope)
+    }
+
+    /** Developer demo: play a scripted route → nav frames (watch logcat `NavSim`). */
+    fun startNavDemo() {
+        navDemoNavigator.startNavigation(GeoLocation(latitude = -6.2088, longitude = 106.8456))
+    }
+
+    /** Stop the nav demo and send a cancel frame. */
+    fun stopNavDemo() {
+        navDemoNavigator.cancelNavigation()
     }
 
     companion object {
