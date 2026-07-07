@@ -7,6 +7,7 @@ import com.example.displayapp.data.navigation.NavigationCoordinator
 import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.GeoPlace
 import com.example.displayapp.domain.model.Route
+import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.Geocoder
 import com.example.displayapp.domain.repository.LocationRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import com.example.displayapp.presentation.state.MapsUiState
 
 /**
@@ -54,25 +56,31 @@ class MapsViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    // Name/address of the pending (previewed) destination, for the confirmation sheet.
+    private val _pendingPlace = MutableStateFlow<GeoPlace?>(null)
+
     val uiState: StateFlow<MapsUiState> = combine(
         locationRepository.location,
         _searchQuery,
-        coordinator.activeRoute,
-    ) { loc, query, plan ->
+        _pendingPlace,
+        coordinator.previewDestination,
+        combine(coordinator.previewRoute, coordinator.activeRoute) { p, a -> p to a },
+    ) { loc, query, place, pendingDest, routes ->
+        val (previewRoute, activeRoute) = routes
+        val navigating = activeRoute != null
+        val previewing = pendingDest != null && !navigating
+        // Draw the active route once navigating, otherwise the preview route.
+        val drawn = (activeRoute ?: previewRoute)?.toRoute()
         MapsUiState(
             currentLocation = loc,
             searchQuery = query,
-            destination = plan?.destination,
-            // Provider-neutral RoutePlan → the UI's Route shape (polyline + ETA/distance).
-            route = plan?.let {
-                Route(
-                    origin = it.origin,
-                    destination = it.destination,
-                    polyline = it.polyline,
-                    distanceMeters = it.distanceMeters,
-                    durationSeconds = it.durationSeconds,
-                )
-            },
+            destination = activeRoute?.destination ?: pendingDest,
+            route = drawn,
+            previewing = previewing,
+            previewPlanning = previewing && previewRoute == null,
+            previewName = place?.name.orEmpty(),
+            previewDetail = place?.detail.orEmpty(),
+            navigating = navigating,
             permissionGranted = loc != null,
         )
     }.stateIn(
@@ -85,34 +93,58 @@ class MapsViewModel(
         _searchQuery.value = query
     }
 
-    /**
-     * Pick a destination → start the one navigation session. GraphHopper plans the
-     * route; when it resolves, [NavigationCoordinator.activeRoute] updates and the map
-     * draws the route while the BLE `NavInstruction` stream begins — the same
-     * `NavProgress` drives both.
-     */
-    fun selectDestination(destination: GeoLocation, label: String = "") {
-        if (label.isNotBlank()) _searchQuery.value = label
-        coordinator.navigateTo(destination)
+    /** Pick a searched place → PREVIEW it (plan + show the confirmation sheet). */
+    fun selectPlace(place: GeoPlace) {
+        _searchQuery.value = ""
+        _pendingPlace.value = place
+        coordinator.preview(place.location)
     }
 
-    /** Pick a searched place as the destination. */
-    fun selectPlace(place: GeoPlace) = selectDestination(place.location, place.name)
-
     /**
-     * Drop a destination pin at a map coordinate (long-press) — no search needed.
-     * Clears the query so no suggestion list / geocode runs for it; the route resolves
-     * and the ETA card takes over.
+     * Long-press the map → PREVIEW a dropped pin. Shows a placeholder name immediately,
+     * then reverse-geocodes for the real address. Does NOT start navigation.
      */
     fun dropPin(location: GeoLocation) {
         _searchQuery.value = ""
-        coordinator.navigateTo(location)
+        _pendingPlace.value = GeoPlace(
+            name = "Dropped pin",
+            detail = "%.5f, %.5f".format(location.latitude, location.longitude),
+            location = location,
+        )
+        coordinator.preview(location)
+        viewModelScope.launch {
+            geocoder.reverse(location)?.let { resolved ->
+                // Only apply if still previewing this same pin.
+                if (_pendingPlace.value?.location == location) _pendingPlace.value = resolved
+            }
+        }
+    }
+
+    /** Confirm the previewed destination → start the navigation session. */
+    fun startNavigation() {
+        coordinator.startPending()
+        _pendingPlace.value = null
+    }
+
+    /** Back out of the confirmation without navigating. */
+    fun dismissPreview() {
+        coordinator.dismissPreview()
+        _pendingPlace.value = null
     }
 
     fun clearRoute() {
         coordinator.cancel()
+        _pendingPlace.value = null
         _searchQuery.value = ""
     }
+
+    private fun RoutePlan.toRoute() = Route(
+        origin = origin,
+        destination = destination,
+        polyline = polyline,
+        distanceMeters = distanceMeters,
+        durationSeconds = durationSeconds,
+    )
 }
 
 class MapsViewModelFactory(

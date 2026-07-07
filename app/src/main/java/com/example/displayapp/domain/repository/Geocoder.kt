@@ -19,4 +19,10 @@ interface Geocoder {
      * blank, or on error.
      */
     suspend fun search(query: String, near: GeoLocation? = null): List<GeoPlace>
+
+    /**
+     * Reverse-geocode a coordinate to a named place (for a dropped pin), or null when
+     * unconfigured / nothing found. Default returns null for geocoders without reverse.
+     */
+    suspend fun reverse(location: GeoLocation): GeoPlace? = null
 }

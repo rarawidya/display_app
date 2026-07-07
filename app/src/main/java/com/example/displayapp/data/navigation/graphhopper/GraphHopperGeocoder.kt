@@ -30,20 +30,31 @@ class GraphHopperGeocoder(
 
     override suspend fun search(query: String, near: GeoLocation?): List<GeoPlace> {
         if (!isConfigured || query.isBlank()) return emptyList()
-        return withContext(io) {
-            runCatching { request(query, near) }
-                .onFailure { Timber.w(it, "GraphHopper geocode failed") }
-                .getOrDefault(emptyList())
-        }
-    }
-
-    private fun request(query: String, near: GeoLocation?): List<GeoPlace> {
         val url = buildString {
             append("$baseUrl/geocode?q=${URLEncoder.encode(query, "UTF-8")}")
             append("&limit=6&locale=en")
             if (near != null) append("&point=${near.latitude},${near.longitude}")
             append("&key=$apiKey")
         }
+        return withContext(io) {
+            runCatching { fetch(url) }
+                .onFailure { Timber.w(it, "GraphHopper geocode failed") }
+                .getOrDefault(emptyList())
+        }
+    }
+
+    override suspend fun reverse(location: GeoLocation): GeoPlace? {
+        if (!isConfigured) return null
+        val url = "$baseUrl/geocode?reverse=true&point=${location.latitude},${location.longitude}" +
+            "&limit=1&locale=en&key=$apiKey"
+        return withContext(io) {
+            runCatching { fetch(url).firstOrNull() }
+                .onFailure { Timber.w(it, "GraphHopper reverse geocode failed") }
+                .getOrNull()
+        }
+    }
+
+    private fun fetch(url: String): List<GeoPlace> {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8_000

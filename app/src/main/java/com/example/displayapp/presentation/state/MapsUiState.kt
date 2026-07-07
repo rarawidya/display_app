@@ -20,7 +20,18 @@ data class MapsUiState(
     val currentLocation: GeoLocation? = null,
     val searchQuery: String = "",
     val destination: GeoLocation? = null,
+    /** The route to draw — the preview route before confirming, or the active one. */
     val route: Route? = null,
+    // ── Destination confirmation (preview → confirm → navigate) ──────────────
+    /** A destination is pending confirmation → show the confirmation sheet. */
+    val previewing: Boolean = false,
+    /** Preview route still being planned → sheet shows "Calculating…". */
+    val previewPlanning: Boolean = false,
+    /** Destination name + address for the confirmation sheet. */
+    val previewName: String = "",
+    val previewDetail: String = "",
+    /** A live navigation session is active → show the ongoing ETA/cancel card. */
+    val navigating: Boolean = false,
     val chargingStations: List<ChargingStation> = emptyList(),
     val permissionGranted: Boolean = false
 ) {

@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -116,11 +118,10 @@ fun NavigationScreen(
                     )
                 }
 
-                // Real geocoded results appear when the query is non-empty and no
-                // route is active. Picking one starts the navigation session. Or
-                // long-press the map to drop a pin anywhere (hint below).
+                // Real geocoded results appear while typing (not previewing/navigating).
+                // Picking one PREVIEWS it (confirmation sheet), it doesn't start nav.
                 AnimatedVisibility(
-                    visible = state.searchQuery.isNotBlank() && state.route == null,
+                    visible = state.searchQuery.isNotBlank() && !state.previewing && !state.navigating,
                     enter = fadeIn() + slideInVertically(),
                     exit = fadeOut() + slideOutVertically()
                 ) {
@@ -131,9 +132,9 @@ fun NavigationScreen(
                 }
             }
 
-            // Hint: long-press to drop a pin (shown when idle, no query/route).
+            // Hint: long-press to drop a pin (shown when idle).
             AnimatedVisibility(
-                visible = state.searchQuery.isBlank() && state.route == null,
+                visible = state.searchQuery.isBlank() && !state.previewing && !state.navigating,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -141,9 +142,28 @@ fun NavigationScreen(
                 LongPressHint(modifier = Modifier.padding(Dim.screenGutter))
             }
 
-            // Bottom overlay — ETA / distance / battery
+            // Destination confirmation sheet — preview before starting navigation.
             AnimatedVisibility(
-                visible = state.route != null,
+                visible = state.previewing,
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                exit  = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                DestinationConfirmSheet(
+                    name = state.previewName,
+                    detail = state.previewDetail,
+                    distance = state.distanceLabel,
+                    eta = state.etaLabel,
+                    planning = state.previewPlanning,
+                    onStart = viewModel::startNavigation,
+                    onDismiss = viewModel::dismissPreview,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Bottom overlay — ongoing navigation ETA / distance (once started)
+            AnimatedVisibility(
+                visible = state.navigating,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
                 exit  = fadeOut() + slideOutVertically(targetOffsetY = { it }),
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -308,6 +328,107 @@ private fun SuggestionList(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Destination confirmation sheet — shown after a search pick or a dropped pin, BEFORE
+ * navigation starts. Presents the name/address, distance, and ETA with a Start button;
+ * only [onStart] creates the navigation session. The map stays visible behind it (route
+ * preview + pin), so it's a bottom card, not a modal.
+ */
+@Composable
+private fun DestinationConfirmSheet(
+    name: String,
+    detail: String,
+    distance: String?,
+    eta: String?,
+    planning: Boolean,
+    onStart: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp,
+        shadowElevation = 20.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = name.ifBlank { "Destination" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                    if (detail.isNotBlank()) {
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    }
+                }
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onDismiss)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "✕",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (planning) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        text = "Calculating route…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp)
+                ) {
+                    EtaMetric(label = "Distance", value = distance ?: "—", accent = EvBlue)
+                    EtaMetric(label = "ETA", value = eta ?: "—", accent = EvBlue)
+                }
+            }
+
+            Button(
+                onClick = onStart,
+                enabled = !planning && distance != null,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Start Navigation", fontWeight = FontWeight.SemiBold)
             }
         }
     }

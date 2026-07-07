@@ -167,7 +167,13 @@ class AppContainer(private val context: Context) {
      * mini-map and the Navigation screen observe the same session.
      */
     val navigationCoordinator: NavigationCoordinator by lazy {
-        NavigationCoordinator(navigationProvider, routeNavigator, appScope)
+        NavigationCoordinator(
+            provider = navigationProvider,
+            routeNavigator = routeNavigator,
+            routePlanner = routePlanner,
+            locations = locationRepository.location.filterNotNull(),
+            scope = appScope,
+        )
     }
 
     val tripRepository: TripRepository by lazy {
