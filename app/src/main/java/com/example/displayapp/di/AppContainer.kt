@@ -11,8 +11,13 @@ import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
+import com.example.displayapp.data.navigation.GraphHopperNavigationProvider
 import com.example.displayapp.data.navigation.RouteNavigator
 import com.example.displayapp.data.navigation.SimulatedNavigationProvider
+import com.example.displayapp.data.navigation.graphhopper.GraphHopperRoutePlanner
+import com.example.displayapp.domain.repository.NavigationProvider
+import com.example.displayapp.domain.repository.RoutePlanner
+import kotlinx.coroutines.flow.filterNotNull
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
@@ -116,6 +121,30 @@ class AppContainer(private val context: Context) {
      */
     val mapProvider: com.example.displayapp.presentation.ui.maps.MapProvider by lazy {
         com.example.displayapp.presentation.ui.maps.MapLibreMapProvider(BuildConfig.MAP_STYLE_URL)
+    }
+
+    /**
+     * Routing provider behind the [RoutePlanner] port — GraphHopper hosted Directions
+     * API today (swap the implementation for ORS/HERE/self-hosted with no downstream
+     * change). Gated on `GRAPHHOPPER_API_KEY`; blank → not configured.
+     */
+    val routePlanner: RoutePlanner by lazy {
+        GraphHopperRoutePlanner(BuildConfig.GRAPHHOPPER_API_KEY)
+    }
+
+    /**
+     * Production [NavigationProvider]: GraphHopper routing + the provider-independent
+     * `RouteProgressTracker`. Its `NavProgress` is the single source of truth that will
+     * feed both the Drive map overlay and the BLE `NavInstruction` stream (via
+     * `RouteNavigator`). The Developer demo keeps using `SimulatedNavigationProvider`
+     * until the overlay wiring lands.
+     */
+    val navigationProvider: NavigationProvider by lazy {
+        GraphHopperNavigationProvider(
+            planner = routePlanner,
+            locations = locationRepository.location.filterNotNull(),
+            scope = appScope,
+        )
     }
 
     val tripRepository: TripRepository by lazy {

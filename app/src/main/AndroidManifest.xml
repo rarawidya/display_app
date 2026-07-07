@@ -21,6 +21,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- MapLibre tile fetch + GraphHopper Directions API. Previously supplied
+         transitively by the Google Maps SDK; declared explicitly now. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- BLE transport (GATT). The controller is a BLE peripheral; the app is the
          central. Required — the app talks to the vehicle exclusively over BLE. -->

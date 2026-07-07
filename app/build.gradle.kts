@@ -17,6 +17,15 @@ val mapStyleUrl: String = run {
     (props.getProperty("MAP_STYLE_URL") ?: "").trim()
 }
 
+// GraphHopper hosted Directions API key (routing). Same pattern: from local.properties,
+// gitignored; blank → the RoutePlanner reports not-configured and routing is disabled.
+val graphHopperApiKey: String = run {
+    val props = Properties()
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(props::load)
+    (props.getProperty("GRAPHHOPPER_API_KEY") ?: "").trim()
+}
+
 android {
     namespace = "com.example.displayapp"
     compileSdk {
@@ -38,6 +47,7 @@ android {
         // detect "no style configured" to show a placeholder. MapLibre needs no
         // manifest API key (unlike the Maps SDK), so there's no manifest placeholder.
         buildConfigField("String", "MAP_STYLE_URL", "\"${mapStyleUrl}\"")
+        buildConfigField("String", "GRAPHHOPPER_API_KEY", "\"${graphHopperApiKey}\"")
     }
 
     buildTypes {
