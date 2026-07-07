@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
@@ -328,25 +329,20 @@ object EvIcons {
     } }
 
     val Motorcycle: ImageVector by lazy { vec("Motorcycle") {
-        // Simplified bike silhouette: two wheels + body line
-        path(fill = SolidColor(Color.White)) {
-            // Rear wheel
-            moveTo(5.5f, 17.5f)
-            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
-            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
-            close()
-            // Front wheel
-            moveTo(18.5f, 17.5f)
-            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, -5f)
-            arcToRelative(2.5f, 2.5f, 0f, true, true, 0f, 5f)
-            close()
-        }
-        path(fill = SolidColor(Color.White)) {
-            // Frame body
-            moveTo(7f, 14f); lineTo(11f, 14f); lineTo(13f, 10f); lineTo(17f, 10f); lineTo(17f, 12f); lineTo(14f, 12f); lineTo(12.5f, 15f); lineTo(7f, 15f); close()
-            // Handlebar accent
-            moveTo(15f, 8f); lineTo(19f, 8f); lineTo(19f, 9.5f); lineTo(15f, 9.5f); close()
-        }
+        // Google Material Icons "two_wheeler" (motorcycle), Apache 2.0. Parsed
+        // verbatim from the official 24×24 SVG path so it matches Google's glyph
+        // exactly (two ringed wheels + frame/handlebar) instead of the old
+        // hand-drawn silhouette.
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M20,11c-0.18,0-0.36,0.03-0.53,0.05L17.41,9H20V6l-3.72,1.86L13.41,5H9v2h3.59l2,2H11l-4,2L5,9H0v2h4" +
+                    "c-2.21,0-4,1.79-4,4c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4l2,2h3l3.49-6.1l1.01,1.01" +
+                    "C16.59,12.64,16,13.75,16,15c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4C24,12.79,22.21,11,20,11z" +
+                    "M4,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2c1.1,0,2,0.9,2,2C6,16.1,5.1,17,4,17z" +
+                    "M20,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2s2,0.9,2,2C22,16.1,21.1,17,20,17z"
+            ).toNodes(),
+            fill = SolidColor(Color.White)
+        )
     } }
 
     val Battery: ImageVector by lazy { vec("Battery") {

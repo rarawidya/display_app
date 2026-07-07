@@ -66,12 +66,13 @@ class DashboardViewModel(
         repository.vehicleData,
         repository.connectionState,
         efficiencyTracker.state,
-        diagnosticsRepository.snapshot
-    ) { vehicleData, connectionState, efficiency, diag ->
+        diagnosticsRepository.snapshot,
+        repository.rssi
+    ) { vehicleData, connectionState, efficiency, diag, rssi ->
         trackFps()
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
-        mapToUiState(vehicleData, connectionState, diag, efficiency)
+        mapToUiState(vehicleData, connectionState, diag, efficiency, rssi)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -97,7 +98,8 @@ class DashboardViewModel(
         data: VehicleData,
         connectionState: ConnectionState,
         diag: DiagnosticsSnapshot,
-        efficiency: EfficiencyTracker.State
+        efficiency: EfficiencyTracker.State,
+        rssi: Int?
     ): DashboardUiState {
         val durationSec = if (sessionStartMs > 0) {
             ((System.currentTimeMillis() - sessionStartMs) / 1000L).coerceAtLeast(0)
@@ -117,6 +119,9 @@ class DashboardViewModel(
             temperature = data.temperature,
             controllerTemperature = data.controllerTemperature,
             batteryTemperature = data.batteryTemperature,
+            // No odometer wire field yet — surface the live session distance as the
+            // Home "Odometer" readout until a persisted lifetime odometer is wired.
+            odometer = sessionDistanceKm.toFloat(),
             vehicleMode = data.vehicleMode,
             // Warning-lamp telltales — decode the wire `flags` bitfield and
             // `faultCode` (capnp.md §3). No UI-side bit math downstream.
@@ -129,6 +134,7 @@ class DashboardViewModel(
             batteryTempAvailable = data.batteryTempAvailable,
             batteryKnown = data.batteryKnown,
             connectionState = connectionState,
+            rssi = rssi,
             diagnostics = DiagnosticsState(
                 framesPerSecond = diag.framesPerSecond,
                 framesDecoded = diag.framesDecoded,

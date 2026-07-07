@@ -10,6 +10,9 @@ interface VehicleRepository {
     val connectionState: StateFlow<ConnectionState>
     val availableDevices: StateFlow<List<BluetoothDeviceInfo>>
 
+    /** Live signal strength of the connected link in dBm; null when disconnected. */
+    val rssi: StateFlow<Int?>
+
     fun startScan()
     fun stopScan()
     suspend fun connect(address: String)

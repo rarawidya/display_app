@@ -41,6 +41,10 @@ class SimulatedDataSource(
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     override val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>> = _discoveredDevices.asStateFlow()
 
+    // Synthetic link RSSI so the Home "Bluetooth" stat shows a plausible dBm in demos.
+    private val _rssi = MutableStateFlow<Int?>(null)
+    override val rssi: StateFlow<Int?> = _rssi.asStateFlow()
+
     private var tick = 0L
     private var bootTimeMs = 0L
 
@@ -67,6 +71,7 @@ class SimulatedDataSource(
         _connectionState.value = ConnectionState.CONNECTED
         bootTimeMs = System.currentTimeMillis()
         tick = 0L
+        _rssi.value = -55
         Timber.i("Simulator connected [scenario=${scenario.name}]")
         startEmitting()
     }
@@ -74,6 +79,7 @@ class SimulatedDataSource(
     override fun disconnect() {
         emitJob?.cancel()
         emitJob = null
+        _rssi.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
         Timber.i("Simulator disconnected")
     }
@@ -89,6 +95,8 @@ class SimulatedDataSource(
             while (true) {
                 val frame = generateFrame()
                 _incomingData.emit(frame)
+                // Drift the synthetic RSSI every ~2 s (40 frames) for a lifelike readout.
+                if (tick % 40 == 0L) _rssi.value = -50 - ((tick / 40) % 20).toInt()
                 delay(50) // 20 Hz
             }
         }

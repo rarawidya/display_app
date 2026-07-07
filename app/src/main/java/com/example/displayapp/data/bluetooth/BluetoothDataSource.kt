@@ -10,6 +10,9 @@ interface BluetoothDataSource {
     val connectionState: StateFlow<ConnectionState>
     val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>>
 
+    /** Live signal strength of the connected link in dBm; null when disconnected. */
+    val rssi: StateFlow<Int?>
+
     fun startDiscovery()
     fun stopDiscovery()
     suspend fun connect(address: String)

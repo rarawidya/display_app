@@ -75,6 +75,10 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     override val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>> = _discoveredDevices.asStateFlow()
 
+    // Live link RSSI (dBm), polled off the connected GATT; null while disconnected.
+    private val _rssi = MutableStateFlow<Int?>(null)
+    override val rssi: StateFlow<Int?> = _rssi.asStateFlow()
+
     /* ---- adapter-off awareness: drop straight to DISCONNECTED when BT turns off ---- */
 
     private var adapterReceiverRegistered = false
@@ -119,6 +123,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         connectionJob = null
         gattClient?.close()
         gattClient = null
+        _rssi.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
@@ -158,7 +163,8 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
                     firstByteSeen = true
                     _incomingData.tryEmit(chunk)
                 },
-                onDisconnected = { scope.launch { handleConnectionLost() } }
+                onDisconnected = { scope.launch { handleConnectionLost() } },
+                onRssi = { _rssi.value = it }
             )
             gattClient = client
 
@@ -172,6 +178,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
             reconnectPolicy.reset()
             lastDataElapsedMs = SystemClock.elapsedRealtime()
             firstByteSeen = false
+            client.readRssi() // seed the first reading right away
             Timber.i("BLE connected + subscribed to ${BleConstants.TX_CHAR_UUID}")
 
             runFrameWatchdog(client)
@@ -180,9 +187,12 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
 
     /** Force-drop a silently stalled link so reconnect fires (BLE can stall too). */
     private suspend fun runFrameWatchdog(client: BleGattClient) {
+        var tick = 0
         while (coroutineContext.isActive) {
             delay(WATCHDOG_POLL_INTERVAL_MS)
             if (_connectionState.value != ConnectionState.CONNECTED) return
+            // Refresh the link RSSI on a slower cadence than the staleness poll.
+            if (++tick % RSSI_POLL_EVERY_N_TICKS == 0) client.readRssi()
             val silent = SystemClock.elapsedRealtime() - lastDataElapsedMs
             // Grace period before the first byte: subscribe + conn-interval negotiation
             // can legitimately delay the first notification past the steady-state timeout.
@@ -199,6 +209,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private fun handleConnectionLost() {
         gattClient?.close()
         gattClient = null
+        _rssi.value = null // link gone → drop the stale reading
         if (intentionalDisconnect) return
 
         if (!reconnectPolicy.canRetry) {
@@ -225,6 +236,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         targetAddress = null
         gattClient?.close()
         gattClient = null
+        _rssi.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
@@ -232,5 +244,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         const val WATCHDOG_POLL_INTERVAL_MS = 1_000L
         const val FRAME_WATCHDOG_TIMEOUT_MS = 3_000L
         const val INITIAL_DATA_TIMEOUT_MS = 8_000L
+        // RSSI refresh cadence as a multiple of the 1 s watchdog tick (→ every 2 s).
+        const val RSSI_POLL_EVERY_N_TICKS = 2
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -673,15 +674,20 @@ private fun VehicleInfoCard(state: DashboardUiState) {
     val connected = state.connectionState == ConnectionState.CONNECTED
     val dash = "—"
 
-    // A calm at-a-glance list (summary style, not live gauges). Only fields that
-    // appear nowhere else on Home live here — no value is shown twice.
-    fun temp(c: Int) = "%.0f %s".format(
-        app.temperatureUnit.convertFromCelsius(c.toFloat()), app.temperatureUnit.suffix
-    )
-    val modeValue = if (connected) modeLabel(state.vehicleMode) else dash
-    val motorTempValue = if (connected && state.temperature > 0) temp(state.temperature) else dash
-    val controllerTempValue = if (connected && state.controllerTemperature > 0)
-        temp(state.controllerTemperature) else dash
+    // Spec + live-status sheet. Odometer + Bluetooth are live; Model + Firmware are
+    // static vehicle metadata until a BLE Device Information Service (0x180A) read
+    // exposes them from the controller.
+    val odometerValue = if (state.odometer > 0f)
+        app.speedUnit.formatDistance((state.odometer * 1000).toLong()) else dash
+    val (btLabel, btColor) = when (state.connectionState) {
+        // Connected → show the live link signal strength in dBm (falls back to
+        // "Connected" until the first RSSI reading arrives).
+        ConnectionState.CONNECTED -> (state.rssi?.let { "$it dBm" } ?: "Connected") to EvGreen
+        ConnectionState.CONNECTING -> "Connecting" to EvAmber
+        ConnectionState.RECONNECTING -> "Reconnecting" to EvAmber
+        else -> "Disconnected" to EvRed
+    }
+    val btIcon = if (connected) EvIcons.Bluetooth else EvIcons.BluetoothOff
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -701,22 +707,35 @@ private fun VehicleInfoCard(state: DashboardUiState) {
             shadowElevation = 3.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Stacked sideways: the key channels sit in a row, split by separators.
-            Row(
+            // 2×2 grid: two rows of two stats, each pair split by a vertical divider.
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Dim.lg),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(Dim.lg)
             ) {
-                VehicleStat(EvIcons.Drive, EvViolet, modeValue, "Riding Mode", Modifier.weight(1f))
-                VDivider()
-                VehicleStat(EvIcons.Thermo, EvAmber, motorTempValue, "Motor Temp", Modifier.weight(1f))
-                VDivider()
-                VehicleStat(EvIcons.Cpu, EvBlue, controllerTempValue, "Controller Temp", Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    VehicleStat(EvIcons.Road, EvBlue, odometerValue, "Odometer", Modifier.weight(1f))
+                    VDivider()
+                    VehicleStat(EvIcons.Cpu, EvViolet, VEHICLE_FIRMWARE, "Firmware", Modifier.weight(1f))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    VehicleStat(btIcon, btColor, btLabel, "Bluetooth", Modifier.weight(1f))
+                    VDivider()
+                    VehicleStat(EvIcons.Motorcycle, EvAmber, VEHICLE_MODEL, "Model", Modifier.weight(1f))
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                // Firmware over-the-air update entry point.
+                OtaUpdateEntry(currentFirmware = VEHICLE_FIRMWARE, connected = connected)
             }
         }
     }
 }
+
+/** Static vehicle identity — placeholders until a BLE Device Information Service
+ *  (0x180A: Model Number / Firmware Revision) read exposes them from the controller. */
+private const val VEHICLE_MODEL = "GESITS G-1"
+private const val VEHICLE_FIRMWARE = "v1.0.0"
 
 @Composable
 private fun VehicleStat(
@@ -770,14 +789,6 @@ private fun VDivider() {
             .size(width = 1.dp, height = 52.dp)
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
     )
-}
-
-private fun modeLabel(mode: com.example.displayapp.domain.model.VehicleMode) = when (mode) {
-    com.example.displayapp.domain.model.VehicleMode.PARK -> "Parked"
-    com.example.displayapp.domain.model.VehicleMode.ECO -> "Eco"
-    com.example.displayapp.domain.model.VehicleMode.NORMAL -> "Normal"
-    com.example.displayapp.domain.model.VehicleMode.SPORT -> "Sport"
-    com.example.displayapp.domain.model.VehicleMode.REGEN -> "Regen"
 }
 
 /* -------------------------------------------------------------------------- */

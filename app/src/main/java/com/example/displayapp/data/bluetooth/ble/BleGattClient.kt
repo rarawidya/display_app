@@ -27,7 +27,8 @@ import timber.log.Timber
 class BleGattClient(
     private val context: Context,
     private val onBytes: (ByteArray) -> Unit,
-    private val onDisconnected: () -> Unit
+    private val onDisconnected: () -> Unit,
+    private val onRssi: (Int) -> Unit = {}
 ) {
     private var gatt: BluetoothGatt? = null
 
@@ -106,12 +107,22 @@ class BleGattClient(
             @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
             override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) =
                 deliver(c.value ?: ByteArray(0))
+
+            override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
+                if (status == BluetoothGatt.GATT_SUCCESS) onRssi(rssi)
+            }
         }
 
         gatt = device.connectGatt(context, false, cb, BluetoothDevice.TRANSPORT_LE)
         val ok = withTimeoutOrNull(timeoutMs) { ready.await() } ?: false
         if (!ok) close()
         return ok
+    }
+
+    /** Request the connected link's RSSI; the result arrives via [onRssi]. */
+    @SuppressLint("MissingPermission")
+    fun readRssi() {
+        runCatching { gatt?.readRemoteRssi() }
     }
 
     fun close() {

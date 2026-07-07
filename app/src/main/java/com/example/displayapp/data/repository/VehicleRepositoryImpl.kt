@@ -31,6 +31,7 @@ class VehicleRepositoryImpl(
 
     override val connectionState: StateFlow<ConnectionState> = dataSource.connectionState
     override val availableDevices: StateFlow<List<BluetoothDeviceInfo>> = dataSource.discoveredDevices
+    override val rssi: StateFlow<Int?> = dataSource.rssi
 
     // FrameDecoder is the natural choke point for live protocol diagnostics —
     // every byte off the SPP pipe flows through here. Feeding the counters
