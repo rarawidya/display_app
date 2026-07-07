@@ -15,7 +15,9 @@ import com.example.displayapp.data.navigation.GraphHopperNavigationProvider
 import com.example.displayapp.data.navigation.NavigationCoordinator
 import com.example.displayapp.data.navigation.RouteNavigator
 import com.example.displayapp.data.navigation.SimulatedNavigationProvider
+import com.example.displayapp.data.navigation.graphhopper.GraphHopperGeocoder
 import com.example.displayapp.data.navigation.graphhopper.GraphHopperRoutePlanner
+import com.example.displayapp.domain.repository.Geocoder
 import com.example.displayapp.domain.repository.NavigationProvider
 import com.example.displayapp.domain.repository.RoutePlanner
 import kotlinx.coroutines.flow.filterNotNull
@@ -131,6 +133,11 @@ class AppContainer(private val context: Context) {
      */
     val routePlanner: RoutePlanner by lazy {
         GraphHopperRoutePlanner(BuildConfig.GRAPHHOPPER_API_KEY)
+    }
+
+    /** Place search behind the [Geocoder] port — GraphHopper Geocoding API (same key). */
+    val geocoder: Geocoder by lazy {
+        GraphHopperGeocoder(BuildConfig.GRAPHHOPPER_API_KEY)
     }
 
     /**

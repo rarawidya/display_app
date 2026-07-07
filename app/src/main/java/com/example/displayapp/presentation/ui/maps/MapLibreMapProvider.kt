@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +56,7 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         content: MapContent,
         modifier: Modifier,
         interactive: Boolean,
+        onLongPress: (GeoLocation) -> Unit,
     ) {
         if (!isConfigured) return
 
@@ -62,6 +64,8 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         val lifecycleOwner = LocalLifecycleOwner.current
         val mapView = remember { MapView(context).apply { onCreate(null) } }
         var map by remember { mutableStateOf<MapLibreMap?>(null) }
+        // Keep the long-press handler current without re-installing the listener.
+        val longPress = rememberUpdatedState(onLongPress)
         // Last camera target actually applied — the battery-conscious move gate.
         val lastApplied = remember { mutableStateOf<Pair<GeoLocation, Float>?>(null) }
 
@@ -93,7 +97,22 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
                             PropertyFactory.circleStrokeWidth(3f),
                         ),
                     )
+                    // Destination marker (dropped pin / picked place).
+                    style.addSource(GeoJsonSource(DEST_SRC))
+                    style.addLayer(
+                        CircleLayer(DEST_LAYER, DEST_SRC).withProperties(
+                            PropertyFactory.circleColor(DEST_COLOR),
+                            PropertyFactory.circleRadius(8f),
+                            PropertyFactory.circleStrokeColor("#FFFFFF"),
+                            PropertyFactory.circleStrokeWidth(2f),
+                        ),
+                    )
                     map = m
+                }
+                // Long-press anywhere → drop a destination there.
+                m.addOnMapLongClickListener { point ->
+                    longPress.value(GeoLocation(latitude = point.latitude, longitude = point.longitude))
+                    true
                 }
             }
             onDispose { }
@@ -160,6 +179,12 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
                 FeatureCollection.fromFeatures(emptyArray<Feature>())
             }
             m.style?.getSourceAs<GeoJsonSource>(PUCK_SRC)?.setGeoJson(puckFc)
+
+            // Destination marker.
+            val destFc = content.destination?.let {
+                FeatureCollection.fromFeature(Feature.fromGeometry(it.toPoint()))
+            } ?: FeatureCollection.fromFeatures(emptyArray<Feature>())
+            m.style?.getSourceAs<GeoJsonSource>(DEST_SRC)?.setGeoJson(destFc)
         }
 
         AndroidView(factory = { mapView }, modifier = modifier)
@@ -172,8 +197,11 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         const val ROUTE_LAYER = "route-layer"
         const val PUCK_SRC = "puck-src"
         const val PUCK_LAYER = "puck-layer"
+        const val DEST_SRC = "dest-src"
+        const val DEST_LAYER = "dest-layer"
         const val ROUTE_COLOR = "#2563EB"
         const val PUCK_COLOR = "#3B82F6"
+        const val DEST_COLOR = "#EF4444"  // red destination pin
         const val CAMERA_ANIM_MS = 700
         const val MIN_CAMERA_MOVE_M = 8.0   // don't re-center for sub-8 m GPS jitter
         const val MIN_BEARING_DELTA = 4f    // …or sub-4° heading wobble

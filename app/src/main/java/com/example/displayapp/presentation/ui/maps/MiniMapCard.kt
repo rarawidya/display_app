@@ -91,11 +91,14 @@ fun CockpitMap(
     interactive: Boolean = false,
     headingUp: Boolean = true,
     zoom: Double = 16.0,
+    onLongPress: (GeoLocation) -> Unit = {},
 ) {
     val mapProvider = LocalMapProvider.current
     if (!mapProvider.isConfigured) return
 
-    val bearing = if (headingUp) (location?.bearingDeg ?: 0f) else 0f
+    // Only follow the rider when there's no active destination — while navigating,
+    // frame the whole route so the destination pin + line stay visible.
+    val bearing = if (headingUp && destination == null) (location?.bearingDeg ?: 0f) else 0f
     mapProvider.Map(
         camera = MapCameraState(
             target = location ?: JAKARTA_FALLBACK,
@@ -110,6 +113,7 @@ fun CockpitMap(
         ),
         modifier = modifier,
         interactive = interactive,
+        onLongPress = onLongPress,
     )
 }
 

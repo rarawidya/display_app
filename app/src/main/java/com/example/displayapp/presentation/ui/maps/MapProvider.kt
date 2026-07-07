@@ -27,6 +27,8 @@ interface MapProvider {
      * [content] supplies the location puck + a provider-agnostic route polyline (a
      * list of domain [GeoLocation] points — NOT tied to any routing SDK). [interactive]
      * toggles pan/zoom/rotate gestures (off for the cockpit mini-map, on for fullscreen).
+     * [onLongPress] fires with the map coordinate the user long-pressed — used to drop
+     * a destination pin when search can't find a place.
      */
     @Composable
     fun Map(
@@ -34,6 +36,7 @@ interface MapProvider {
         content: MapContent,
         modifier: Modifier,
         interactive: Boolean,
+        onLongPress: (GeoLocation) -> Unit = {},
     )
 }
 
@@ -69,6 +72,7 @@ object NoMapProvider : MapProvider {
         content: MapContent,
         modifier: Modifier,
         interactive: Boolean,
+        onLongPress: (GeoLocation) -> Unit,
     ) { /* no-op; callers gate on isConfigured */ }
 }
 

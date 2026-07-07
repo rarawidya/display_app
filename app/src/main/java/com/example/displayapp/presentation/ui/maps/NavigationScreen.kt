@@ -44,7 +44,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.displayapp.domain.model.GeoLocation
+import com.example.displayapp.domain.model.GeoPlace
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.viewmodel.MapsViewModel
 import com.example.displayapp.ui.theme.Dim
@@ -72,6 +72,7 @@ fun NavigationScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val results by viewModel.searchResults.collectAsStateWithLifecycle()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -91,6 +92,7 @@ fun NavigationScreen(
                     modifier = Modifier.fillMaxSize(),
                     interactive = true, // fullscreen browse — pan/zoom on
                     headingUp = false,  // north-up for destination browsing
+                    onLongPress = viewModel::dropPin, // long-press anywhere → destination
                 )
             }
 
@@ -114,19 +116,29 @@ fun NavigationScreen(
                     )
                 }
 
-                // Search-result suggestions appear when the query is non-empty
-                // and no route is active. Picking one fills [destination] and
-                // computes the (stub) route.
+                // Real geocoded results appear when the query is non-empty and no
+                // route is active. Picking one starts the navigation session. Or
+                // long-press the map to drop a pin anywhere (hint below).
                 AnimatedVisibility(
                     visible = state.searchQuery.isNotBlank() && state.route == null,
                     enter = fadeIn() + slideInVertically(),
                     exit = fadeOut() + slideOutVertically()
                 ) {
                     SuggestionList(
-                        query = state.searchQuery,
-                        onPick = viewModel::selectDestination
+                        results = results,
+                        onPick = viewModel::selectPlace
                     )
                 }
+            }
+
+            // Hint: long-press to drop a pin (shown when idle, no query/route).
+            AnimatedVisibility(
+                visible = state.searchQuery.isBlank() && state.route == null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                LongPressHint(modifier = Modifier.padding(Dim.screenGutter))
             }
 
             // Bottom overlay — ETA / distance / battery
@@ -227,32 +239,11 @@ private fun SearchBar(
     }
 }
 
-/**
- * Canned demo suggestions. The shape (label + GeoLocation) matches what a
- * Places Autocomplete response would yield — swap the source out without
- * touching this UI.
- */
-private data class SuggestionItem(val label: String, val sub: String, val location: GeoLocation)
-
-private val demoSuggestions = listOf(
-    SuggestionItem("Monas — National Monument", "Central Jakarta", GeoLocation(-6.1754, 106.8272)),
-    SuggestionItem("Soekarno–Hatta Airport",    "Tangerang",       GeoLocation(-6.1256, 106.6559)),
-    SuggestionItem("Bandung Station",           "Bandung",         GeoLocation(-6.9143, 107.6020)),
-    SuggestionItem("Yogyakarta Tugu Station",   "Yogyakarta",      GeoLocation(-7.7894, 110.3650)),
-    SuggestionItem("Surabaya Gubeng",           "Surabaya",        GeoLocation(-7.2659, 112.7521))
-)
-
 @Composable
 private fun SuggestionList(
-    query: String,
-    onPick: (GeoLocation, String) -> Unit
+    results: List<GeoPlace>,
+    onPick: (GeoPlace) -> Unit
 ) {
-    val filtered = remember(query) {
-        demoSuggestions.filter {
-            it.label.contains(query, ignoreCase = true) ||
-            it.sub.contains(query, ignoreCase = true)
-        }
-    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -265,21 +256,21 @@ private fun SuggestionList(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 6.dp)
         ) {
-            if (filtered.isEmpty()) {
+            if (results.isEmpty()) {
                 items(1) {
                     Text(
-                        text = "No matches",
+                        text = "No matches — or long-press the map to drop a pin",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp)
                     )
                 }
             } else {
-                items(filtered, key = { it.label }) { item ->
+                items(results, key = { "${it.name}|${it.location.latitude},${it.location.longitude}" }) { place ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onPick(item.location, item.label) }
+                            .clickable { onPick(place) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -300,21 +291,43 @@ private fun SuggestionList(
                         }
                         Column(Modifier.weight(1f)) {
                             Text(
-                                text = item.label,
+                                text = place.name,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
                             )
-                            Text(
-                                text = item.sub,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (place.detail.isNotBlank()) {
+                                Text(
+                                    text = place.detail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/** Idle hint: tell the user they can long-press the map to drop a destination. */
+@Composable
+private fun LongPressHint(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 4.dp
+    ) {
+        Text(
+            text = "Long-press the map to drop a destination",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+        )
     }
 }
 
