@@ -19,7 +19,7 @@ import java.nio.ByteOrder
  * VotolTelemetry data layout (3 data words, 0 pointer words) — byte offsets are
  * within the 24-byte data section (add 16 for the payload-absolute offset):
  *   [0..1]   batteryDeciVolts : UInt16   (0.1 V units)
- *   [2..3]   motorCurrentRaw  : Int16    (raw counts, currently 0)
+ *   [2..3]   currentMotor     : Int16    (deci-amps, ÷10 = A, signed)
  *   [4..5]   rpm              : UInt16
  *   [6..7]   speedKmh         : UInt16   (km/h, direct)
  *   [8]      controllerTempC  : Int8
@@ -47,7 +47,7 @@ object TelemetrySchema {
 
     // Offsets within the struct data section (relative to struct start).
     private const val OFF_BATTERY_DECIVOLTS = 0
-    private const val OFF_MOTOR_CURRENT_RAW = 2
+    private const val OFF_CURRENT_MOTOR = 2
     private const val OFF_RPM = 4
     private const val OFF_SPEED_KMH = 6
     private const val OFF_CONTROLLER_TEMP = 8
@@ -71,7 +71,7 @@ object TelemetrySchema {
 
         return VotolTelemetry(
             batteryDeciVolts = buf.getShort(dataOffset + OFF_BATTERY_DECIVOLTS).toInt() and 0xFFFF,
-            motorCurrentRaw = buf.getShort(dataOffset + OFF_MOTOR_CURRENT_RAW).toInt(),
+            currentMotor = buf.getShort(dataOffset + OFF_CURRENT_MOTOR).toInt(),
             rpm = buf.getShort(dataOffset + OFF_RPM).toInt() and 0xFFFF,
             speedKmh = buf.getShort(dataOffset + OFF_SPEED_KMH).toInt() and 0xFFFF,
             controllerTempC = buf.get(dataOffset + OFF_CONTROLLER_TEMP).toInt(),
@@ -95,7 +95,7 @@ object TelemetrySchema {
 
     data class VotolTelemetry(
         val batteryDeciVolts: Int,
-        val motorCurrentRaw: Int,
+        val currentMotor: Int,
         val rpm: Int,
         val speedKmh: Int,
         val controllerTempC: Int,
@@ -109,7 +109,7 @@ object TelemetrySchema {
 
     class MessageBuilder {
         private var batteryDeciVolts: Short = 0
-        private var motorCurrentRaw: Short = 0
+        private var currentMotor: Short = 0
         private var rpm: Short = 0
         private var speedKmh: Short = 0
         private var controllerTempC: Byte = 0
@@ -121,7 +121,7 @@ object TelemetrySchema {
         private var batteryPercent: Byte = 0
 
         fun setBatteryDeciVolts(value: Short) { batteryDeciVolts = value }
-        fun setMotorCurrentRaw(value: Short) { motorCurrentRaw = value }
+        fun setCurrentMotor(value: Short) { currentMotor = value }
         fun setRpm(value: Short) { rpm = value }
         fun setSpeedKmh(value: Short) { speedKmh = value }
         fun setControllerTempC(value: Byte) { controllerTempC = value }
@@ -152,7 +152,7 @@ object TelemetrySchema {
             // Struct data section (see layout doc above).
             val dataStart = buf.position()
             buf.putShort(batteryDeciVolts)  // [0..1]
-            buf.putShort(motorCurrentRaw)   // [2..3]
+            buf.putShort(currentMotor)      // [2..3]
             buf.putShort(rpm)               // [4..5]
             buf.putShort(speedKmh)          // [6..7]
             buf.put(controllerTempC)        // [8]

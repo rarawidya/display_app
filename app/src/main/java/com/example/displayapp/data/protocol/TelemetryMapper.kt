@@ -15,9 +15,9 @@ import timber.log.Timber
  *
  * Wire-field handling notes (see capnp.md / telemetry.capnp):
  *  - `batteryDeciVolts` → volts (÷10).
- *  - `motorCurrentRaw` is raw counts (currently 0, uncalibrated) — carried
- *    through as-is so power/energy stay wired, but they read ~0 until the
- *    firmware defines a scale and sign.
+ *  - `currentMotor` → amps (÷10). CONFIRMED signed deci-amps (negative = regen);
+ *    power/energy/Wh-km/range are therefore live. The ~0.4 A idle zero-offset is
+ *    left unsubtracted per the firmware reference decode.
  *  - `batteryPercent == 255` means "not yet known" (SoC CAN frame silent for
  *    ~1 s after MCU boot). We hold the previous value rather than show 0 %.
  *  - Battery pack temperature is NOT on this wire (v1); [VehicleData] keeps the
@@ -29,7 +29,8 @@ class TelemetryMapper {
         return try {
             val frame = TelemetrySchema.readFrom(payload)
             val voltageV = frame.batteryDeciVolts / 10f
-            val currentA = frame.motorCurrentRaw.toFloat()
+            // `currentMotor` is signed deci-amps (÷10 = A, negative = regen) — CONFIRMED.
+            val currentA = frame.currentMotor / 10f
 
             val batteryPercent =
                 if (frame.batteryPercent == BATTERY_PERCENT_UNKNOWN) previous.batteryPercent

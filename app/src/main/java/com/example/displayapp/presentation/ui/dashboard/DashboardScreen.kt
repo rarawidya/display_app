@@ -250,18 +250,19 @@ private fun SpeedometerSection(state: DashboardUiState) {
 /* -------------------------------------------------------------------------- */
 /*  EV telemetry grid — real controller channels only (capnp.md).             */
 /*                                                                            */
-/*  Row 1: Voltage         | Motor Temp                                       */
-/*  Row 2: Battery Temp    | Controller Temp                                  */
+/*  Row 1: Voltage         | Current                                          */
+/*  Row 2: Power           | Motor Temp                                       */
+/*  Row 3: Battery Temp    | Controller Temp                                  */
 /*                                                                            */
-/*  Power / Current / Wh/km / Range tiles are intentionally omitted: they all */
-/*  derive from motorCurrentRaw (@1), which the board sends as 0 (uncalibrated)*/
-/*  — so they'd be fake on real hardware. Only wire-backed fields are shown.   */
+/*  Current & Power are now wire-backed: `currentMotor` (@1) is calibrated    */
+/*  signed deci-amps, so power = V×I is live. They still route through        */
+/*  MetricOrDash on `currentAvailable` so a future de-calibration falls back  */
+/*  to "—". Battery Temp is absent from the v1 wire (always "—").             */
 /* -------------------------------------------------------------------------- */
 
 @Composable
 private fun TelemetryGrid(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    // Only fields the controller actually provides: pack voltage + temperatures.
     val voltage = state.voltage
 
     // Convert telemetry's °C readings to whatever unit the user picked.
@@ -286,6 +287,30 @@ private fun TelemetryGrid(state: DashboardUiState) {
                 value = voltage,
                 unit = "V",
                 fractionDigits = 1,
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            )
+            // Motor current — signed deci-amps off the wire (negative = regen).
+            MetricOrDash(
+                available = state.currentAvailable,
+                icon = EvIcons.Pulse,
+                label = "Current",
+                value = state.current,
+                unit = "A",
+                fractionDigits = 1,
+                modifier = Modifier.weight(1f).fillMaxHeight()
+            )
+        }
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Max),
+            horizontalArrangement = Arrangement.spacedBy(Dim.md)
+        ) {
+            // Bus power = voltage × current (derived once in TelemetryDerivations).
+            MetricOrDash(
+                available = state.currentAvailable,
+                icon = EvIcons.Plug,
+                label = "Power",
+                value = state.power,
+                unit = "W",
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             PremiumMetricTile(

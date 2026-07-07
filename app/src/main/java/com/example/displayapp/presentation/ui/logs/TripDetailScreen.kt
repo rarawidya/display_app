@@ -311,9 +311,12 @@ private fun DetailBody(state: TripDetailUiState) {
     val app = LocalAppSettings.current
     HeroSummaryCard(state = state)
 
-    // Trip Detail charts only real controller channels (capnp.md). Power / Current /
-    // Wh-per-km / energy come from motorCurrentRaw (@1, sent 0) and Battery Temp is
-    // absent from the v1 wire, so those charts + the energy card were removed.
+    // Trip Detail charts only real controller channels (capnp.md). Current & Power
+    // are back now that `currentMotor` (@1) is calibrated signed deci-amps. Battery
+    // Temp stays absent from the v1 wire, so its chart is still omitted.
+    // NOTE: trips recorded before the current calibration persisted raw-count current,
+    // so their Current/Power series reflect that historical (unscaled) data — the
+    // decode is intentionally decoupled from the wire, so old rows are not rewritten.
     // Series are SI (km/h, °C); conversion is applied at label time via
     // displayConverter so toggling km/h↔mph updates labels without rebuilding data.
     val speedConverter: (Float) -> Float = { app.speedUnit.convertFromKmh(it) }
@@ -332,6 +335,20 @@ private fun DetailBody(state: TripDetailUiState) {
         series = state.voltageSeries,
         color = TelemetryMetric.Voltage.seriesColor(),
         latestFormat = TelemetryMetric.Voltage.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.Current.displayName,
+        unit = TelemetryMetric.Current.unit,
+        series = state.currentSeries,
+        color = TelemetryMetric.Current.seriesColor(),
+        latestFormat = TelemetryMetric.Current.format
+    )
+    StaticTelemetryChart(
+        title = TelemetryMetric.Power.displayName,
+        unit = TelemetryMetric.Power.unit,
+        series = state.powerSeries,
+        color = TelemetryMetric.Power.seriesColor(),
+        latestFormat = TelemetryMetric.Power.format
     )
     StaticTelemetryChart(
         title = TelemetryMetric.Battery.displayName,

@@ -31,16 +31,16 @@ object TelemetryConstants {
     const val MAX_REPLAY_DELAY_MS: Long = 2_000L
 
     /**
-     * Whether the wire `motorCurrentRaw` channel is calibrated. It is NOT in
-     * protocol v1 — capnp.md marks it "TODO, currently sent 0", so current,
-     * bus power (V×I), and the derived Wh/km + range are meaningless on real
-     * hardware. While false, the Drive tiles render those as "—" instead of a
-     * misleading 0. Flip to true once firmware defines the current scale + sign.
+     * Whether the wire `currentMotor` channel is calibrated.
      *
-     * Real-hardware default: `false`. Per the firmware BLE spec, `motorCurrentRaw`
-     * is provisional and reads ~0 until road-calibrated, so current / power / Wh/km /
-     * range must show "—" rather than a misleading 0. (Temporarily set true only for
-     * simulator demos.)
+     * As of the firmware capnp.md revision (2026-07), `currentMotor` (@1) is
+     * **CONFIRMED** signed deci-amps (÷10 = A, negative = regen) — matched
+     * against the vendor display. So current, bus power (V×I), and the derived
+     * Wh/km + range are trustworthy on real hardware; the Drive/Charts surfaces
+     * render them as live values rather than "—".
+     *
+     * Kept as a flag (rather than deleted) so the "—" fallback stays one edit
+     * away if a future wire revision de-calibrates the channel again.
      */
-    const val CURRENT_CHANNEL_CALIBRATED: Boolean = false
+    const val CURRENT_CHANNEL_CALIBRATED: Boolean = true
 }

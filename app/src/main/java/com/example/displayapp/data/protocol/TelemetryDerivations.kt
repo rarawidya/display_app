@@ -18,7 +18,7 @@ import com.example.displayapp.domain.model.VehicleMode
  *
  *   • WIRE (board → phone): `VotolTelemetry` already carries SI-adjacent
  *     fields. rpm and speedKmh are DIRECT integers; voltage is deci-volts;
- *     current is raw counts. The wire decode lives in [TelemetryMapper], which
+ *     current is deci-amps (÷10 = A). The wire decode lives in [TelemetryMapper], which
  *     reads those fields straight off the frame — it does NOT go through the
  *     entity helpers below.
  *
@@ -36,9 +36,9 @@ import com.example.displayapp.domain.model.VehicleMode
  *           ONLY as the legacy fallback for pre-v6 persisted rows that stored
  *           no rpm column.
  *
- *   power:  instantaneous bus power in Watts, `voltage × current`. Because the
- *           board currently sends `motorCurrentRaw = 0` (uncalibrated), power
- *           is inert until firmware defines the current scale and sign.
+ *   power:  instantaneous bus power in Watts, `voltage × current`. The board's
+ *           `currentMotor` channel is now calibrated (signed deci-amps), so
+ *           power is live and signed (negative under regen).
  */
 object TelemetryDerivations {
 

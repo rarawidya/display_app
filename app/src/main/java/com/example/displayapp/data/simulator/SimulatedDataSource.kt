@@ -103,9 +103,9 @@ class SimulatedDataSource(
         // self-consistent (rpm ≈ speed * 12.05).
         val rpm = (sf.speedKmh * 1000.0 / 83.0).toInt().coerceIn(0, 65535).toShort()
         val batteryDeciVolts = (sf.voltageV * 10).toInt().coerceIn(0, 65535).toShort()
-        // Real firmware sends motorCurrentRaw = 0 (uncalibrated). The simulator sends
-        // whole-amp counts so the Drive power/current tiles show plausible motion.
-        val motorCurrentRaw = sf.currentA.toInt().coerceIn(-32768, 32767).toShort()
+        // `currentMotor` is signed deci-amps on the wire (÷10 = A). Emit the scenario's
+        // amps × 10 so the ÷10 decode lands back on the intended current.
+        val currentMotor = (sf.currentA * 10).toInt().coerceIn(-32768, 32767).toShort()
 
         // flags: engineRunning while connected, moving when there's road speed,
         // brake when the pack is taking regen current (decelerating).
@@ -115,7 +115,7 @@ class SimulatedDataSource(
 
         val capnpPayload = TelemetrySchema.buildMessage {
             setBatteryDeciVolts(batteryDeciVolts)
-            setMotorCurrentRaw(motorCurrentRaw)
+            setCurrentMotor(currentMotor)
             setRpm(rpm)
             setSpeedKmh(speedKmh)
             setControllerTempC(sf.controllerTempC.coerceIn(-128, 127).toByte())

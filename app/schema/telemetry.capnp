@@ -29,10 +29,10 @@
 #  Field semantics / trust (see capnp.md §3)
 # ─────────────────────────────────────────────────────────────────────────────
 #   batteryDeciVolts  0.1 V units (÷10 → volts).                     CONFIRMED
-#   motorCurrentRaw   raw counts; scale/location TBD, currently 0.   TODO
-#   rpm               motor rpm / speed proxy.                       PROVISIONAL
+#   currentMotor      deci-amps (÷10 → A), signed (neg = regen).     CONFIRMED
+#   rpm               real motor rpm (already scaled).               CONFIRMED
 #   speedKmh          km/h, direct (firmware derives rpm*83/1000).   PROVISIONAL
-#   controllerTempC   whole °C, direct.                             CANDIDATE
+#   controllerTempC   whole °C, direct.                             CONFIRMED
 #   motorTempC        whole °C, direct.                              CONFIRMED
 #   driveMode         1 / 2 / 3 (Eco / Urban / Sport).               CONFIRMED
 #   faultCode         controller fault bitfield, currently 0.        PROVISIONAL
@@ -40,29 +40,32 @@
 #   seq               rolling frame counter (drop detection).
 #   batteryPercent    0-100 % SoC, or 255 = NOT-YET-KNOWN (show --). CONFIRMED
 #
-#   `flags` bits (UInt8): 0 engineRunning · 1 brake · 2 moving ·
-#                         3 reverse gear · 4-7 reserved.
+#   `flags` bits (UInt8): 0 run · 1 brake · 2 moving · 3 reverse ·
+#                         4 park · 5 sideStand (N/A, firmware forces 0) ·
+#                         6 lowBattery (SoC≤15%) · 7 regen (currentMotor < 0).
 #
 # NOTE — divergences from the app's previous internal schema, kept here so the
 # canonical-invariant docs stay honest:
 #   • rpm and speedKmh are now REAL wire fields — the app no longer derives
 #     rpm = speed×100. Both are read straight off the frame.
-#   • current is raw counts (currently 0), NOT signed amps. Bus power (V×I) and
-#     the energy/regen integrators are therefore inert until firmware calibrates
-#     `motorCurrentRaw` and defines its sign.
+#   • currentMotor is CONFIRMED signed deci-amps (÷10 = A, negative = regen) —
+#     matched against the vendor display. Bus power (V×I), the energy/regen
+#     integrators and Wh/km + range are therefore LIVE. (~−4 count ≈ 0.4 A
+#     zero-offset at idle; small enough that the reader applies ÷10 with no
+#     offset subtraction, per the firmware capnp.md reference decode.)
 #   • battery pack temperature is NOT on this wire (v1). VehicleData keeps the
 #     field for UI/persistence continuity but the mapper sets it 0 (unknown).
 
 struct VotolTelemetry {
   batteryDeciVolts @0 :UInt16;   # battery voltage, 0.1 V units (809 = 80.9 V)
-  motorCurrentRaw  @1 :Int16;    # motor current, raw counts (currently 0)
-  rpm              @2 :UInt16;   # motor rpm / speed proxy
+  currentMotor     @1 :Int16;    # motor current, deci-amps (÷10 = A), signed (neg = regen)
+  rpm              @2 :UInt16;   # real motor rpm (already scaled)
   speedKmh         @3 :UInt16;   # km/h (firmware: rpm * 83 / 1000)
   controllerTempC  @4 :Int8;     # controller temp, whole deg C
   motorTempC       @5 :Int8;     # motor temp, whole deg C
   driveMode        @6 :UInt8;    # 1 = Eco, 2 = Urban, 3 = Sport
   faultCode        @7 :UInt32;   # controller fault bitfield (currently 0)
-  flags            @8 :UInt8;    # bit0 engineRunning, bit1 brake, bit2 moving, bit3 reverse
+  flags            @8 :UInt8;    # bit0 run, bit1 brake, bit2 moving, bit3 reverse, bit4 park, bit5 sideStand, bit6 lowBattery, bit7 regen
   seq              @9 :UInt32;   # rolling frame counter (drop detection)
   batteryPercent   @10 :UInt8;   # state-of-charge 0-100 %, or 255 = not yet known
 }

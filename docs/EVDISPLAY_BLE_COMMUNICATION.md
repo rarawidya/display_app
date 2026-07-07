@@ -131,8 +131,8 @@ identical STM32 → board → BLE.) Decode with any capnp library, or by hand (�
 @0xf0e5f2ff4f178d2a;
 struct VotolTelemetry {
   batteryDeciVolts @0  :UInt16;   # battery voltage, 0.1 V units (812 = 81.2 V)
-  motorCurrentRaw  @1  :Int16;    # raw motor current (see trust note)
-  rpm              @2  :UInt16;   # motor rpm / eRPM proxy (provisional)
+  currentMotor     @1  :Int16;    # motor current, deci-amps (÷10 = A), signed (neg = regen)
+  rpm              @2  :UInt16;   # real motor rpm (already scaled)
   speedKmh         @3  :UInt16;   # km/h (provisional; derived from rpm)
   controllerTempC  @4  :Int8;     # controller temperature, whole °C
   motorTempC       @5  :Int8;     # motor temperature, whole °C
@@ -148,8 +148,8 @@ struct VotolTelemetry {
 | Ord | Field | Type | Units / meaning | Trust |
 |---|---|---|---|---|
 | @0 | batteryDeciVolts | UInt16 | 0.1 V (÷10 → volts) | Confirmed on bike |
-| @1 | motorCurrentRaw | Int16 | raw; scale TBD | **Provisional** — often 0 until road-calibrated; also drives `regen` flag |
-| @2 | rpm | UInt16 | rpm/eRPM proxy | Provisional (linear w/ speed) |
+| @1 | currentMotor | Int16 | deci-amps (÷10 = A), signed (neg = regen) | **Confirmed** — matched vs vendor display; also drives `regen` flag |
+| @2 | rpm | UInt16 | real motor rpm (already scaled) | Confirmed |
 | @3 | speedKmh | UInt16 | km/h | Provisional (rpm·0.083) — calibrate vs speedo |
 | @4 | controllerTempC | Int8 | °C | Candidate |
 | @5 | motorTempC | Int8 | °C | Confirmed |
@@ -169,7 +169,7 @@ struct VotolTelemetry {
 | 4 | park | park (== !engineRunning) |
 | 5 | sideStand | kickstand (under test) |
 | 6 | lowBattery | derived: batteryPercent ≤ 15 % |
-| 7 | regen | regen braking (motorCurrentRaw < −thr; 0 until @1 mapped) |
+| 7 | regen | regen braking (currentMotor < −thr; threshold pending road ride) |
 
 ### 5c. Byte-offset layout (for a hand-decoder)
 Payload = 8-byte segment header + 8-byte root pointer + **24-byte struct**. All
@@ -178,7 +178,7 @@ little-endian. Struct-data byte offsets (add 16 for the offset within the payloa
 | Field | struct byte | payload byte | size |
 |---|---|---|---|
 | batteryDeciVolts @0 | 0 | 16 | u16 |
-| motorCurrentRaw @1 | 2 | 18 | i16 |
+| currentMotor @1 | 2 | 18 | i16 |
 | rpm @2 | 4 | 20 | u16 |
 | speedKmh @3 | 6 | 22 | u16 |
 | controllerTempC @4 | 8 | 24 | i8 |
@@ -197,11 +197,12 @@ pointer `00 00 00 00 03 00 00 00` — constant for this schema.)
   ~1 s after the STM32 boots; the board publishes 255 meanwhile). Don’t show 255 %.
 - **All-zero payload** → the STM32 is unpowered / no vehicle data yet (the frame is
   still valid; values populate once the STM32 is live).
-- Provisional fields (@1 motorCurrentRaw, @7 faultCode, and the scale of @2/@3) may
-  read 0 or need road-ride calibration — display defensively.
+- Provisional fields (@7 faultCode, and the km/h scale of @3) may read 0 or need
+  road-ride calibration — display defensively. (@1 currentMotor is now calibrated
+  deci-amps.)
 
 ### 5e. Golden reference frame (offline unit test)
-Values `V=809 (81.9 V), motorCurrentRaw=0, rpm=124, speedKmh=10, Tctrl=49, Tmot=47,
+Values `V=809 (81.9 V), currentMotor=0, rpm=124, speedKmh=10, Tctrl=49, Tmot=47,
 mode=3, flags=0x01, faultCode=0, seq=12345, batteryPercent=91` encode to this
 **exact 44-byte 0xAF08 notification** (LEN=`0x28`, CRC16=`0x09E6`):
 ```
