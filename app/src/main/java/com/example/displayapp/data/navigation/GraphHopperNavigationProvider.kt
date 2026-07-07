@@ -4,6 +4,7 @@ import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.Maneuver
 import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.NavState
+import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.NavigationProvider
 import com.example.displayapp.domain.repository.RoutePlanner
 import kotlinx.coroutines.CoroutineScope
@@ -11,7 +12,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -41,6 +45,10 @@ class GraphHopperNavigationProvider(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val progress: Flow<NavProgress> = _progress.asSharedFlow()
+
+    // The current route geometry, for the map overlay (same session as the BLE stream).
+    private val _activeRoute = MutableStateFlow<RoutePlan?>(null)
+    override val activeRoute: StateFlow<RoutePlan?> = _activeRoute.asStateFlow()
 
     private var job: Job? = null
     private var routeId = 0L
@@ -72,6 +80,7 @@ class GraphHopperNavigationProvider(
             routeId += 1
             t = RouteProgressTracker(plan, routeId)
             tracker = t
+            _activeRoute.value = plan
             offRouteStreak = 0
         }
 
@@ -85,6 +94,7 @@ class GraphHopperNavigationProvider(
                     if (replan != null) {
                         routeId += 1
                         tracker = RouteProgressTracker(replan, routeId)
+                        _activeRoute.value = replan
                         offRouteStreak = 0
                     }
                 }
@@ -107,6 +117,7 @@ class GraphHopperNavigationProvider(
         job?.cancel()
         job = null
         tracker = null
+        _activeRoute.value = null
         offRouteStreak = 0
         val hadSession = destination != null
         destination = null

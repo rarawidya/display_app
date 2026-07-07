@@ -12,6 +12,7 @@ import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
 import com.example.displayapp.data.navigation.GraphHopperNavigationProvider
+import com.example.displayapp.data.navigation.NavigationCoordinator
 import com.example.displayapp.data.navigation.RouteNavigator
 import com.example.displayapp.data.navigation.SimulatedNavigationProvider
 import com.example.displayapp.data.navigation.graphhopper.GraphHopperRoutePlanner
@@ -145,6 +146,21 @@ class AppContainer(private val context: Context) {
             locations = locationRepository.location.filterNotNull(),
             scope = appScope,
         )
+    }
+
+    /** Production navigation → BLE: streams the GraphHopper NavProgress to the controller. */
+    private val routeNavigator: RouteNavigator by lazy {
+        RouteNavigator(navigationProvider, bluetoothDataSource, appScope)
+    }
+
+    /**
+     * The one shared navigation session. A destination pick drives BOTH the phone map
+     * overlay (route geometry + live state) and the BLE `NavInstruction` stream from a
+     * single `NavProgress` — the convergence point. App-scoped singleton so the Drive
+     * mini-map and the Navigation screen observe the same session.
+     */
+    val navigationCoordinator: NavigationCoordinator by lazy {
+        NavigationCoordinator(navigationProvider, routeNavigator, appScope)
     }
 
     val tripRepository: TripRepository by lazy {

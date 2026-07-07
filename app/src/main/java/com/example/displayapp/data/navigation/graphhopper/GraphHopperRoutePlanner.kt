@@ -30,7 +30,9 @@ import java.net.URL
  */
 class GraphHopperRoutePlanner(
     private val apiKey: String,
-    private val profile: String = "scooter",
+    // "car" is available on every GraphHopper plan (incl. free); "scooter"/"bike"/etc.
+    // require a plan that enables them — an unavailable profile returns HTTP 400.
+    private val profile: String = "car",
     private val baseUrl: String = "https://graphhopper.com/api/1",
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : RoutePlanner {
