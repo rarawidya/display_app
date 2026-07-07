@@ -64,9 +64,9 @@ private val DarkSeries = SeriesColors(
     current        = Color(0xFFFB923C),  // orange
     power          = Color(0xFFEF4444),  // red
     battery        = Color(0xFF22C55E),  // green
-    engineTemp     = Color(0xFFF59E0B),  // amber
-    batteryTemp    = Color(0xFFEC4899),  // pink/magenta
-    controllerTemp = Color(0xFFEA580C),  // deep orange
+    engineTemp     = Color(0xFFEC4899),  // pink (was amber — collided with orange/current)
+    batteryTemp    = Color(0xFFD946EF),  // fuchsia (was pink — freed for engineTemp)
+    controllerTemp = Color(0xFF3B82F6),  // blue (was deep orange — collided with current)
     whPerKm        = Color(0xFF14B8A6),  // teal
     estRange       = Color(0xFFA3E635)   // light green
 )
@@ -78,9 +78,9 @@ private val LightSeries = SeriesColors(
     current        = Color(0xFFEA580C),  // deeper orange
     power          = Color(0xFFDC2626),  // deeper red
     battery        = Color(0xFF16A34A),  // deeper green
-    engineTemp     = Color(0xFFD97706),  // deeper amber
-    batteryTemp    = Color(0xFFDB2777),  // deeper pink
-    controllerTemp = Color(0xFFC2410C),  // deeper burnt-orange
+    engineTemp     = Color(0xFFDB2777),  // deeper pink (was amber)
+    batteryTemp    = Color(0xFFA21CAF),  // deeper fuchsia (was pink)
+    controllerTemp = Color(0xFF2563EB),  // deeper blue (was burnt-orange)
     whPerKm        = Color(0xFF0D9488),  // deeper teal
     estRange       = Color(0xFF65A30D)   // deeper lime
 )
