@@ -40,13 +40,18 @@ interface MapProvider {
     )
 }
 
-/** Camera pose. [bearingDeg] drives heading-up rotation (0 = north-up). */
+/**
+ * Camera pose. [bearingDeg] drives heading-up rotation (0 = north-up). When [fitBounds]
+ * has ≥ 2 points the renderer frames the camera to fit ALL of them (route-preview mode),
+ * overriding [target]/[zoom]/[bearingDeg]; otherwise it centers on [target].
+ */
 @Immutable
 data class MapCameraState(
     val target: GeoLocation? = null,
     val zoom: Double = 15.0,
     val bearingDeg: Float = 0f,
     val tiltDeg: Float = 0f,
+    val fitBounds: List<GeoLocation> = emptyList(),
 )
 
 /**

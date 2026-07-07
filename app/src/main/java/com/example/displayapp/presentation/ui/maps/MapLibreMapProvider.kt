@@ -18,6 +18,7 @@ import com.example.displayapp.domain.model.GeoLocation
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -68,6 +69,9 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         val longPress = rememberUpdatedState(onLongPress)
         // Last camera target actually applied — the battery-conscious move gate.
         val lastApplied = remember { mutableStateOf<Pair<GeoLocation, Float>?>(null) }
+        // Last fit-bounds key applied — so a stable preview route fits once, then the
+        // user can pan freely without the camera snapping back every recomposition.
+        val lastFit = remember { mutableStateOf<String?>(null) }
 
         // Acquire the map + load style + install the route/puck sources & layers once.
         DisposableEffect(Unit) {
@@ -142,20 +146,43 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
             val m = map ?: return@LaunchedEffect
             m.uiSettings.setAllGesturesEnabled(interactive)
 
-            camera.target?.let { target ->
-                val prev = lastApplied.value
-                val moved = prev == null ||
-                    distanceMeters(prev.first, target) >= MIN_CAMERA_MOVE_M ||
-                    kotlin.math.abs(prev.second - camera.bearingDeg) >= MIN_BEARING_DELTA
-                if (moved) {
-                    lastApplied.value = target to camera.bearingDeg
-                    val pos = CameraPosition.Builder()
-                        .target(LatLng(target.latitude, target.longitude))
-                        .zoom(camera.zoom)
-                        .bearing(camera.bearingDeg.toDouble())
-                        .tilt(camera.tiltDeg.toDouble())
-                        .build()
-                    m.easeCamera(CameraUpdateFactory.newCameraPosition(pos), CAMERA_ANIM_MS)
+            if (camera.fitBounds.size >= 2) {
+                // Route-preview: frame the whole route once (keyed on the bounds), with
+                // extra bottom padding so the confirmation sheet doesn't cover the line.
+                val boundsKey = camera.fitBounds.joinToString(";") {
+                    "%.5f,%.5f".format(it.latitude, it.longitude)
+                }
+                if (lastFit.value != boundsKey) {
+                    val builder = LatLngBounds.Builder()
+                    camera.fitBounds.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
+                    runCatching { builder.build() }.getOrNull()?.let { bounds ->
+                        lastFit.value = boundsKey
+                        lastApplied.value = null // force the follow gate to re-apply later
+                        m.easeCamera(
+                            CameraUpdateFactory.newLatLngBounds(
+                                bounds, FIT_PAD_SIDE_PX, FIT_PAD_TOP_PX, FIT_PAD_SIDE_PX, FIT_PAD_BOTTOM_PX,
+                            ),
+                            CAMERA_ANIM_MS,
+                        )
+                    }
+                }
+            } else {
+                lastFit.value = null
+                camera.target?.let { target ->
+                    val prev = lastApplied.value
+                    val moved = prev == null ||
+                        distanceMeters(prev.first, target) >= MIN_CAMERA_MOVE_M ||
+                        kotlin.math.abs(prev.second - camera.bearingDeg) >= MIN_BEARING_DELTA
+                    if (moved) {
+                        lastApplied.value = target to camera.bearingDeg
+                        val pos = CameraPosition.Builder()
+                            .target(LatLng(target.latitude, target.longitude))
+                            .zoom(camera.zoom)
+                            .bearing(camera.bearingDeg.toDouble())
+                            .tilt(camera.tiltDeg.toDouble())
+                            .build()
+                        m.easeCamera(CameraUpdateFactory.newCameraPosition(pos), CAMERA_ANIM_MS)
+                    }
                 }
             }
 
@@ -205,6 +232,11 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         const val CAMERA_ANIM_MS = 700
         const val MIN_CAMERA_MOVE_M = 8.0   // don't re-center for sub-8 m GPS jitter
         const val MIN_BEARING_DELTA = 4f    // …or sub-4° heading wobble
+        // Route-fit padding (px): keep the line clear of the search bar (top) and the
+        // destination confirmation sheet (bottom).
+        const val FIT_PAD_SIDE_PX = 120
+        const val FIT_PAD_TOP_PX = 260
+        const val FIT_PAD_BOTTOM_PX = 640
     }
 }
 

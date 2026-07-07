@@ -92,19 +92,30 @@ fun CockpitMap(
     headingUp: Boolean = true,
     zoom: Double = 16.0,
     onLongPress: (GeoLocation) -> Unit = {},
+    fitRoute: Boolean = false,
 ) {
     val mapProvider = LocalMapProvider.current
     if (!mapProvider.isConfigured) return
 
-    // Only follow the rider when there's no active destination — while navigating,
-    // frame the whole route so the destination pin + line stay visible.
-    val bearing = if (headingUp && destination == null) (location?.bearingDeg ?: 0f) else 0f
-    mapProvider.Map(
-        camera = MapCameraState(
+    // Preview: frame the whole route (origin → destination) so the user sees where
+    // they're going before confirming. Otherwise follow the rider.
+    val camera = if (fitRoute && routePath.size >= 2) {
+        MapCameraState(
+            target = location ?: JAKARTA_FALLBACK,
+            zoom = zoom,
+            bearingDeg = 0f,
+            fitBounds = routePath,
+        )
+    } else {
+        val bearing = if (headingUp && destination == null) (location?.bearingDeg ?: 0f) else 0f
+        MapCameraState(
             target = location ?: JAKARTA_FALLBACK,
             zoom = if (location != null) zoom else 4.0,
             bearingDeg = bearing,
-        ),
+        )
+    }
+    mapProvider.Map(
+        camera = camera,
         content = MapContent(
             location = location,
             showLocationPuck = true,

@@ -95,6 +95,7 @@ fun NavigationScreen(
                     interactive = true, // fullscreen browse — pan/zoom on
                     headingUp = false,  // north-up for destination browsing
                     onLongPress = viewModel::dropPin, // long-press anywhere → destination
+                    fitRoute = state.previewing, // frame the whole route while confirming
                 )
             }
 
