@@ -7,7 +7,9 @@ import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.NavState
+import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.NavigationProvider
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
@@ -51,6 +53,9 @@ class RouteNavigator(
     private var lastState: NavState? = null
     private var lastSendMs = 0L
 
+    // Latest route geometry (from the provider's activeRoute), for sending RouteChunks.
+    @Volatile private var currentPlan: RoutePlan? = null
+
     init {
         // Re-seed the board's route context after a reconnect mid-session.
         transport.connectionState
@@ -68,6 +73,7 @@ class RouteNavigator(
             // any SDK that drives progress from within start()) emit before start()
             // returns, so collecting *after* it would miss everything but the last
             // replayed value. The provider's SharedFlow replay covers the subscribe race.
+            launch { provider.activeRoute.collect { currentPlan = it } }
             launch { provider.progress.collect { onProgress(it) } }
             provider.start(destination)
         }
@@ -95,10 +101,10 @@ class RouteNavigator(
     }
 
     private suspend fun onProgress(p: NavProgress) {
-        // New route (initial or reroute) → announce it first, reliably.
+        // New route (initial or reroute) → send the route (summary + geometry) first, reliably.
         if (p.routeId != lastSentRouteId && p.state == NavState.Navigating) {
             lastSummary = p
-            transport.writeNav(NavigationSchema.frameRouteSummary(summary(p)), reliable = true)
+            sendRoute(p)
             lastSentRouteId = p.routeId
         }
 
@@ -122,9 +128,66 @@ class RouteNavigator(
 
     private suspend fun resendSummary() {
         val s = lastSummary ?: return
-        Timber.d("Nav: reconnect — re-seeding RouteSummary for route ${s.routeId}")
-        transport.writeNav(NavigationSchema.frameRouteSummary(summary(s)), reliable = true)
+        Timber.d("Nav: reconnect — re-seeding route for ${s.routeId}")
+        sendRoute(s)
         lastManeuverKey = null // force the next instruction to send immediately
+    }
+
+    /**
+     * Send the whole route to the controller: one [NavigationSchema.RouteSummary]
+     * (with the real chunk count) followed by the downsampled route geometry as
+     * [NavigationSchema.RouteChunk] frames — all reliable. Provider-agnostic: the
+     * geometry is [RoutePlan.polyline] (domain points) from the active session.
+     */
+    private suspend fun sendRoute(p: NavProgress) {
+        val chunks = currentPlan?.polyline?.let { routeChunks(p.routeId, it) }.orEmpty()
+        transport.writeNav(NavigationSchema.frameRouteSummary(summary(p, chunks.size)), reliable = true)
+        for (chunk in chunks) transport.writeNav(NavigationSchema.frameRouteChunk(chunk), reliable = true)
+    }
+
+    /** Downsample + delta-encode the route line into frame-sized, self-contained chunks. */
+    private fun routeChunks(routeId: Long, polyline: List<GeoLocation>): List<NavigationSchema.RouteChunk> {
+        val pts = downsample(polyline, MAX_ROUTE_POINTS)
+        if (pts.size < 2) return emptyList()
+        // Windows overlap by one point so consecutive chunks share a vertex (no gap when
+        // the board concatenates them by index).
+        val windows = ArrayList<List<GeoLocation>>()
+        var start = 0
+        while (start < pts.size - 1) {
+            val end = minOf(start + POINTS_PER_CHUNK, pts.size)
+            windows.add(pts.subList(start, end))
+            start = end - 1
+        }
+        val total = windows.size
+        return windows.mapIndexed { index, w ->
+            val anchor = w.first()
+            val deltas = ShortArray((w.size - 1) * 2)
+            for (j in 1 until w.size) {
+                deltas[(j - 1) * 2] = deltaE5(w[j].latitude - w[j - 1].latitude)
+                deltas[(j - 1) * 2 + 1] = deltaE5(w[j].longitude - w[j - 1].longitude)
+            }
+            NavigationSchema.RouteChunk(
+                routeId = routeId,
+                anchorLatE7 = (anchor.latitude * 1e7).roundToInt(),
+                anchorLonE7 = (anchor.longitude * 1e7).roundToInt(),
+                index = index,
+                total = total,
+                deltas = deltas,
+            )
+        }
+    }
+
+    private fun deltaE5(degrees: Double): Short =
+        (degrees * 1e5).roundToInt().coerceIn(-32768, 32767).toShort()
+
+    private fun downsample(pts: List<GeoLocation>, max: Int): List<GeoLocation> {
+        if (pts.size <= max) return pts
+        val step = pts.size.toDouble() / max
+        val out = ArrayList<GeoLocation>(max + 1)
+        var i = 0.0
+        while (i < pts.size) { out.add(pts[i.toInt()]); i += step }
+        if (out.last() !== pts.last()) out.add(pts.last())
+        return out
     }
 
     private fun stopInternal(sendCancel: Boolean) {
@@ -142,6 +205,7 @@ class RouteNavigator(
         lastManeuverKey = null
         lastState = null
         lastSendMs = 0L
+        currentPlan = null
     }
 
     /** Send cadence: immediate on non-navigating states, 0.2 Hz stationary, else 1 Hz. */
@@ -154,12 +218,12 @@ class RouteNavigator(
     private fun maneuverKey(p: NavProgress): Int =
         (p.routeId.toInt() * 31) xor (p.maneuver.wire shl 8) xor p.roundaboutExit
 
-    private fun summary(p: NavProgress) = NavigationSchema.RouteSummary(
+    private fun summary(p: NavProgress, polylineChunks: Int) = NavigationSchema.RouteSummary(
         routeId = p.routeId,
         totalDistanceM = u32(p.totalDistanceM),
         totalDurationSec = u32(p.totalDurationSec),
         maneuverCount = u16(p.maneuverCount),
-        polylineChunks = 0, // phase 2
+        polylineChunks = polylineChunks,
         schemaVersion = SCHEMA_VERSION,
         destinationName = p.destinationName,
     )
@@ -185,5 +249,9 @@ class RouteNavigator(
 
     private companion object {
         const val SCHEMA_VERSION = 1
+        // Route-geometry sending: cap the drawn line's resolution and keep each chunk
+        // well under the 240-byte single-frame limit (≤40 pts ⇒ ~197 B payload).
+        const val MAX_ROUTE_POINTS = 200
+        const val POINTS_PER_CHUNK = 40
     }
 }

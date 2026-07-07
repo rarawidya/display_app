@@ -8,6 +8,8 @@ import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.Maneuver
 import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.NavState
+import com.example.displayapp.domain.model.RouteManeuver
+import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.NavigationProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +55,9 @@ class RouteNavigatorTest {
 
     private class FakeProvider : NavigationProvider {
         private val flow = MutableSharedFlow<NavProgress>(extraBufferCapacity = 16)
+        val plan = MutableStateFlow<RoutePlan?>(null)
         override val progress: Flow<NavProgress> = flow
+        override val activeRoute: Flow<RoutePlan?> = plan
         override suspend fun start(destination: GeoLocation) {}
         override fun stop() {}
         suspend fun emit(p: NavProgress) = flow.emit(p)
@@ -100,6 +104,48 @@ class RouteNavigatorTest {
         assertEquals(NavigationSchema.NAV_TYPE_NAV_INSTRUCTION, navType(terminal.first))
         assertTrue("terminal (arrived) is a reliable write", terminal.second)
 
+        scope.cancel()
+    }
+
+    @Test
+    fun sends_route_geometry_to_the_controller_on_a_new_route() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val transport = FakeTransport()
+        val provider = FakeProvider()
+        val nav = RouteNavigator(provider, transport, scope, now = { 0L })
+
+        // A route with a handful of points → geometry to chunk + send.
+        provider.plan.value = RoutePlan(
+            origin = GeoLocation(0.0, 0.0),
+            destination = GeoLocation(0.0, 0.01),
+            polyline = (0..10).map { GeoLocation(0.0, it * 0.001) },
+            maneuvers = listOf(
+                RouteManeuver(Maneuver.Depart, GeoLocation(0.0, 0.0), "A", 0, polylineIndex = 0),
+            ),
+            distanceMeters = 1100, durationSeconds = 120, destinationName = "Dest",
+        )
+
+        nav.startNavigation(GeoLocation(0.0, 0.0)) // collector picks up plan (Unconfined)
+        runBlocking {
+            provider.emit(
+                NavProgress(
+                    routeId = 1L, state = NavState.Navigating, maneuver = Maneuver.TurnLeft,
+                    totalDistanceM = 1100, totalDurationSec = 120, destinationName = "Dest",
+                    maneuverCount = 1,
+                ),
+            )
+        }
+
+        val types = transport.navFrames.map { navType(it.first) }
+        // Route summary first, then the route geometry, then the live instruction.
+        assertEquals(NavigationSchema.NAV_TYPE_ROUTE_SUMMARY, types.first())
+        assertTrue("route geometry (RouteChunk) is sent",
+            types.contains(NavigationSchema.NAV_TYPE_ROUTE_CHUNK))
+        assertEquals(NavigationSchema.NAV_TYPE_NAV_INSTRUCTION, types.last())
+        // Summary + all chunks are reliable writes.
+        transport.navFrames.dropLast(1).forEach {
+            assertTrue("route frames are reliable", it.second)
+        }
         scope.cancel()
     }
 

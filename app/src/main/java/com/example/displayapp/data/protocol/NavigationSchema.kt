@@ -41,6 +41,7 @@ object NavigationSchema {
     // Cap'n Proto list-pointer sub-fields for a Text (= List(UInt8)).
     private const val LIST_POINTER_TYPE = 1L      // 0 = struct, 1 = list
     private const val LIST_ELEMENT_SIZE_BYTE = 2L // capnp elementSize enum: 2 = 1 byte
+    private const val LIST_ELEMENT_SIZE_TWO_BYTES = 3L // capnp elementSize enum: 3 = 2 bytes (Int16)
 
     /**
      * Fields of `NavInstruction` (navType 0x02). Integers are widened to [Long]/[Int]
@@ -74,6 +75,20 @@ object NavigationSchema {
         val destinationName: String,
     )
 
+    /**
+     * Fields of `RouteChunk` (navType 0x03) — one chunk of the downsampled route line.
+     * [deltas] is interleaved `[dLat, dLon, …]` in 1e-5 deg (~1.1 m) from the running
+     * position, with the first point at the absolute [anchorLatE7]/[anchorLonE7] (1e-7 deg).
+     */
+    data class RouteChunk(
+        val routeId: Long,
+        val anchorLatE7: Int,
+        val anchorLonE7: Int,
+        val index: Int,
+        val total: Int,
+        val deltas: ShortArray,
+    )
+
     /** Full BLE frame (ready to write to 0xAF06) for a [NavInstruction]. */
     fun frameNavInstruction(n: NavInstruction): ByteArray =
         FrameEncoder.encode(payloadNavInstruction(n))
@@ -81,6 +96,10 @@ object NavigationSchema {
     /** Full BLE frame (ready to write to 0xAF06) for a [RouteSummary]. */
     fun frameRouteSummary(r: RouteSummary): ByteArray =
         FrameEncoder.encode(payloadRouteSummary(r))
+
+    /** Full BLE frame (ready to write to 0xAF06) for a [RouteChunk]. */
+    fun frameRouteChunk(c: RouteChunk): ByteArray =
+        FrameEncoder.encode(payloadRouteChunk(c))
 
     /** `[navType][capnp]` payload for a [NavInstruction] (NavInstruction = 4 data words). */
     fun payloadNavInstruction(n: NavInstruction): ByteArray =
@@ -117,6 +136,49 @@ object NavigationSchema {
             b.put(r.polylineChunks.toByte())       // @4  byte 14
             b.put(r.schemaVersion.toByte())        // @5  byte 15
         }
+
+    /**
+     * `[navType][capnp]` payload for a [RouteChunk] (2 data words + one `List(Int16)`
+     * pointer). Byte-verified against the reference compiler in NavigationFrameTest.
+     */
+    fun payloadRouteChunk(c: RouteChunk): ByteArray {
+        val dataWords = 2
+        val count = c.deltas.size
+        val listBytes = count * 2
+        val listWords = (listBytes + (WORD - 1)) / WORD
+        val segmentWords = 1 + dataWords + PTR_WORDS + listWords
+
+        val buf = ByteBuffer.allocate(WORD + segmentWords * WORD).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putInt(0)
+        buf.putInt(segmentWords)
+        buf.putLong(0L or (dataWords.toLong() shl 32) or (PTR_WORDS.toLong() shl 48))
+
+        // Data section (2 words).
+        buf.putInt(c.routeId.toInt())   // @0  bytes 0..3
+        buf.putInt(c.anchorLatE7)       // @1  bytes 4..7
+        buf.putInt(c.anchorLonE7)       // @2  bytes 8..11
+        buf.put(c.index.toByte())       // @3  byte 12
+        buf.put(c.total.toByte())       // @4  byte 13
+        buf.putShort(0)                 // padding bytes 14..15
+
+        // Pointer section: List(Int16) at slot 0 (elementSize 3 = twoBytes).
+        val pointerWord = 1 + dataWords
+        val listStartWord = 1 + dataWords + PTR_WORDS
+        val offsetWords = (listStartWord - (pointerWord + 1)).toLong()
+        val low = ((offsetWords shl 2) or LIST_POINTER_TYPE) and 0xFFFFFFFFL
+        val high = ((count.toLong() shl 3) or LIST_ELEMENT_SIZE_TWO_BYTES) and 0xFFFFFFFFL
+        buf.putLong(low or (high shl 32))
+
+        // List data (Int16 LE, word-padded).
+        for (d in c.deltas) buf.putShort(d)
+        repeat(listWords * WORD - listBytes) { buf.put(0) }
+
+        val capnp = buf.array()
+        return ByteArray(1 + capnp.size).also {
+            it[0] = NAV_TYPE_ROUTE_CHUNK.toByte()
+            System.arraycopy(capnp, 0, it, 1, capnp.size)
+        }
+    }
 
     /**
      * Serialize a struct with [dataWords] data words + exactly one trailing Text

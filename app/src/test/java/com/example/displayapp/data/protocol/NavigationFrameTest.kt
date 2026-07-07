@@ -101,6 +101,28 @@ class NavigationFrameTest {
         assertEquals(navArrivedGolden.toList(), frame.toList())
     }
 
+    // capnp encode navigation.capnp RouteChunk '(routeId=287454020, anchorLatE7=-72659000,
+    //   anchorLonE7=1127521000, index=0, total=2, deltas=[100,-50,110,-40])'
+    private val routeChunkGolden = hex(
+        "aa31030000000005000000000000000200010044332211c84fabfbe89a3443" +
+            "0002000001000000230000006400ceff6e00d8ff4df1"
+    )
+
+    @Test
+    fun routeChunk_matches_reference_compiler_frame() {
+        val frame = NavigationSchema.frameRouteChunk(
+            NavigationSchema.RouteChunk(
+                routeId = 287454020L,
+                anchorLatE7 = -72659000,
+                anchorLonE7 = 1127521000,
+                index = 0,
+                total = 2,
+                deltas = shortArrayOf(100, -50, 110, -40),
+            ),
+        )
+        assertEquals(routeChunkGolden.toList(), frame.toList())
+    }
+
     @Test
     fun frame_structure_and_crc_are_consistent() {
         val frame = NavigationSchema.frameNavInstruction(
