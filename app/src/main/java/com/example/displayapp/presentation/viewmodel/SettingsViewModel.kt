@@ -125,6 +125,7 @@ class SettingsViewModel(
         devicePreferences.setAutoConnect(value)
     }
     fun setShowDiagnosticsOverlay(value: Boolean) = viewModelScope.launch { appPreferences.setShowDiagnosticsOverlay(value) }
+    fun setNotificationRelayEnabled(value: Boolean) = viewModelScope.launch { appPreferences.setNotificationRelayEnabled(value) }
     fun setDynamicColor(enabled: Boolean) = viewModelScope.launch { themeRepository.setDynamicColor(enabled) }
 
     /* ---------------------- Developer mode ---------------------- */

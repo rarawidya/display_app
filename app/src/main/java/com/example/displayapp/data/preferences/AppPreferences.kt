@@ -43,6 +43,7 @@ class AppPreferences(private val context: Context) {
             ),
             autoConnect = p[KEY_AUTO_CONNECT] ?: true,
             showDiagnosticsOverlay = p[KEY_DIAGNOSTICS_OVERLAY] ?: false,
+            notificationRelayEnabled = p[KEY_NOTIFICATION_RELAY] ?: false,
             devModeUnlocked = p[KEY_DEV_MODE_UNLOCKED] ?: false
         )
     }
@@ -73,6 +74,9 @@ class AppPreferences(private val context: Context) {
     suspend fun setShowDiagnosticsOverlay(value: Boolean) {
         context.appPrefsDataStore.edit { it[KEY_DIAGNOSTICS_OVERLAY] = value }
     }
+    suspend fun setNotificationRelayEnabled(value: Boolean) {
+        context.appPrefsDataStore.edit { it[KEY_NOTIFICATION_RELAY] = value }
+    }
     suspend fun setDevModeUnlocked(value: Boolean) {
         context.appPrefsDataStore.edit { it[KEY_DEV_MODE_UNLOCKED] = value }
     }
@@ -86,6 +90,7 @@ class AppPreferences(private val context: Context) {
         val KEY_SIMULATOR_SCENARIO  = stringPreferencesKey("simulator_scenario")
         val KEY_AUTO_CONNECT        = booleanPreferencesKey("auto_connect")
         val KEY_DIAGNOSTICS_OVERLAY = booleanPreferencesKey("diagnostics_overlay")
+        val KEY_NOTIFICATION_RELAY  = booleanPreferencesKey("notification_relay_enabled")
         val KEY_DEV_MODE_UNLOCKED   = booleanPreferencesKey("dev_mode_unlocked")
 
         // Defensive parse — bad/older string keys silently fall back to default.

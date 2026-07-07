@@ -152,21 +152,24 @@ fun PreferenceRow(
     }
 }
 
-/** Switch-toggle row. */
+/** Switch-toggle row. [enabled] = false greys the switch and ignores taps. */
 @Composable
 fun SwitchRow(
     title: String,
     subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    leadingIcon: ImageVector? = null
+    leadingIcon: ImageVector? = null,
+    enabled: Boolean = true
 ) {
     PreferenceRow(
         title = title,
         subtitle = subtitle,
         leadingIcon = leadingIcon,
-        onClick = { onCheckedChange(!checked) },
-        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) }
+        onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
+        trailing = {
+            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        }
     )
 }
 

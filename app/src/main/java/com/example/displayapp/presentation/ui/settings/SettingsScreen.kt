@@ -38,6 +38,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -78,12 +81,21 @@ fun SettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Whether the user has granted this app "Notification access" in system
+    // settings — a system-bound grant with no runtime-permission Flow, so we
+    // re-read it on every RESUME (the user may toggle it and return).
+    var notificationAccess by remember {
+        mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName))
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshPermissions()
                 viewModel.refreshStorage()
+                notificationAccess =
+                    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -92,11 +104,19 @@ fun SettingsScreen(
 
     SettingsContent(
         state = state,
+        notificationAccessGranted = notificationAccess,
         onBack = onBack,
         onThemeMode = viewModel::setThemeMode,
         onAutoConnect = viewModel::setAutoConnect,
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
+        onNotificationRelay = viewModel::setNotificationRelayEnabled,
+        onOpenNotificationAccess = {
+            context.startActivity(
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        },
         onClearTrips = viewModel::clearTripHistory,
         onUnlockDeveloper = viewModel::unlockDeveloperMode,
         onOpenDeveloper = onOpenDeveloper,
@@ -110,11 +130,14 @@ fun SettingsScreen(
 @Composable
 fun SettingsContent(
     state: SettingsUiState,
+    notificationAccessGranted: Boolean,
     onBack: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
     onForgetDevice: () -> Unit,
     onSimulatorMode: (Boolean) -> Unit,
+    onNotificationRelay: (Boolean) -> Unit,
+    onOpenNotificationAccess: () -> Unit,
     onClearTrips: () -> Unit,
     onUnlockDeveloper: () -> Unit,
     onOpenDeveloper: () -> Unit,
@@ -168,6 +191,12 @@ fun SettingsContent(
                     onAutoConnect = onAutoConnect,
                     onForgetDevice = onForgetDevice,
                     onSimulatorMode = onSimulatorMode
+                )
+                NotificationsSection(
+                    app = state.app,
+                    accessGranted = notificationAccessGranted,
+                    onToggle = onNotificationRelay,
+                    onOpenAccess = onOpenNotificationAccess
                 )
                 StorageSection(
                     storage = state.storage,
@@ -289,6 +318,36 @@ private fun ConnectionSection(
             subtitle = "Use generated telemetry instead of a real device",
             checked = app.simulatorMode,
             onCheckedChange = onSimulatorMode
+        )
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  2b. Phone notifications                                                    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun NotificationsSection(
+    app: AppSettings,
+    accessGranted: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onOpenAccess: () -> Unit
+) {
+    SettingsSection(title = "Phone notifications") {
+        SwitchRow(
+            title = "Mirror to vehicle display",
+            subtitle = "Push calls & messages to the board's screen",
+            checked = app.notificationRelayEnabled && accessGranted,
+            enabled = accessGranted,
+            onCheckedChange = onToggle
+        )
+        SectionDivider()
+        ActionRow(
+            title = if (accessGranted) "Notification access granted" else "Grant notification access",
+            subtitle = if (accessGranted) "Tap to review in system settings"
+                else "Required — allow this app to read notifications",
+            leadingTint = if (accessGranted) EvGreen else EvAmber,
+            onClick = onOpenAccess
         )
     }
 }

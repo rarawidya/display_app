@@ -97,6 +97,7 @@ class SwitchableDataSource(
     override fun stopDiscovery() = delegate.stopDiscovery()
     override suspend fun connect(address: String) = delegate.connect(address)
     override fun disconnect() = delegate.disconnect()
+    override suspend fun writeCommand(frame: ByteArray): Boolean = delegate.writeCommand(frame)
 
     override fun close() {
         mirrorJobs.forEach { it.cancel() }

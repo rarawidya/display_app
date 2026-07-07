@@ -64,6 +64,7 @@ import com.example.displayapp.presentation.ui.settings.components.SwitchRow
 import com.example.displayapp.presentation.viewmodel.SettingsViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
+import com.example.displayapp.ui.theme.EvGreen
 import com.example.displayapp.ui.theme.EvRed
 import kotlinx.coroutines.launch
 
@@ -430,6 +431,16 @@ private fun DiagnosticsSection(
             Counter("Sync loss", diagnostics.syncLosses.toString(),
                 accent = if (diagnostics.syncLosses > 0) EvRed else null)
             Counter("Reconn.", diagnostics.reconnects.toString())
+        }
+        SectionDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Counter("Notif pushed", diagnostics.notificationsPushed.toString(),
+                accent = if (diagnostics.notificationsPushed > 0) EvGreen else null)
+            Counter("Notif dropped", diagnostics.notificationsDropped.toString(),
+                accent = if (diagnostics.notificationsDropped > 0) EvAmber else null)
         }
         SectionDivider()
         ActionRow(

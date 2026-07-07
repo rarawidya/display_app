@@ -25,5 +25,6 @@ interface AppPreferencesRepository {
     suspend fun setSimulatorScenario(value: TelemetryScenario)
     suspend fun setAutoConnect(value: Boolean)
     suspend fun setShowDiagnosticsOverlay(value: Boolean)
+    suspend fun setNotificationRelayEnabled(value: Boolean)
     suspend fun setDevModeUnlocked(value: Boolean)
 }

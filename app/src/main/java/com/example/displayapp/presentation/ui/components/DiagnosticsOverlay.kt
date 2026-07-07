@@ -35,6 +35,9 @@ fun DiagnosticsOverlay(
         DiagLine("CRC Err", "${diagnostics.crcErrors}")
         DiagLine("Sync Loss", "${diagnostics.syncLosses}")
         DiagLine("Reconnects", "${diagnostics.reconnects}")
+        if (diagnostics.notificationsPushed > 0 || diagnostics.notificationsDropped > 0) {
+            DiagLine("Notif ✓/✗", "${diagnostics.notificationsPushed}/${diagnostics.notificationsDropped}")
+        }
         if (diagnostics.lastUpdateMs > 0) {
             val age = System.currentTimeMillis() - diagnostics.lastUpdateMs
             DiagLine("Data Age", "${age}ms")

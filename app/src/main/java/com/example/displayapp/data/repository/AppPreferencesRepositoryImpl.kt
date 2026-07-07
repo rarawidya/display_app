@@ -24,5 +24,6 @@ class AppPreferencesRepositoryImpl(
     override suspend fun setSimulatorScenario(value: TelemetryScenario) = prefs.setSimulatorScenario(value)
     override suspend fun setAutoConnect(value: Boolean)             = prefs.setAutoConnect(value)
     override suspend fun setShowDiagnosticsOverlay(value: Boolean)  = prefs.setShowDiagnosticsOverlay(value)
+    override suspend fun setNotificationRelayEnabled(value: Boolean) = prefs.setNotificationRelayEnabled(value)
     override suspend fun setDevModeUnlocked(value: Boolean)         = prefs.setDevModeUnlocked(value)
 }

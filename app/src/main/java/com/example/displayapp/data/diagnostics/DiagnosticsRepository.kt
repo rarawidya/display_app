@@ -24,6 +24,10 @@ data class DiagnosticsSnapshot(
     val crcErrors: Long = 0,
     val syncLosses: Long = 0,
     val reconnects: Long = 0,
+    /** Phone notifications successfully written to the board (0xAF07). */
+    val notificationsPushed: Long = 0,
+    /** Phone notifications that couldn't be delivered (no link / write failed). */
+    val notificationsDropped: Long = 0,
     val lastUpdateMs: Long = 0
 )
 
@@ -78,6 +82,14 @@ class DiagnosticsRepository(
 
     fun reportFps(fps: Int) {
         _snapshot.update { it.copy(framesPerSecond = fps) }
+    }
+
+    /** Record a phone→board notification push outcome (see [PhoneNotificationSender]). */
+    fun reportNotificationPush(delivered: Boolean) {
+        _snapshot.update {
+            if (delivered) it.copy(notificationsPushed = it.notificationsPushed + 1)
+            else it.copy(notificationsDropped = it.notificationsDropped + 1)
+        }
     }
 
     fun reset() {

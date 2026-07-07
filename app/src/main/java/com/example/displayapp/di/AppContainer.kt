@@ -10,6 +10,7 @@ import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
+import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
 import com.example.displayapp.data.preferences.DevicePreferences
@@ -167,6 +168,16 @@ class AppContainer(private val context: Context) {
     val bluetoothDataSource: BluetoothDataSource get() = switchableDataSource
 
     val telemetryMapper: TelemetryMapper by lazy { TelemetryMapper() }
+
+    /**
+     * Pushes phone notifications to the board over the active transport's command
+     * channel (0xAF07). Bound to the stable [bluetoothDataSource] facade so it
+     * always targets the live link; [com.example.displayapp.service.NotificationRelayService]
+     * reads it via the app container.
+     */
+    val phoneNotificationSender: PhoneNotificationSender by lazy {
+        PhoneNotificationSender(bluetoothDataSource, diagnosticsRepository)
+    }
 
     val vehicleRepository: VehicleRepository by lazy {
         VehicleRepositoryImpl(bluetoothDataSource, telemetryMapper, tripSessionManager, diagnosticsRepository)

@@ -18,4 +18,12 @@ interface BluetoothDataSource {
     suspend fun connect(address: String)
     fun disconnect()
     fun close()
+
+    /**
+     * Push one complete command frame to the board (phone → board channel).
+     * Returns false when the transport can't deliver it — not connected, no
+     * command characteristic, or the source has no physical board (simulator).
+     * Sources that only receive telemetry may leave the default no-op.
+     */
+    suspend fun writeCommand(frame: ByteArray): Boolean = false
 }

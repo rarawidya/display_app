@@ -127,6 +127,10 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
+    /** Route a command frame to the live GATT link (phone → board, 0xAF07). */
+    override suspend fun writeCommand(frame: ByteArray): Boolean =
+        gattClient?.writeCommand(frame) ?: false
+
     override fun close() {
         disconnect()
         if (adapterReceiverRegistered) {

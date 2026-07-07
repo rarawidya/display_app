@@ -81,6 +81,13 @@ data class AppSettings(
 
     val showDiagnosticsOverlay: Boolean = false,
 
+    /**
+     * Mirror the phone's status-bar notifications to the board's on-screen banner
+     * (docs/APP-NOTIFICATION-INTEGRATION.md). Off by default — also requires the
+     * system "Notification access" grant. Gates delivery in NotificationRelayService.
+     */
+    val notificationRelayEnabled: Boolean = false,
+
     /** Set true once the user taps version row 7 times. Survives app restart. */
     val devModeUnlocked: Boolean = false
 )

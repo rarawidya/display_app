@@ -84,6 +84,8 @@ data class DiagnosticsState(
     val crcErrors: Long = 0,
     val syncLosses: Long = 0,
     val reconnects: Long = 0,
+    val notificationsPushed: Long = 0,
+    val notificationsDropped: Long = 0,
     val lastUpdateMs: Long = 0
 )
 

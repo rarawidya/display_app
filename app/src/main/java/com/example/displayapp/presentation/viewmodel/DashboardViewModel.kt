@@ -141,6 +141,8 @@ class DashboardViewModel(
                 crcErrors = diag.crcErrors,
                 syncLosses = diag.syncLosses,
                 reconnects = diag.reconnects,
+                notificationsPushed = diag.notificationsPushed,
+                notificationsDropped = diag.notificationsDropped,
                 // Prefer the live frame timestamp — it ticks every frame.
                 // Falling back to diag.lastUpdateMs would lag by up to the
                 // diagnostics-flush interval.
