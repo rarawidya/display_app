@@ -39,12 +39,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.DisplayApp">
 
-        <!-- Maps SDK reads this key. Value comes from local.properties via
-             manifestPlaceholders — see app/build.gradle.kts. Missing/empty key
-             is handled gracefully at runtime by the MapKeyGate composable. -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}" />
+        <!-- MapLibre needs no manifest API key. The tile style URL comes from
+             local.properties (MAP_STYLE_URL) via BuildConfig; a missing/empty
+             style is handled at runtime by the MapStyleGate placeholder. -->
 
         <activity
             android:name=".MainActivity"

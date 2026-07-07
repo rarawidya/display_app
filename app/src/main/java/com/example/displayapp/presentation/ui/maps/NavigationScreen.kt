@@ -31,7 +31,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -51,18 +50,6 @@ import com.example.displayapp.presentation.viewmodel.MapsViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvBlue
 import com.example.displayapp.ui.theme.EvGreen
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.CameraPositionState
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapType
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
 
 /**
  * Fullscreen navigation surface.
@@ -91,16 +78,19 @@ fun NavigationScreen(
         color = MaterialTheme.colorScheme.background
     ) {
         Box(Modifier.fillMaxSize()) {
-            // Map surface — gated. When the API key is missing, the gate renders
-            // a "map preview" placeholder in place of the live GoogleMap. The
-            // search bar, back button, and ETA card above stay live regardless,
-            // so the user can still browse and select destinations.
-            MapKeyGate(modifier = Modifier.fillMaxSize()) {
-                NavigationMap(
-                    currentLocation = state.currentLocation,
+            // Map surface — renderer-agnostic. When no tile style is configured
+            // the gate renders a "map preview" placeholder in place of the live
+            // map. The search bar, back button, and ETA card above stay live
+            // regardless, so the user can still browse and select destinations.
+            val mapProvider = LocalMapProvider.current
+            MapStyleGate(configured = mapProvider.isConfigured, modifier = Modifier.fillMaxSize()) {
+                CockpitMap(
+                    location = state.currentLocation,
+                    routePath = state.route?.polyline.orEmpty(),
                     destination = state.destination,
-                    polyline = state.route?.polyline.orEmpty(),
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    interactive = true, // fullscreen browse — pan/zoom on
+                    headingUp = false,  // north-up for destination browsing
                 )
             }
 
@@ -155,63 +145,6 @@ fun NavigationScreen(
                         .padding(Dim.screenGutter)
                 )
             }
-        }
-    }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Map surface                                                               */
-/* -------------------------------------------------------------------------- */
-
-@Composable
-private fun NavigationMap(
-    currentLocation: GeoLocation?,
-    destination: GeoLocation?,
-    polyline: List<GeoLocation>,
-    modifier: Modifier = Modifier
-) {
-    val fallback = LatLng(-6.2088, 106.8456)
-    val cameraPosition: CameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(fallback, 4f)
-    }
-
-    LaunchedEffect(currentLocation) {
-        val loc = currentLocation ?: return@LaunchedEffect
-        cameraPosition.animate(
-            CameraUpdateFactory.newLatLngZoom(LatLng(loc.latitude, loc.longitude), 15f)
-        )
-    }
-
-    GoogleMap(
-        modifier = modifier,
-        cameraPositionState = cameraPosition,
-        properties = MapProperties(mapType = MapType.NORMAL),
-        uiSettings = MapUiSettings(
-            compassEnabled = false,
-            zoomControlsEnabled = false,
-            mapToolbarEnabled = false,
-            myLocationButtonEnabled = false
-        )
-    ) {
-        currentLocation?.let { loc ->
-            Marker(
-                state = MarkerState(LatLng(loc.latitude, loc.longitude)),
-                title = "You",
-                snippet = "Current location"
-            )
-        }
-        destination?.let { dest ->
-            Marker(
-                state = MarkerState(LatLng(dest.latitude, dest.longitude)),
-                title = "Destination"
-            )
-        }
-        if (polyline.size >= 2) {
-            Polyline(
-                points = polyline.map { LatLng(it.latitude, it.longitude) },
-                color = EvBlue,
-                width = 10f
-            )
         }
     }
 }

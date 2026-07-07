@@ -2,6 +2,7 @@ package com.example.displayapp.di
 
 import android.content.Context
 import android.content.pm.PackageManager
+import com.example.displayapp.BuildConfig
 import com.example.displayapp.data.bluetooth.BluetoothDataSource
 import com.example.displayapp.data.bluetooth.SwitchableDataSource
 import com.example.displayapp.data.bluetooth.ble.BleDataSource
@@ -105,6 +106,16 @@ class AppContainer(private val context: Context) {
 
     val locationRepository: LocationRepository by lazy {
         FusedLocationRepository(context)
+    }
+
+    /**
+     * Active map renderer (MapLibre). Behind the renderer-neutral
+     * [com.example.displayapp.presentation.ui.maps.MapProvider] interface so the map
+     * SDK is swappable without touching any screen. Reads the tile style URL from
+     * `BuildConfig.MAP_STYLE_URL` (local.properties) — blank → placeholder gate.
+     */
+    val mapProvider: com.example.displayapp.presentation.ui.maps.MapProvider by lazy {
+        com.example.displayapp.presentation.ui.maps.MapLibreMapProvider(BuildConfig.MAP_STYLE_URL)
     }
 
     val tripRepository: TripRepository by lazy {

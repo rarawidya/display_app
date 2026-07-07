@@ -28,27 +28,29 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.displayapp.BuildConfig
 import com.example.displayapp.ui.theme.EvBlue
 import com.example.displayapp.ui.theme.EvBlueDeep
 
 /**
- * Renders [content] only when a Google Maps API key is configured. Otherwise
- * shows a polished "map preview" placeholder — stylized roads, a marker pin,
- * and a friendly "awaiting API key" caption — so the surface still feels like
- * a map area while the user finishes setup.
+ * Renders [content] only when the map renderer is [configured] (a tile style is set).
+ * Otherwise shows a polished "map preview" placeholder — stylized roads, a marker pin,
+ * and a caption — so the surface still reads as a map area during setup.
  *
- * To activate the real map, add the following to `local.properties` (which is
- * gitignored) and rebuild:
+ * Renderer-neutral: it takes a boolean rather than reading any SDK/BuildConfig, so it
+ * works for MapLibre or any future [MapProvider]. Callers pass `mapProvider.isConfigured`.
  *
- *     MAPS_API_KEY=AIza…your-key…
+ * To activate the real map, add a MapLibre style URL to `local.properties` (gitignored)
+ * and rebuild:
+ *
+ *     MAP_STYLE_URL=https://…/style.json?key=…
  */
 @Composable
-fun MapKeyGate(
+fun MapStyleGate(
+    configured: Boolean,
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    if (BuildConfig.MAPS_API_KEY.isBlank()) {
+    if (!configured) {
         MapPreviewPlaceholder(modifier = modifier)
     } else {
         content()
@@ -67,68 +69,35 @@ private fun MapPreviewPlaceholder(modifier: Modifier = Modifier) {
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        tonalElevation = 2.dp
+        tonalElevation = 2.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1) Faux map basemap — vertical gradient + decorative roads
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(listOf(baseTop, baseBottom))
-                    )
+                    .background(Brush.verticalGradient(listOf(baseTop, baseBottom))),
             )
 
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
-
-                // Main horizontal "highway" through the middle
+                drawLine(roadColor, Offset(0f, h * 0.55f), Offset(w, h * 0.55f), 6f, StrokeCap.Round)
+                drawLine(roadColor, Offset(w * 0.05f, h * 0.20f), Offset(w * 0.75f, h * 0.85f), 4f, StrokeCap.Round)
+                drawLine(roadColor, Offset(w * 0.75f, 0f), Offset(w * 0.75f, h), 3f, StrokeCap.Round)
                 drawLine(
-                    color = roadColor,
-                    start = Offset(0f, h * 0.55f),
-                    end = Offset(w, h * 0.55f),
-                    strokeWidth = 6f,
-                    cap = StrokeCap.Round
-                )
-                // Secondary diagonal road
-                drawLine(
-                    color = roadColor,
-                    start = Offset(w * 0.05f, h * 0.20f),
-                    end = Offset(w * 0.75f, h * 0.85f),
-                    strokeWidth = 4f,
-                    cap = StrokeCap.Round
-                )
-                // Vertical side road
-                drawLine(
-                    color = roadColor,
-                    start = Offset(w * 0.75f, 0f),
-                    end = Offset(w * 0.75f, h),
-                    strokeWidth = 3f,
-                    cap = StrokeCap.Round
-                )
-                // Dashed minor road
-                drawLine(
-                    color = roadDashColor,
-                    start = Offset(w * 0.20f, h * 0.85f),
-                    end = Offset(w * 0.95f, h * 0.30f),
-                    strokeWidth = 2.5f,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+                    roadDashColor, Offset(w * 0.20f, h * 0.85f), Offset(w * 0.95f, h * 0.30f), 2.5f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
                 )
                 drawLine(
-                    color = roadDashColor,
-                    start = Offset(0f, h * 0.20f),
-                    end = Offset(w * 0.55f, h * 0.20f),
-                    strokeWidth = 2.5f,
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+                    roadDashColor, Offset(0f, h * 0.20f), Offset(w * 0.55f, h * 0.20f), 2.5f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)),
                 )
             }
 
-            // 2) Marker pin + caption
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 MarkerPin()
                 Spacer(Modifier.height(2.dp))
@@ -136,12 +105,12 @@ private fun MapPreviewPlaceholder(modifier: Modifier = Modifier) {
                     text = "Map preview",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Waiting for MAPS_API_KEY",
+                    text = "Waiting for MAP_STYLE_URL",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -150,28 +119,25 @@ private fun MapPreviewPlaceholder(modifier: Modifier = Modifier) {
 
 @Composable
 private fun MarkerPin() {
-    // Outer halo + inner dot — same visual language as a real map marker but
-    // drawn as plain composables so it tints with the theme.
     Box(
         modifier = Modifier
             .size(28.dp)
             .clip(CircleShape)
             .background(EvBlue.copy(alpha = 0.22f)),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
                 .size(12.dp)
                 .clip(CircleShape)
-                .background(EvBlue)
+                .background(EvBlue),
         )
     }
-    // Tail / shadow dot underneath the halo to suggest a pin
     Spacer(Modifier.padding(top = 2.dp))
     Box(
         modifier = Modifier
             .size(6.dp)
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.18f))
+            .background(Color.Black.copy(alpha = 0.18f)),
     )
 }

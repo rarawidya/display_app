@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.example.displayapp.DisplayApp
+import com.example.displayapp.presentation.ui.maps.LocalMapProvider
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.ui.charts.ChartsScreen
 import com.example.displayapp.presentation.ui.connection.BluetoothQuickSheet
@@ -97,10 +99,15 @@ fun AppNavHost(
             }
         }
     ) { innerPadding ->
-        AppNavGraph(
-            navController = navController,
-            contentPadding = innerPadding
-        )
+        // Provide the active map renderer to the whole nav graph so any screen's
+        // map (Drive mini-map, Navigation fullscreen) resolves it renderer-agnostically.
+        val container = (LocalContext.current.applicationContext as DisplayApp).appContainer
+        CompositionLocalProvider(LocalMapProvider provides container.mapProvider) {
+            AppNavGraph(
+                navController = navController,
+                contentPadding = innerPadding
+            )
+        }
     }
 }
 

@@ -32,6 +32,9 @@ class DisplayApp : Application() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+        // MapLibre must be initialized once before any MapView is inflated. No API
+        // key here — the renderer is authenticated (if at all) by the style URL.
+        org.maplibre.android.MapLibre.getInstance(this)
         appContainer = AppContainer(this)
 
         // Run retention policy on startup, honoring the user's preference.
