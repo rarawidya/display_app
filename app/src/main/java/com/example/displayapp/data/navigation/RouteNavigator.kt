@@ -64,8 +64,12 @@ class RouteNavigator(
         active = true
         resetSessionState()
         sessionJob = scope.launch {
+            // Subscribe concurrently with start(): some providers (the simulator, and
+            // any SDK that drives progress from within start()) emit before start()
+            // returns, so collecting *after* it would miss everything but the last
+            // replayed value. The provider's SharedFlow replay covers the subscribe race.
+            launch { provider.progress.collect { onProgress(it) } }
             provider.start(destination)
-            provider.progress.collect { onProgress(it) }
         }
     }
 
