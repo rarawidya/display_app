@@ -34,15 +34,23 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,11 +84,32 @@ fun NavigationScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val results by viewModel.searchResults.collectAsStateWithLifecycle()
 
+    val density = LocalDensity.current
+    // Measured chrome, so the route-fit padding is responsive (no fixed pixels): the
+    // search bar's bottom edge insets the top; the visible bottom card insets the bottom.
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
+    var searchBottomPx by remember { mutableIntStateOf(0) }
+    var bottomCardTopPx by remember { mutableIntStateOf(0) }
+    val marginPx = with(density) { Dim.md.toPx() }.toInt()
+    val fitPadding = FitPadding(
+        left = with(density) { Dim.lg.toPx() }.toInt(),
+        top = searchBottomPx + marginPx,
+        right = with(density) { Dim.lg.toPx() }.toInt(),
+        bottom = if (bottomCardTopPx > 0 && boxSize.height > 0) {
+            boxSize.height - bottomCardTopPx + marginPx
+        } else {
+            marginPx
+        },
+    )
+    // Preview always frames north-up; heading-up kicks in only once navigating (and not
+    // while an Overview is temporarily framing the route).
+    val fitRoute = state.previewing || state.overviewActive
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().onSizeChanged { boxSize = it }) {
             // Map surface — renderer-agnostic. When no tile style is configured
             // the gate renders a "map preview" placeholder in place of the live
             // map. The search bar, back button, and ETA card above stay live
@@ -93,9 +122,11 @@ fun NavigationScreen(
                     destination = state.destination,
                     modifier = Modifier.fillMaxSize(),
                     interactive = true, // fullscreen browse — pan/zoom on
-                    headingUp = false,  // north-up for destination browsing
+                    headingUp = state.navigating && !state.overviewActive,
                     onLongPress = viewModel::dropPin, // long-press anywhere → destination
-                    fitRoute = state.previewing, // frame the whole route while confirming
+                    fitRoute = fitRoute,
+                    fitToken = state.fitToken,
+                    fitPadding = fitPadding,
                 )
             }
 
@@ -108,6 +139,9 @@ fun NavigationScreen(
                 verticalArrangement = Arrangement.spacedBy(Dim.sm)
             ) {
                 Row(
+                    modifier = Modifier.onGloballyPositioned {
+                        searchBottomPx = it.boundsInRoot().bottom.toInt()
+                    },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Dim.sm)
                 ) {
@@ -158,25 +192,39 @@ fun NavigationScreen(
                     planning = state.previewPlanning,
                     onStart = viewModel::startNavigation,
                     onDismiss = viewModel::dismissPreview,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { bottomCardTopPx = it.boundsInRoot().top.toInt() }
                 )
             }
 
-            // Bottom overlay — ongoing navigation ETA / distance (once started)
+            // Bottom overlay — Overview button + ongoing ETA / distance (once started)
             AnimatedVisibility(
                 visible = state.navigating,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
                 exit  = fadeOut() + slideOutVertically(targetOffsetY = { it }),
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                EtaCard(
-                    eta = state.etaLabel.orEmpty(),
-                    distance = state.distanceLabel.orEmpty(),
-                    onCancel = viewModel::clearRoute,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(Dim.screenGutter)
-                )
+                        .onGloballyPositioned { bottomCardTopPx = it.boundsInRoot().top.toInt() },
+                    horizontalAlignment = Alignment.End
+                ) {
+                    OverviewPill(
+                        active = state.overviewActive,
+                        onClick = viewModel::overview,
+                        modifier = Modifier.padding(horizontal = Dim.screenGutter, vertical = Dim.xs)
+                    )
+                    EtaCard(
+                        eta = state.etaLabel.orEmpty(),
+                        distance = state.distanceLabel.orEmpty(),
+                        onCancel = viewModel::clearRoute,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(Dim.screenGutter)
+                    )
+                }
             }
         }
     }
@@ -431,6 +479,33 @@ private fun DestinationConfirmSheet(
             ) {
                 Text("Start Navigation", fontWeight = FontWeight.SemiBold)
             }
+        }
+    }
+}
+
+/**
+ * "Overview" pill shown during active navigation. Tapping it temporarily frames the
+ * whole route; the camera auto-returns to follow after a few seconds ([active] tints it
+ * while that fit is in effect).
+ */
+@Composable
+private fun OverviewPill(active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = if (active) EvBlue else MaterialTheme.colorScheme.surface,
+        contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(EvIcons.Fullscreen, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("Overview", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         }
     }
 }

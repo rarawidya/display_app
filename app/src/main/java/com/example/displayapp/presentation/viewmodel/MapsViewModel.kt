@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.example.displayapp.presentation.state.MapsUiState
@@ -58,29 +60,44 @@ class MapsViewModel(
 
     // Name/address of the pending (previewed) destination, for the confirmation sheet.
     private val _pendingPlace = MutableStateFlow<GeoPlace?>(null)
+    // Bumps to request a fresh camera fit (new destination / Overview); pan doesn't.
+    private val _fitToken = MutableStateFlow(0)
+    // Temporary route Overview during active navigation (auto-reverts to follow).
+    private val _overviewActive = MutableStateFlow(false)
+    private var overviewJob: Job? = null
+
+    private data class RouteState(
+        val preview: RoutePlan?,
+        val active: RoutePlan?,
+        val fitToken: Int,
+        val overview: Boolean,
+    )
 
     val uiState: StateFlow<MapsUiState> = combine(
         locationRepository.location,
         _searchQuery,
         _pendingPlace,
         coordinator.previewDestination,
-        combine(coordinator.previewRoute, coordinator.activeRoute) { p, a -> p to a },
-    ) { loc, query, place, pendingDest, routes ->
-        val (previewRoute, activeRoute) = routes
-        val navigating = activeRoute != null
+        combine(coordinator.previewRoute, coordinator.activeRoute, _fitToken, _overviewActive) {
+            p, a, t, o -> RouteState(p, a, t, o)
+        },
+    ) { loc, query, place, pendingDest, rs ->
+        val navigating = rs.active != null
         val previewing = pendingDest != null && !navigating
         // Draw the active route once navigating, otherwise the preview route.
-        val drawn = (activeRoute ?: previewRoute)?.toRoute()
+        val drawn = (rs.active ?: rs.preview)?.toRoute()
         MapsUiState(
             currentLocation = loc,
             searchQuery = query,
-            destination = activeRoute?.destination ?: pendingDest,
+            destination = rs.active?.destination ?: pendingDest,
             route = drawn,
             previewing = previewing,
-            previewPlanning = previewing && previewRoute == null,
+            previewPlanning = previewing && rs.preview == null,
             previewName = place?.name.orEmpty(),
             previewDetail = place?.detail.orEmpty(),
             navigating = navigating,
+            overviewActive = navigating && rs.overview,
+            fitToken = rs.fitToken,
             permissionGranted = loc != null,
         )
     }.stateIn(
@@ -97,6 +114,7 @@ class MapsViewModel(
     fun selectPlace(place: GeoPlace) {
         _searchQuery.value = ""
         _pendingPlace.value = place
+        _fitToken.value += 1 // frame the new route once
         coordinator.preview(place.location)
     }
 
@@ -111,6 +129,7 @@ class MapsViewModel(
             detail = "%.5f, %.5f".format(location.latitude, location.longitude),
             location = location,
         )
+        _fitToken.value += 1 // frame the new route once
         coordinator.preview(location)
         viewModelScope.launch {
             geocoder.reverse(location)?.let { resolved ->
@@ -124,6 +143,22 @@ class MapsViewModel(
     fun startNavigation() {
         coordinator.startPending()
         _pendingPlace.value = null
+        _overviewActive.value = false
+    }
+
+    /**
+     * Temporarily frame the whole route during navigation, then auto-return to follow.
+     * Bumps the fit token so the map fits once; a timer reverts to follow mode.
+     */
+    fun overview() {
+        if (!uiState.value.navigating) return
+        _fitToken.value += 1
+        _overviewActive.value = true
+        overviewJob?.cancel()
+        overviewJob = viewModelScope.launch {
+            delay(OVERVIEW_REVERT_MS)
+            _overviewActive.value = false
+        }
     }
 
     /** Back out of the confirmation without navigating. */
@@ -134,6 +169,8 @@ class MapsViewModel(
 
     fun clearRoute() {
         coordinator.cancel()
+        overviewJob?.cancel()
+        _overviewActive.value = false
         _pendingPlace.value = null
         _searchQuery.value = ""
     }
@@ -145,6 +182,10 @@ class MapsViewModel(
         distanceMeters = distanceMeters,
         durationSeconds = durationSeconds,
     )
+
+    private companion object {
+        const val OVERVIEW_REVERT_MS = 5_000L
+    }
 }
 
 class MapsViewModelFactory(

@@ -69,9 +69,9 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         val longPress = rememberUpdatedState(onLongPress)
         // Last camera target actually applied — the battery-conscious move gate.
         val lastApplied = remember { mutableStateOf<Pair<GeoLocation, Float>?>(null) }
-        // Last fit-bounds key applied — so a stable preview route fits once, then the
-        // user can pan freely without the camera snapping back every recomposition.
-        val lastFit = remember { mutableStateOf<String?>(null) }
+        // Last fit token applied — a fit runs once per token bump (new destination /
+        // Overview), never on plain recomposition, so the user's pan is preserved.
+        val lastFitToken = remember { mutableStateOf<Int?>(null) }
 
         // Acquire the map + load style + install the route/puck sources & layers once.
         DisposableEffect(Unit) {
@@ -146,28 +146,22 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
             val m = map ?: return@LaunchedEffect
             m.uiSettings.setAllGesturesEnabled(interactive)
 
-            if (camera.fitBounds.size >= 2) {
-                // Route-preview: frame the whole route once (keyed on the bounds), with
-                // extra bottom padding so the confirmation sheet doesn't cover the line.
-                val boundsKey = camera.fitBounds.joinToString(";") {
-                    "%.5f,%.5f".format(it.latitude, it.longitude)
+            if (camera.fitBounds.size >= 2 && camera.fitToken != lastFitToken.value) {
+                // Fit the whole route once for this token (new destination / Overview),
+                // north-up, inset by the measured search-bar / sheet padding.
+                val builder = LatLngBounds.Builder()
+                camera.fitBounds.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
+                runCatching { builder.build() }.getOrNull()?.let { bounds ->
+                    lastFitToken.value = camera.fitToken
+                    lastApplied.value = null // so the follow camera re-eases smoothly afterwards
+                    val p = camera.fitPadding
+                    m.easeCamera(
+                        CameraUpdateFactory.newLatLngBounds(bounds, p.left, p.top, p.right, p.bottom),
+                        CAMERA_ANIM_MS,
+                    )
                 }
-                if (lastFit.value != boundsKey) {
-                    val builder = LatLngBounds.Builder()
-                    camera.fitBounds.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
-                    runCatching { builder.build() }.getOrNull()?.let { bounds ->
-                        lastFit.value = boundsKey
-                        lastApplied.value = null // force the follow gate to re-apply later
-                        m.easeCamera(
-                            CameraUpdateFactory.newLatLngBounds(
-                                bounds, FIT_PAD_SIDE_PX, FIT_PAD_TOP_PX, FIT_PAD_SIDE_PX, FIT_PAD_BOTTOM_PX,
-                            ),
-                            CAMERA_ANIM_MS,
-                        )
-                    }
-                }
-            } else {
-                lastFit.value = null
+            } else if (camera.fitBounds.size < 2) {
+                // Follow mode — battery-conscious move gate.
                 camera.target?.let { target ->
                     val prev = lastApplied.value
                     val moved = prev == null ||
@@ -232,11 +226,6 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
         const val CAMERA_ANIM_MS = 700
         const val MIN_CAMERA_MOVE_M = 8.0   // don't re-center for sub-8 m GPS jitter
         const val MIN_BEARING_DELTA = 4f    // …or sub-4° heading wobble
-        // Route-fit padding (px): keep the line clear of the search bar (top) and the
-        // destination confirmation sheet (bottom).
-        const val FIT_PAD_SIDE_PX = 120
-        const val FIT_PAD_TOP_PX = 260
-        const val FIT_PAD_BOTTOM_PX = 640
     }
 }
 

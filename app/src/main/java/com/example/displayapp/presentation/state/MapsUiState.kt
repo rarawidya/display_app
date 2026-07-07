@@ -32,6 +32,10 @@ data class MapsUiState(
     val previewDetail: String = "",
     /** A live navigation session is active → show the ongoing ETA/cancel card. */
     val navigating: Boolean = false,
+    /** Temporary "Overview" during navigation → fit the route, then revert to follow. */
+    val overviewActive: Boolean = false,
+    /** Bumps whenever a fresh camera fit is wanted (new destination or Overview). */
+    val fitToken: Int = 0,
     val chargingStations: List<ChargingStation> = emptyList(),
     val permissionGranted: Boolean = false
 ) {

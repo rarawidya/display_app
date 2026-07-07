@@ -36,14 +36,22 @@ interface MapProvider {
         content: MapContent,
         modifier: Modifier,
         interactive: Boolean,
-        onLongPress: (GeoLocation) -> Unit = {},
+        // NOTE: no default value — a default on a @Composable interface method desyncs
+        // the generated bridge from the overrides (AbstractMethodError). Callers (see
+        // CockpitMap) always pass this explicitly.
+        onLongPress: (GeoLocation) -> Unit,
     )
 }
 
 /**
  * Camera pose. [bearingDeg] drives heading-up rotation (0 = north-up). When [fitBounds]
- * has ≥ 2 points the renderer frames the camera to fit ALL of them (route-preview mode),
+ * has ≥ 2 points the renderer frames the camera to fit ALL of them (north-up),
  * overriding [target]/[zoom]/[bearingDeg]; otherwise it centers on [target].
+ *
+ * A fit is applied only when [fitToken] **changes** (not on every recomposition), so the
+ * route is framed once per request — a new destination or an explicit Overview bumps the
+ * token; panning does not, so the user's pan is preserved. [fitPadding] insets the
+ * framed bounds (px) so the route clears the search bar / bottom sheet.
  */
 @Immutable
 data class MapCameraState(
@@ -52,6 +60,17 @@ data class MapCameraState(
     val bearingDeg: Float = 0f,
     val tiltDeg: Float = 0f,
     val fitBounds: List<GeoLocation> = emptyList(),
+    val fitToken: Int = 0,
+    val fitPadding: FitPadding = FitPadding(),
+)
+
+/** Camera fit insets in pixels (measured from the actual overlay chrome). */
+@Immutable
+data class FitPadding(
+    val left: Int = 0,
+    val top: Int = 0,
+    val right: Int = 0,
+    val bottom: Int = 0,
 )
 
 /**

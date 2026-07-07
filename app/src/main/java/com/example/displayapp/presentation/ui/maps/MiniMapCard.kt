@@ -93,25 +93,28 @@ fun CockpitMap(
     zoom: Double = 16.0,
     onLongPress: (GeoLocation) -> Unit = {},
     fitRoute: Boolean = false,
+    fitToken: Int = 0,
+    fitPadding: FitPadding = FitPadding(),
 ) {
     val mapProvider = LocalMapProvider.current
     if (!mapProvider.isConfigured) return
 
-    // Preview: frame the whole route (origin → destination) so the user sees where
-    // they're going before confirming. Otherwise follow the rider.
+    // Fit the whole route (north-up) when asked — preview, or an Overview during nav.
+    // Otherwise follow: heading-up rotates the camera to the rider's bearing.
     val camera = if (fitRoute && routePath.size >= 2) {
         MapCameraState(
             target = location ?: JAKARTA_FALLBACK,
             zoom = zoom,
             bearingDeg = 0f,
             fitBounds = routePath,
+            fitToken = fitToken,
+            fitPadding = fitPadding,
         )
     } else {
-        val bearing = if (headingUp && destination == null) (location?.bearingDeg ?: 0f) else 0f
         MapCameraState(
             target = location ?: JAKARTA_FALLBACK,
             zoom = if (location != null) zoom else 4.0,
-            bearingDeg = bearing,
+            bearingDeg = if (headingUp) (location?.bearingDeg ?: 0f) else 0f,
         )
     }
     mapProvider.Map(
