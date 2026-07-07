@@ -123,7 +123,9 @@ class BleGattClient(
             }
 
             override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
-                if (c.uuid == BleConstants.RX_CHAR_UUID) {
+                // Writes are serialized by writeMutex, so there is at most one in-flight
+                // op; complete it for either phone→board characteristic (notification/nav).
+                if (c.uuid == BleConstants.RX_CHAR_UUID || c.uuid == BleConstants.NAV_CHAR_UUID) {
                     pendingWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
                 }
             }
@@ -142,33 +144,43 @@ class BleGattClient(
     }
 
     /**
-     * Write one complete command frame to the RX characteristic (`0xAF07`) — the
-     * phone → board channel (docs/APP-NOTIFICATION-INTEGRATION.md §1). One write =
-     * one whole frame (the board does not reassemble), so [bytes] must be the full
-     * `[0xAA][LEN][payload][CRC]` frame and fit the negotiated MTU. Suspends until
-     * the stack confirms the write (via onCharacteristicWrite) or [timeoutMs] lapses.
+     * Write one complete command frame to a phone→board characteristic — the
+     * notification channel (`0xAF07`, default) or the navigation channel (`0xAF06`).
+     * One write = one whole frame (the board does not reassemble), so [bytes] must be
+     * the full `[0xAA][LEN][payload][CRC]` frame and fit the negotiated MTU.
      *
-     * Returns false if the link isn't ready, the characteristic is missing, the
-     * stack rejects the write, or it times out.
+     * [withResponse] picks the GATT write type: `true` = Write (acknowledged, for
+     * must-arrive messages) vs `false` = Write-Without-Response (low-latency stream).
+     * Either way the call suspends until the stack signals completion via
+     * onCharacteristicWrite or [timeoutMs] lapses (Android reports both write types).
+     *
+     * Returns false if the link isn't ready, the characteristic is absent (e.g. old
+     * firmware without `0xAF06`), the stack rejects the write, or it times out.
      */
     @SuppressLint("MissingPermission")
-    suspend fun writeCommand(bytes: ByteArray, timeoutMs: Long = 3_000): Boolean {
+    suspend fun writeCommand(
+        bytes: ByteArray,
+        characteristic: java.util.UUID = BleConstants.RX_CHAR_UUID,
+        withResponse: Boolean = true,
+        timeoutMs: Long = 3_000,
+    ): Boolean {
         val g = gatt ?: return false
         if (!subscribed) return false
-        val ch = g.getService(BleConstants.SERVICE_UUID)?.getCharacteristic(BleConstants.RX_CHAR_UUID)
+        val ch = g.getService(BleConstants.SERVICE_UUID)?.getCharacteristic(characteristic)
         if (ch == null) {
-            Timber.w("BLE: RX characteristic ${BleConstants.RX_CHAR_UUID} not found — cannot push")
+            Timber.w("BLE: characteristic $characteristic not found — cannot push")
             return false
         }
+        val writeType = if (withResponse) BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         return writeMutex.withLock {
             val done = CompletableDeferred<Boolean>()
             pendingWrite = done
             val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                g.writeCharacteristic(ch, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-                    BluetoothStatusCodes.SUCCESS
+                g.writeCharacteristic(ch, bytes, writeType) == BluetoothStatusCodes.SUCCESS
             } else {
                 @Suppress("DEPRECATION") run {
-                    ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    ch.writeType = writeType
                     ch.value = bytes
                     g.writeCharacteristic(ch)
                 }

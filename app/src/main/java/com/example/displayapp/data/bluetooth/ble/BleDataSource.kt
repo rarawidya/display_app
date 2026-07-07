@@ -131,6 +131,9 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     override suspend fun writeCommand(frame: ByteArray): Boolean =
         gattClient?.writeCommand(frame) ?: false
 
+    override suspend fun writeNav(frame: ByteArray, reliable: Boolean): Boolean =
+        gattClient?.writeCommand(frame, BleConstants.NAV_CHAR_UUID, withResponse = reliable) ?: false
+
     override fun close() {
         disconnect()
         if (adapterReceiverRegistered) {

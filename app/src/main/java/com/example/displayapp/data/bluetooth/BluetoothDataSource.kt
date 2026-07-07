@@ -26,4 +26,13 @@ interface BluetoothDataSource {
      * Sources that only receive telemetry may leave the default no-op.
      */
     suspend fun writeCommand(frame: ByteArray): Boolean = false
+
+    /**
+     * Push one navigation frame to the board's nav characteristic (`0xAF06`).
+     * [reliable] selects the GATT write type: `true` = Write-With-Response for
+     * must-arrive messages (RouteSummary, terminal); `false` = Write-Without-Response
+     * for the instruction stream. Returns false when undeliverable (not connected,
+     * no `0xAF06` on this firmware, or no physical board). Default no-op.
+     */
+    suspend fun writeNav(frame: ByteArray, reliable: Boolean = false): Boolean = false
 }

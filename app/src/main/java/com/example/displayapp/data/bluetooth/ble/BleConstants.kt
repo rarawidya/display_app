@@ -12,7 +12,8 @@ import java.util.UUID
  *
  *   SERVICE 0xAF00
  *     • 0xAF08  NOTIFY  + CCCD   → telemetry stream (board → phone)   [TX]
- *     • 0xAF07  WRITE / WRITE_NR → command channel (phone → board)    [RX, unused v1]
+ *     • 0xAF07  WRITE / WRITE_NR → notification channel (phone → board) [RX]
+ *     • 0xAF06  WRITE / WRITE_NR → navigation channel (phone → board)   [NAV]
  */
 object BleConstants {
 
@@ -22,8 +23,15 @@ object BleConstants {
     /** Telemetry notify characteristic (board → phone). */
     val TX_CHAR_UUID: UUID = uuid16("AF08")
 
-    /** Command write characteristic (phone → board). Unused in v1 (app is receive-only). */
+    /** Notification write characteristic (phone → board), PhoneNotification. */
     val RX_CHAR_UUID: UUID = uuid16("AF07")
+
+    /**
+     * Navigation write characteristic (phone → board), NavInstruction / RouteSummary
+     * (docs/NAVIGATION-INTEGRATION.md). Separate from the notification channel so the
+     * verified 0xAF07 path is untouched. Absent on pre-nav firmware → nav disabled.
+     */
+    val NAV_CHAR_UUID: UUID = uuid16("AF06")
 
     /** Standard Client Characteristic Configuration Descriptor. */
     val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")

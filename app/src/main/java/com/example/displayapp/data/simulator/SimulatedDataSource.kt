@@ -84,6 +84,13 @@ class SimulatedDataSource(
         Timber.i("Simulator disconnected")
     }
 
+    /** No physical board — log the nav frame so the RouteNavigator path is demoable. */
+    override suspend fun writeNav(frame: ByteArray, reliable: Boolean): Boolean {
+        Timber.tag("NavSim").d("writeNav ${frame.size}B reliable=$reliable navType=0x%02X"
+            .format(if (frame.size > 2) frame[2].toInt() and 0xFF else 0))
+        return true
+    }
+
     override fun close() {
         disconnect()
         scope.cancel()
