@@ -38,6 +38,13 @@ data class VehicleData(
     // Derived at decode-time — see class doc.
     val rpm: Int = 0,
     val power: Float = 0f,
+    // ── Odometer + pack current (VotolTelemetry @2/@12/@13, capnpble.md §3/§5) ──
+    /** Battery **pack** current in amps, signed; positive = charging into the pack. */
+    val batteryCurrent: Float = 0f,
+    /** Lifetime odometer in km (`odoMeters/1000`); board-integrated, persists across reboots. */
+    val odometerKm: Float = 0f,
+    /** Resettable trip odometer in km (`tripMeters/1000`). */
+    val tripKm: Float = 0f,
     // ── VotolTelemetry wire fields (capnp.md §3) ─────────────────────────────
     // Carried live from the frame. Not yet persisted — decodeEntity leaves them
     // at their defaults for replayed samples until a Room migration adds columns.

@@ -29,6 +29,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -104,13 +107,17 @@ fun HomeScreen(
         onOpenHistory = onOpenHistory,
         onOpenBluetooth = onOpenBluetooth,
         onEditDevice = onEditDevice,
-        onOpenNotifications = onOpenNotifications
+        onOpenNotifications = onOpenNotifications,
+        onResetTripA = viewModel::resetTripOdometer,
+        onResetTripB = viewModel::resetTripB
     )
 }
 
 @Composable
 private fun HomeContent(
     state: DashboardUiState,
+    onResetTripA: () -> Unit = {},
+    onResetTripB: () -> Unit = {},
     deviceName: String,
     lastRide: LastRide?,
     onStartMonitoring: () -> Unit,
@@ -170,7 +177,11 @@ private fun HomeContent(
                         modifier = Modifier.weight(1.35f).fillMaxHeight()
                     )
                 }
-                VehicleInfoCard(state = state)
+                VehicleInfoCard(
+                    state = state,
+                    onResetTripA = onResetTripA,
+                    onResetTripB = onResetTripB
+                )
             }
         }
     }
@@ -668,20 +679,27 @@ private fun RouteMini(modifier: Modifier = Modifier) {
 /*  Vehicle information — spec + live-status sheet (à la NIU / Ather app).     */
 /* -------------------------------------------------------------------------- */
 
+private enum class TripReset { A, B }
+
 @Composable
-private fun VehicleInfoCard(state: DashboardUiState) {
+private fun VehicleInfoCard(
+    state: DashboardUiState,
+    onResetTripA: () -> Unit,
+    onResetTripB: () -> Unit
+) {
     val app = LocalAppSettings.current
     val connected = state.connectionState == ConnectionState.CONNECTED
     val dash = "—"
+    var confirmReset by remember { mutableStateOf<TripReset?>(null) }
 
-    // Spec + live-status sheet. Odometer + Bluetooth are live; Model + Firmware are
-    // static vehicle metadata until a BLE Device Information Service (0x180A) read
-    // exposes them from the controller.
-    val odometerValue = if (state.odometer > 0f)
-        app.speedUnit.formatDistance((state.odometer * 1000).toLong()) else dash
+    // Odometer + Trip A/B + Bluetooth are live; Model + Firmware are static vehicle
+    // metadata until a BLE Device Information Service (0x180A) read exposes them.
+    // Trip A is the vehicle's own wire trip; Trip B is app-tracked (odometer − baseline).
+    fun km(value: Float) = app.speedUnit.formatDistance((value * 1000).toLong())
+    val odometerValue = if (state.odometer > 0f) km(state.odometer) else dash
+    val tripAValue = if (connected) km(state.tripOdometer) else dash
+    val tripBValue = if (connected) km(state.tripBOdometer) else dash
     val (btLabel, btColor) = when (state.connectionState) {
-        // Connected → show the live link signal strength in dBm (falls back to
-        // "Connected" until the first RSSI reading arrives).
         ConnectionState.CONNECTED -> (state.rssi?.let { "$it dBm" } ?: "Connected") to EvGreen
         ConnectionState.CONNECTING -> "Connecting" to EvAmber
         ConnectionState.RECONNECTING -> "Reconnecting" to EvAmber
@@ -693,7 +711,6 @@ private fun VehicleInfoCard(state: DashboardUiState) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Dim.sm)
     ) {
-        // Section title sits above the card.
         Text(
             text = "Vehicle Information",
             style = MaterialTheme.typography.titleMedium,
@@ -707,26 +724,138 @@ private fun VehicleInfoCard(state: DashboardUiState) {
             shadowElevation = 3.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // 2×2 grid: two rows of two stats, each pair split by a vertical divider.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Dim.lg),
-                verticalArrangement = Arrangement.spacedBy(Dim.lg)
+                verticalArrangement = Arrangement.spacedBy(Dim.md)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    VehicleStat(EvIcons.Road, EvBlue, odometerValue, "Odometer", Modifier.weight(1f))
-                    VDivider()
-                    VehicleStat(EvIcons.Cpu, EvViolet, VEHICLE_FIRMWARE, "Firmware", Modifier.weight(1f))
-                }
+                // Distances — lifetime odometer up top, the two trips nested below.
+                OdometerRow(value = odometerValue)
+                TripRow("Trip A", tripAValue, EvGreen, connected) { confirmReset = TripReset.A }
+                TripRow("Trip B", tripBValue, EvAmber, connected) { confirmReset = TripReset.B }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+
+                // Vehicle metadata — three stats across.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     VehicleStat(btIcon, btColor, btLabel, "Bluetooth", Modifier.weight(1f))
                     VDivider()
+                    VehicleStat(EvIcons.Cpu, EvViolet, VEHICLE_FIRMWARE, "Firmware", Modifier.weight(1f))
+                    VDivider()
                     VehicleStat(EvIcons.Motorcycle, EvAmber, VEHICLE_MODEL, "Model", Modifier.weight(1f))
                 }
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
-                // Firmware over-the-air update entry point.
                 OtaUpdateEntry(currentFirmware = VEHICLE_FIRMWARE, connected = connected)
+            }
+        }
+    }
+
+    confirmReset?.let { which ->
+        val (title, message, action) = when (which) {
+            TripReset.A -> Triple(
+                "Reset Trip A?",
+                "Zeroes the vehicle's own trip distance. The lifetime odometer is not affected.",
+                onResetTripA
+            )
+            TripReset.B -> Triple(
+                "Reset Trip B?",
+                "Zeroes this app-tracked trip. The vehicle's Trip A and lifetime odometer are not affected.",
+                onResetTripB
+            )
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmReset = null },
+            title = { Text(title) },
+            text = { Text(message) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmReset = null; action() }) {
+                    Text("Reset")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmReset = null }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+/** Lifetime odometer — the headline distance row (icon + label left, value right). */
+@Composable
+private fun OdometerRow(value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        ) {
+            Box(
+                modifier = Modifier.size(36.dp).clip(CircleShape).background(EvBlue.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Icon(EvIcons.Road, null, tint = EvBlue, modifier = Modifier.size(20.dp))
+            }
+            Text(
+                text = "Odometer",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/**
+ * A resettable trip row nested under the odometer: accent dot + label on the left,
+ * distance + "Reset" on the right. Reset is only enabled while connected (Trip A
+ * needs the board; Trip B needs the current odometer to re-baseline against).
+ */
+@Composable
+private fun TripRow(
+    label: String,
+    value: String,
+    accent: Color,
+    canReset: Boolean,
+    onReset: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = Dim.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        ) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            androidx.compose.material3.TextButton(onClick = onReset, enabled = canReset) {
+                Text("Reset")
             }
         }
     }

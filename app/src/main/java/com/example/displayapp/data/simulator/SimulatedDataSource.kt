@@ -48,6 +48,12 @@ class SimulatedDataSource(
     private var tick = 0L
     private var bootTimeMs = 0L
 
+    // Board-integrated odometer, in metres. Lifetime seeded to a plausible total;
+    // trip accumulates from 0 per session. Doubles so low-speed sub-metre steps
+    // don't truncate away before they add up.
+    private var odoMetersAccum = 4_567_800.0
+    private var tripMetersAccum = 0.0
+
     override fun startDiscovery() {
         _connectionState.value = ConnectionState.SCANNING
         scope.launch {
@@ -128,18 +134,34 @@ class SimulatedDataSource(
         if (sf.speedKmh > 0.5) flags = flags or 0x04
         if (sf.currentA < -1.0) flags = flags or 0x02
 
+        // Integrate distance at the 20 Hz emit rate (50 ms/frame) so odometer +
+        // trip climb realistically with speed.
+        val stepMeters = sf.speedKmh / 3.6 * 0.05
+        odoMetersAccum += stepMeters
+        tripMetersAccum += stepMeters
+
+        // Battery pack current (whole A, signed): positive = charging. Under regen
+        // (negative motor current) the pack is charging, so flip the motor-side sign.
+        val batteryCurrent = (-sf.currentA).toInt().coerceIn(-128, 127).toByte()
+        // Pack runs cooler than the motor; loosely track it with a floor.
+        val batteryTempC = (sf.tempC - 12).coerceIn(-128, 127).toByte()
+
         val capnpPayload = TelemetrySchema.buildMessage {
             setBatteryDeciVolts(batteryDeciVolts)
+            setBatteryPercent(sf.battery.coerceIn(0, 100).toByte())
+            setBatteryCurrent(batteryCurrent)
             setCurrentMotor(currentMotor)
             setRpm(rpm)
             setSpeedKmh(speedKmh)
             setControllerTempC(sf.controllerTempC.coerceIn(-128, 127).toByte())
             setMotorTempC(sf.tempC.coerceIn(-128, 127).toByte())
+            setBatteryTempC(batteryTempC)
             setDriveMode(wireDriveMode(sf.mode))
             setFlags(flags.toByte())
             setFaultCode(0)
             setSeq((tick and 0xFFFFFFFFL).toInt())
-            setBatteryPercent(sf.battery.coerceIn(0, 100).toByte())
+            setOdoMeters(odoMetersAccum.toInt())
+            setTripMeters(tripMetersAccum.toInt())
         }
 
         return FrameEncoder.encode(capnpPayload)

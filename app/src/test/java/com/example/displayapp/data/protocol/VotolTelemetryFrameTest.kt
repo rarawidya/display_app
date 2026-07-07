@@ -7,27 +7,30 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 /**
- * Decoder self-test against the frozen reference frame from the firmware team's
- * `capnp.md` §6 — "a great app-side unit test with no board required."
+ * Decoder self-test against the frozen reference frame from docs/capnpble.md §7 —
+ * the post-2026-07-07-renumber `VotolTelemetry` layout (@0..@14, 32-byte data
+ * section, 48-byte payload, LEN 0x30), cross-validated with pycapnp on the board.
  *
- * Struct { batteryDeciVolts=809, batteryPercent=91, rpm=124, speedKmh=10,
- * controllerTempC=49, motorTempC=47, driveMode=3, flags=0x01, seq=12345,
- * currentMotor=0, faultCode=0 } serializes to this exact 44-byte wire frame.
+ * Struct { batteryVolt=773, batteryPercent=64, batteryCurrent=4, currentMotor=-6,
+ * rpm=2710, kmh=42, tempControl=48, tempMotor=46, tempBattery=33, driveMode=2,
+ * faultCode=0, seq=12345, odoMeters=0, tripMeters=0, flags=0x11 } → this exact
+ * 52-byte wire frame (CRC 0x8DB0).
  */
 class VotolTelemetryFrameTest {
 
-    // capnp.md §6 — the exact bytes on the wire (SYNC, LEN, 40-byte payload, CRC-LE).
+    // capnpble.md §7 — the exact bytes on the wire (SYNC, LEN, 48-byte payload, CRC-LE).
     private val referenceFrame = intArrayOf(
-        0xAA, 0x28,
+        0xAA, 0x30,
+        0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
-        0x29, 0x03, 0x00, 0x00, 0x7C, 0x00, 0x0A, 0x00,
-        0x31, 0x2F, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00,
-        0x39, 0x30, 0x00, 0x00, 0x5B, 0x00, 0x00, 0x00,
-        0xE6, 0x09
+        0x05, 0x03, 0x40, 0x04, 0xFA, 0xFF, 0x96, 0x0A,
+        0x2A, 0x00, 0x30, 0x2E, 0x21, 0x02, 0x11, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x39, 0x30, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xB0, 0x8D
     ).map { it.toByte() }.toByteArray()
 
-    private val referencePayload: ByteArray = referenceFrame.copyOfRange(2, 2 + 0x28)
+    private val referencePayload: ByteArray = referenceFrame.copyOfRange(2, 2 + 0x30)
 
     @Test
     fun decoder_accepts_reference_frame_and_yields_expected_fields() {
@@ -42,25 +45,29 @@ class VotolTelemetryFrameTest {
 
         assertEquals("reference frame must pass CRC", 0, crcErrors)
         val t = assertNotNull("frame should decode", decoded).let { decoded!! }
-        assertEquals(809, t.batteryDeciVolts)
-        assertEquals(0, t.currentMotor)
-        assertEquals(124, t.rpm)
-        assertEquals(10, t.speedKmh)
-        assertEquals(49, t.controllerTempC)
-        assertEquals(47, t.motorTempC)
-        assertEquals(3, t.driveMode)
-        assertEquals(0x01, t.flags)
+        assertEquals(773, t.batteryDeciVolts)
+        assertEquals(64, t.batteryPercent)
+        assertEquals(4, t.batteryCurrent)
+        assertEquals(-6, t.currentMotor)
+        assertEquals(2710, t.rpm)
+        assertEquals(42, t.speedKmh)
+        assertEquals(48, t.controllerTempC)
+        assertEquals(46, t.motorTempC)
+        assertEquals(33, t.batteryTempC)
+        assertEquals(2, t.driveMode)
+        assertEquals(0x11, t.flags)
         assertEquals(0L, t.faultCode)
         assertEquals(12345L, t.seq)
-        assertEquals(91, t.batteryPercent)
+        assertEquals(0L, t.odoMeters)
+        assertEquals(0L, t.tripMeters)
     }
 
     @Test
     fun crc_matches_the_reference_over_len_plus_payload() {
         val lenAndPayload = ByteArray(1 + referencePayload.size)
-        lenAndPayload[0] = referencePayload.size.toByte() // 0x28
+        lenAndPayload[0] = referencePayload.size.toByte() // 0x30
         System.arraycopy(referencePayload, 0, lenAndPayload, 1, referencePayload.size)
-        assertEquals(0x09E6, Crc16.compute(lenAndPayload))
+        assertEquals(0x8DB0, Crc16.compute(lenAndPayload))
     }
 
     @Test
@@ -68,22 +75,36 @@ class VotolTelemetryFrameTest {
         val vd = TelemetryMapper().map(referencePayload, VehicleData())
         assertNotNull(vd)
         vd!!
-        assertEquals(10, vd.speed)                 // speedKmh direct
-        assertEquals(124, vd.rpm)                  // rpm from wire, not derived
-        assertEquals(80.9f, vd.voltage, 0.001f)    // 809 deci-volts ÷ 10
-        assertEquals(0f, vd.current, 0.001f)       // currentMotor=0 deci-amps ÷ 10
-        assertEquals(47, vd.temperature)           // motor temp
-        assertEquals(49, vd.controllerTemperature)
-        assertEquals(0, vd.batteryTemperature)     // not on v1 wire
-        assertEquals(91, vd.batteryPercent)
-        assertEquals(VehicleMode.SPORT, vd.vehicleMode) // driveMode 3
+        assertEquals(42, vd.speed)                 // kmh direct
+        assertEquals(2710, vd.rpm)                 // rpm from wire, not derived
+        assertEquals(77.3f, vd.voltage, 0.001f)    // 773 deci-volts ÷ 10
+        assertEquals(-0.6f, vd.current, 0.001f)    // currentMotor=-6 deci-amps ÷ 10
+        assertEquals(46, vd.temperature)           // motor temp
+        assertEquals(48, vd.controllerTemperature)
+        assertEquals(33, vd.batteryTemperature)    // real tempBattery channel now
+        assertEquals(64, vd.batteryPercent)
+        assertEquals(4f, vd.batteryCurrent, 0.001f) // pack current, +A = charging
+        assertEquals(0f, vd.odometerKm, 0.001f)
+        assertEquals(0f, vd.tripKm, 0.001f)
+        assertEquals(VehicleMode.NORMAL, vd.vehicleMode) // driveMode 2 = Urban → NORMAL
         assertEquals(12345L, vd.seq)
-        assertEquals(0x01, vd.flags)
-        // currentMotor is calibrated (deci-amps) → current/power available; still
-        // no battery-temp channel on the v1 wire.
+        assertEquals(0x11, vd.flags)
         assertEquals(true, vd.currentAvailable)
-        assertEquals(false, vd.batteryTempAvailable)
-        assertEquals(true, vd.batteryKnown) // reference batteryPercent = 91 (≠ 255)
+        assertEquals(true, vd.batteryTempAvailable) // real tempBattery @8 now
+        assertEquals(true, vd.batteryKnown)         // reference batteryPercent = 64 (≠ 255)
+    }
+
+    @Test
+    fun odometer_decodes_as_metres_to_km() {
+        // capnpble.md §7: odo_km=456.78 → odoMeters=456780; trip_km=12.34 → tripMeters=12340.
+        val payload = TelemetrySchema.buildMessage {
+            setBatteryDeciVolts(773)
+            setOdoMeters(456_780)
+            setTripMeters(12_340)
+        }
+        val vd = TelemetryMapper().map(payload, VehicleData())!!
+        assertEquals(456.78f, vd.odometerKm, 0.001f)
+        assertEquals(12.34f, vd.tripKm, 0.001f)
     }
 
     @Test
@@ -112,9 +133,10 @@ class VotolTelemetryFrameTest {
 
     @Test
     fun battery_percent_255_holds_previous_and_marks_unknown() {
-        // Same envelope as the reference, but batteryPercent = 0xFF (not yet known).
+        // Same envelope as the reference, but batteryPercent (data offset 2 →
+        // payload offset 16+2) = 0xFF (not yet known).
         val payload = referencePayload.copyOf()
-        payload[16 + 20] = 0xFF.toByte()
+        payload[16 + 2] = 0xFF.toByte()
         val previous = VehicleData(batteryPercent = 73)
         val vd = TelemetryMapper().map(payload, previous)
         assertEquals(73, vd!!.batteryPercent) // holds previous
@@ -124,23 +146,27 @@ class VotolTelemetryFrameTest {
     @Test
     fun encoder_round_trips_through_decoder() {
         val payload = TelemetrySchema.buildMessage {
-            setBatteryDeciVolts(809)
-            setRpm(124)
-            setSpeedKmh(10)
-            setControllerTempC(49)
-            setMotorTempC(47)
-            setDriveMode(3)
-            setFlags(0x01)
+            setBatteryDeciVolts(773)
+            setBatteryPercent(64)
+            setBatteryCurrent(4)
+            setCurrentMotor((-6).toShort())
+            setRpm(2710)
+            setSpeedKmh(42)
+            setControllerTempC(48)
+            setMotorTempC(46)
+            setBatteryTempC(33)
+            setDriveMode(2)
+            setFlags(0x11)
             setSeq(12345)
-            setBatteryPercent(91)
         }
         val frame = FrameEncoder.encode(payload)
 
         var decoded: TelemetrySchema.VotolTelemetry? = null
         FrameDecoder(onFrame = { decoded = TelemetrySchema.readFrom(it) }).feed(frame)
 
-        assertEquals(809, decoded!!.batteryDeciVolts)
+        assertEquals(773, decoded!!.batteryDeciVolts)
         assertEquals(12345L, decoded!!.seq)
+        assertEquals(33, decoded!!.batteryTempC)
         // Our encoder must produce the byte-identical canonical frame.
         assertEquals(referenceFrame.toList(), frame.toList())
     }

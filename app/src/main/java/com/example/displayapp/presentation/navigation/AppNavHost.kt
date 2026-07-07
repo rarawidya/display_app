@@ -148,7 +148,7 @@ private fun AppNavGraph(
             // DashboardVM is still surfaced here so "Use Simulator" can kick off
             // a simulated connection and let the LaunchedEffect below route to Drive.
             val dashboardVm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender, container.appPreferencesRepository)
             )
 
             val connectionState by container.vehicleRepository.connectionState
@@ -185,7 +185,7 @@ private fun AppNavGraph(
 
         composable(Destination.Home.route) {
             val vm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender, container.appPreferencesRepository)
             )
             val btVm: BluetoothViewModel = viewModel(
                 factory = BluetoothViewModelFactory(
@@ -265,7 +265,7 @@ private fun AppNavGraph(
 
         composable(Destination.Drive.route) {
             val vm: DashboardViewModel = viewModel(
-                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender)
+                factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender, container.appPreferencesRepository)
             )
             val mapsVm: MapsViewModel = viewModel(
                 factory = MapsViewModelFactory(container.locationRepository, container.navigationCoordinator, container.geocoder)

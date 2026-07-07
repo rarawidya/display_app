@@ -20,8 +20,12 @@ import timber.log.Timber
  *    left unsubtracted per the firmware reference decode.
  *  - `batteryPercent == 255` means "not yet known" (SoC CAN frame silent for
  *    ~1 s after MCU boot). We hold the previous value rather than show 0 %.
- *  - Battery pack temperature is NOT on this wire (v1); [VehicleData] keeps the
- *    field for UI/persistence continuity, populated 0 (unknown).
+ *  - `tempBattery` (@8) is a real battery-pack temperature channel as of the
+ *    2026-07-07 schema renumber, so `batteryTemperature`/`batteryTempAvailable`
+ *    are now live (previously hardcoded 0 / false).
+ *  - `odoMeters`/`tripMeters` (@12/@13) carry the board-integrated odometer in
+ *    metres → surfaced as `odometerKm`/`tripKm` (÷1000). `batteryCurrent` (@2)
+ *    is signed pack amps (positive = charging).
  */
 class TelemetryMapper {
 
@@ -42,18 +46,21 @@ class TelemetryMapper {
                 voltage = voltageV,
                 current = currentA,
                 temperature = frame.motorTempC,
-                // Not on the v1 wire — unknown until firmware adds a channel.
-                batteryTemperature = 0,
+                // Real battery-pack temperature channel since the 2026-07-07 renumber.
+                batteryTemperature = frame.batteryTempC,
                 controllerTemperature = frame.controllerTempC,
                 vehicleMode = mapMode(frame.driveMode),
                 rpm = frame.rpm,
                 power = TelemetryDerivations.powerFromVoltsAmps(voltageV, currentA),
+                batteryCurrent = frame.batteryCurrent.toFloat(),
+                odometerKm = frame.odoMeters / 1000f,
+                tripKm = frame.tripMeters / 1000f,
                 faultCode = frame.faultCode,
                 flags = frame.flags,
                 seq = frame.seq,
-                // Availability per wire-protocol v1 capabilities (capnp.md).
+                // Availability per wire-protocol capabilities (capnpble.md §3).
                 currentAvailable = TelemetryConstants.CURRENT_CHANNEL_CALIBRATED,
-                batteryTempAvailable = false, // no battery-temp channel on the v1 wire
+                batteryTempAvailable = true, // real tempBattery @8 channel
                 batteryKnown = frame.batteryPercent != BATTERY_PERCENT_UNKNOWN,
                 // Wall-clock at decode time. The wire has no timestamp field;
                 // `seq` covers frame ordering / drop detection instead.

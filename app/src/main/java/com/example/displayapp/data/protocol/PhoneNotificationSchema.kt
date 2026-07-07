@@ -46,6 +46,12 @@ object PhoneNotificationSchema {
     const val CATEGORY_MESSAGING_APP = 3
     const val CATEGORY_CLEAR_ALL = 6
 
+    /**
+     * Board **control command**, not a banner (capnpble.md §5b). The command name
+     * rides in `title` (e.g. `"ODO_RESET_TRIP"`), `appName = "EVD"`, `body` ignored.
+     */
+    const val CATEGORY_CONTROL = 32
+
     private const val DATA_WORDS = 2
     private const val PTR_WORDS = 3
     private const val WORD = 8

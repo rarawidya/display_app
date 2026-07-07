@@ -26,5 +26,6 @@ interface AppPreferencesRepository {
     suspend fun setAutoConnect(value: Boolean)
     suspend fun setShowDiagnosticsOverlay(value: Boolean)
     suspend fun setNotificationRelayEnabled(value: Boolean)
+    suspend fun setTripBBaselineKm(value: Float)
     suspend fun setDevModeUnlocked(value: Boolean)
 }

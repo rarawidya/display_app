@@ -88,6 +88,13 @@ data class AppSettings(
      */
     val notificationRelayEnabled: Boolean = false,
 
+    /**
+     * Odometer (km) snapshot taken the last time the user reset **Trip B**. Trip B
+     * (an app-tracked trip) is displayed as `odometer − tripBBaselineKm`. Persisted
+     * so the trip survives app restarts. Trip A is the vehicle's own wire trip.
+     */
+    val tripBBaselineKm: Float = 0f,
+
     /** Set true once the user taps version row 7 times. Survives app restart. */
     val devModeUnlocked: Boolean = false
 )

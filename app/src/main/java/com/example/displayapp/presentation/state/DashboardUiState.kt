@@ -27,7 +27,11 @@ data class DashboardUiState(
     val temperature: Int = 0,                    // motor temp (°C)
     val controllerTemperature: Int = 0,          // wire field (°C)
     val batteryTemperature: Int = 0,             // wire field (°C)
-    val odometer: Float = 0f,                    // km
+    /** Pack is charging — derived from `batteryCurrent` (@2) with hysteresis. */
+    val charging: Boolean = false,
+    val odometer: Float = 0f,                    // km, lifetime (odoMeters @12)
+    val tripOdometer: Float = 0f,                // km, Trip A — vehicle trip (tripMeters @13)
+    val tripBOdometer: Float = 0f,               // km, Trip B — app-tracked (odometer − baseline)
     val vehicleMode: VehicleMode = VehicleMode.PARK,
     val leftIndicator: Boolean = false,
     val rightIndicator: Boolean = false,

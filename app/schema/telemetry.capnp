@@ -2,70 +2,74 @@
 
 # EVDISPLAY (Votol) Telemetry Frame Schema — App-facing protocol.
 #
-# This is the canonical, FROZEN schema published by the firmware team in
-# `capnp.md` (v1, 2026-07-03). The app decodes exactly these fields off the
-# Bluetooth-Classic SPP stream. Do NOT renumber, reorder, retype, or delete
-# ordinals @0..@10 — new telemetry (odometer, throttle, BMS, timestamps, turn
-# signals…) is APPENDED at @11+, which grows the frame LEN.
+# Canonical schema published by the firmware team in `docs/capnpble.md` §3.
 #
-# Board → phone, telemetry uplink only (~10 Hz). No downlink is defined in v1.
+# ⚠️ 2026-07-07 WIRE-BREAKING RENUMBER. `VotolTelemetry` was re-sorted to
+# sequential ordinals @0..@14 (declaration order) and gained `batteryCurrent`
+# (@2), `tempBattery` (@8), `odoMeters` (@12), `tripMeters` (@13). Every byte
+# offset moved; the data section grew 24→32 bytes (3→4 words) and the framed
+# payload 40→48 bytes (LEN 0x30). Ordinals @0..@14 are now FROZEN — new
+# telemetry is APPENDED at @15+, which grows the frame LEN.
+#
+# Board → phone, telemetry uplink (~10 Hz) over BLE GATT Notify on 0xAF08.
+# (Phone → board is the separate `PhoneNotification` schema written to 0xAF07.)
 #
 # ─────────────────────────────────────────────────────────────────────────────
-#  Wire framing (see capnp.md §2)
+#  Wire framing (see capnpble.md §2)
 # ─────────────────────────────────────────────────────────────────────────────
 #   [SYNC:0xAA] [LEN:uint8] [PAYLOAD:LEN bytes] [CRC16-CCITT:uint16-LE]
 #
 #   SYNC   = 0xAA single frame-start byte (scan for it to resync).
-#   LEN    = payload length in bytes (uint8). Currently 40; grows if the schema
-#            gains fields. ALWAYS trust LEN — never hardcode 40.
+#   LEN    = payload length in bytes (uint8). Currently 48 (0x30); grows if the
+#            schema gains fields. ALWAYS trust LEN — never hardcode 48.
 #   CRC16  = CRC16-CCITT (poly 0x1021, init 0xFFFF, MSB-first, NO final XOR),
 #            computed over LEN || PAYLOAD, transmitted little-endian.
 #   Total frame length = LEN + 4 bytes.
 #
 #   PAYLOAD is one unpacked, single-segment Cap'n Proto `VotolTelemetry`
-#   message: 8-byte segment header + 8-byte root pointer + 3 data words (24 B).
+#   message: 8-byte segment header + 8-byte root pointer + 4 data words (32 B).
 #
 # ─────────────────────────────────────────────────────────────────────────────
-#  Field semantics / trust (see capnp.md §3)
+#  Field semantics / trust (see capnpble.md §3)
 # ─────────────────────────────────────────────────────────────────────────────
-#   batteryDeciVolts  0.1 V units (÷10 → volts).                     CONFIRMED
-#   currentMotor      deci-amps (÷10 → A), signed (neg = regen).     CONFIRMED
-#   rpm               real motor rpm (already scaled).               CONFIRMED
-#   speedKmh          km/h, direct (firmware derives rpm*83/1000).   PROVISIONAL
-#   controllerTempC   whole °C, direct.                             CONFIRMED
-#   motorTempC        whole °C, direct.                              CONFIRMED
-#   driveMode         1 / 2 / 3 (Eco / Urban / Sport).               CONFIRMED
-#   faultCode         controller fault bitfield, currently 0.        PROVISIONAL
-#   flags             bitfield (see below).                          CONFIRMED
+#   batteryVolt       0.1 V units (÷10 → volts).                      CONFIRMED
+#   batteryPercent    0-100 % SoC, or 255 = NOT-YET-KNOWN (show --).  CONFIRMED
+#   batteryCurrent    whole A, signed, positive = charging pack.      CONFIRMED
+#   currentMotor      deci-amps (÷10 → A), signed (neg = regen).      CONFIRMED
+#   rpm               real motor rpm (already scaled ×4.5).           CONFIRMED
+#   kmh               km/h (firmware derives raw*83/1000).            PROVISIONAL
+#   tempControl       whole °C, direct.                               CONFIRMED
+#   tempMotor         whole °C, direct.                               CONFIRMED
+#   tempBattery       battery pack whole °C, direct.                  CANDIDATE
+#   driveMode         1 / 2 / 3 (Eco / Urban / Sport).                CONFIRMED
+#   faultCode         controller fault bitfield, currently 0.         PROVISIONAL
 #   seq               rolling frame counter (drop detection).
-#   batteryPercent    0-100 % SoC, or 255 = NOT-YET-KNOWN (show --). CONFIRMED
+#   odoMeters         lifetime odometer, metres (÷1000 → km).         CONFIRMED
+#   tripMeters        resettable trip odometer, metres (÷1000 → km).  CONFIRMED
+#   flags             bitfield (see below).                           CONFIRMED
 #
 #   `flags` bits (UInt8): 0 run · 1 brake · 2 moving · 3 reverse ·
 #                         4 park · 5 sideStand (N/A, firmware forces 0) ·
 #                         6 lowBattery (SoC≤15%) · 7 regen (currentMotor < 0).
 #
-# NOTE — divergences from the app's previous internal schema, kept here so the
-# canonical-invariant docs stay honest:
-#   • rpm and speedKmh are now REAL wire fields — the app no longer derives
-#     rpm = speed×100. Both are read straight off the frame.
-#   • currentMotor is CONFIRMED signed deci-amps (÷10 = A, negative = regen) —
-#     matched against the vendor display. Bus power (V×I), the energy/regen
-#     integrators and Wh/km + range are therefore LIVE. (~−4 count ≈ 0.4 A
-#     zero-offset at idle; small enough that the reader applies ÷10 with no
-#     offset subtraction, per the firmware capnp.md reference decode.)
-#   • battery pack temperature is NOT on this wire (v1). VehicleData keeps the
-#     field for UI/persistence continuity but the mapper sets it 0 (unknown).
+#   Derived on the phone (no wire flag): charging = batteryCurrent >= 1
+#   (with hysteresis). The odometer trip is resettable via a PhoneNotification
+#   control command (category=32, title="ODO_RESET_TRIP") — see capnpble.md §5.
 
 struct VotolTelemetry {
-  batteryDeciVolts @0 :UInt16;   # battery voltage, 0.1 V units (809 = 80.9 V)
-  currentMotor     @1 :Int16;    # motor current, deci-amps (÷10 = A), signed (neg = regen)
-  rpm              @2 :UInt16;   # real motor rpm (already scaled)
-  speedKmh         @3 :UInt16;   # km/h (firmware: rpm * 83 / 1000)
-  controllerTempC  @4 :Int8;     # controller temp, whole deg C
-  motorTempC       @5 :Int8;     # motor temp, whole deg C
-  driveMode        @6 :UInt8;    # 1 = Eco, 2 = Urban, 3 = Sport
-  faultCode        @7 :UInt32;   # controller fault bitfield (currently 0)
-  flags            @8 :UInt8;    # bit0 run, bit1 brake, bit2 moving, bit3 reverse, bit4 park, bit5 sideStand, bit6 lowBattery, bit7 regen
-  seq              @9 :UInt32;   # rolling frame counter (drop detection)
-  batteryPercent   @10 :UInt8;   # state-of-charge 0-100 %, or 255 = not yet known
+  batteryVolt    @0  :UInt16;   # battery voltage, 0.1 V units (809 = 80.9 V)
+  batteryPercent @1  :UInt8;    # state-of-charge 0-100 %, or 255 = not yet known
+  batteryCurrent @2  :Int8;     # battery pack current, whole A, signed, positive = charging
+  currentMotor   @3  :Int16;    # motor current, deci-amps (÷10 = A), signed (neg = regen)
+  rpm            @4  :UInt16;   # real motor rpm (already scaled ×4.5)
+  kmh            @5  :UInt16;   # km/h (firmware: raw * 83 / 1000)
+  tempControl    @6  :Int8;     # controller temp, whole deg C
+  tempMotor      @7  :Int8;     # motor temp, whole deg C
+  tempBattery    @8  :Int8;     # battery pack temp, whole deg C
+  driveMode      @9  :UInt8;    # 1 = Eco, 2 = Urban, 3 = Sport
+  faultCode      @10 :UInt32;   # controller fault bitfield (currently 0)
+  seq            @11 :UInt32;   # rolling frame counter (drop detection)
+  odoMeters      @12 :UInt32;   # lifetime odometer, metres (÷1000 = km)
+  tripMeters     @13 :UInt32;   # resettable trip odometer, metres (÷1000 = km)
+  flags          @14 :UInt8;    # bit0 run, 1 brake, 2 moving, 3 reverse, 4 park, 5 sideStand, 6 lowBattery, 7 regen
 }

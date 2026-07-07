@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.diagnostics.DiagnosticsSnapshot
 import com.example.displayapp.data.energy.EfficiencyTracker
+import com.example.displayapp.data.notification.PhoneNotificationSender
+import com.example.displayapp.data.protocol.PhoneNotificationSchema
 import com.example.displayapp.data.protocol.TelemetryConstants
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.domain.model.VehicleData
+import com.example.displayapp.domain.repository.AppPreferencesRepository
 import com.example.displayapp.domain.repository.VehicleRepository
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.state.DiagnosticsState
@@ -37,8 +40,22 @@ import kotlinx.coroutines.launch
 class DashboardViewModel(
     private val repository: VehicleRepository,
     private val efficiencyTracker: EfficiencyTracker,
-    private val diagnosticsRepository: DiagnosticsRepository
+    private val diagnosticsRepository: DiagnosticsRepository,
+    private val notificationSender: PhoneNotificationSender,
+    private val appPreferences: AppPreferencesRepository
 ) : ViewModel() {
+
+    // Trip B is app-tracked: displayed distance = odometer − baseline. The baseline
+    // is the odometer snapshot at the last Trip B reset (persisted). `lastOdometerKm`
+    // mirrors the current displayed odometer so resetTripB() can snapshot it.
+    private var tripBBaselineKm = 0f
+    private var lastOdometerKm = 0f
+
+    init {
+        viewModelScope.launch {
+            appPreferences.settings.collect { tripBBaselineKm = it.tripBBaselineKm }
+        }
+    }
 
     private val _showDiagnostics = MutableStateFlow(false)
     val showDiagnostics: StateFlow<Boolean> = _showDiagnostics
@@ -64,6 +81,12 @@ class DashboardViewModel(
     private var sessionLastSpeed = 0
     private var sessionLastTimestampMs = 0L
 
+    // Charging state with hysteresis (capnpble.md §3): on at ≥1 A into the pack,
+    // off only after ≤0 A held ~1 s, so the icon doesn't flicker on the charger's
+    // 0→1→4 A ramp. Timed off the frame timestamp (no wall-clock reads).
+    private var charging = false
+    private var chargingOffSinceMs = 0L
+
     val uiState: StateFlow<DashboardUiState> = combine(
         repository.vehicleData,
         repository.connectionState,
@@ -74,6 +97,8 @@ class DashboardViewModel(
         trackFps(vehicleData)
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
+        updateCharging(vehicleData, connectionState)
+        lastOdometerKm = displayedOdometerKm(vehicleData)
         mapToUiState(vehicleData, connectionState, diag, efficiency, rssi)
     }.stateIn(
         scope = viewModelScope,
@@ -121,9 +146,15 @@ class DashboardViewModel(
             temperature = data.temperature,
             controllerTemperature = data.controllerTemperature,
             batteryTemperature = data.batteryTemperature,
-            // No odometer wire field yet — surface the live session distance as the
-            // Home "Odometer" readout until a persisted lifetime odometer is wired.
-            odometer = sessionDistanceKm.toFloat(),
+            charging = charging,
+            // Prefer the board-integrated lifetime odometer (odoMeters @12, persists
+            // across reboots); fall back to the live session distance for firmware
+            // that doesn't send it yet (odometerKm == 0).
+            odometer = displayedOdometerKm(data),
+            // Trip A = the vehicle's own resettable trip (tripMeters @13).
+            tripOdometer = data.tripKm,
+            // Trip B = app-tracked trip since the last local reset.
+            tripBOdometer = (displayedOdometerKm(data) - tripBBaselineKm).coerceAtLeast(0f),
             vehicleMode = data.vehicleMode,
             // Warning-lamp telltales — decode the wire `flags` bitfield and
             // `faultCode` (capnp.md §3). No UI-side bit math downstream.
@@ -196,13 +227,70 @@ class DashboardViewModel(
         sessionDistanceKm = 0.0
         sessionLastSpeed = 0
         sessionLastTimestampMs = 0L
+        charging = false
+        chargingOffSinceMs = 0L
+    }
+
+    /** Charging hysteresis — see the field docs. Off while disconnected. */
+    private fun updateCharging(data: VehicleData, connectionState: ConnectionState) {
+        if (connectionState != ConnectionState.CONNECTED) {
+            charging = false
+            chargingOffSinceMs = 0L
+            return
+        }
+        val amps = data.batteryCurrent
+        when {
+            amps >= CHARGING_ON_AMPS -> { charging = true; chargingOffSinceMs = 0L }
+            amps <= 0f && charging -> {
+                if (chargingOffSinceMs == 0L) chargingOffSinceMs = data.timestamp
+                else if (data.timestamp - chargingOffSinceMs >= CHARGING_OFF_HOLD_MS) {
+                    charging = false
+                    chargingOffSinceMs = 0L
+                }
+            }
+        }
+    }
+
+    /** Lifetime odometer to display: board value when present, else session distance. */
+    private fun displayedOdometerKm(data: VehicleData): Float =
+        if (data.odometerKm > 0f) data.odometerKm else sessionDistanceKm.toFloat()
+
+    /**
+     * Reset **Trip A** — the vehicle's own trip — over BLE. Sends a `PhoneNotification`
+     * control command (`category=32`, `title="ODO_RESET_TRIP"`) to `0xAF07`
+     * (capnpble.md §5b). The lifetime odometer is untouched; `tripMeters` returns to
+     * 0 on the next uplink. No-op if not connected (write returns false).
+     */
+    fun resetTripOdometer() {
+        viewModelScope.launch {
+            notificationSender.send(
+                PhoneNotificationSchema.PhoneNotification(
+                    id = 0,
+                    category = PhoneNotificationSchema.CATEGORY_CONTROL,
+                    appName = "EVD",
+                    title = "ODO_RESET_TRIP"
+                )
+            )
+        }
+    }
+
+    /**
+     * Reset **Trip B** — the app-tracked trip — by snapshotting the current odometer
+     * as the new baseline (persisted). Trip B then reads 0 and climbs from here.
+     */
+    fun resetTripB() {
+        viewModelScope.launch { appPreferences.setTripBBaselineKm(lastOdometerKm) }
     }
 
     private companion object {
-        // VotolTelemetry `flags` bit masks (capnp.md §3).
+        // VotolTelemetry `flags` bit masks (capnpble.md §3).
         const val FLAG_ENGINE_RUNNING = 0x01
         const val FLAG_BRAKE = 0x02
         const val FLAG_REVERSE = 0x08
+
+        // Charging hysteresis thresholds (capnpble.md §3).
+        const val CHARGING_ON_AMPS = 1f
+        const val CHARGING_OFF_HOLD_MS = 1_000L
     }
 
     private fun trackFps(frame: VehicleData) {

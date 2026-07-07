@@ -54,6 +54,7 @@ import com.example.displayapp.ui.theme.EvRed
 fun BatteryRowCard(
     batteryPercent: Int,
     known: Boolean = true,
+    charging: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val clamped = batteryPercent.coerceIn(0, 100)
@@ -104,6 +105,31 @@ fun BatteryRowCard(
                         ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Charging pill — pack current ≥ 1 A into the battery (with
+                    // hysteresis in the ViewModel so it doesn't flicker).
+                    if (charging) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(EvGreen.copy(alpha = 0.16f))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = EvIcons.Bolt,
+                                contentDescription = "Charging",
+                                tint = EvGreen,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "Charging",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = EvGreen
+                            )
+                        }
+                    }
                 }
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     // SoC unknown (wire sends 255 for ~1 s after board boot) → "—".

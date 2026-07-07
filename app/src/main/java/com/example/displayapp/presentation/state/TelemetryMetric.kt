@@ -63,15 +63,15 @@ enum class TelemetryMetric(
 
     companion object {
         /**
-         * Metrics backed by a **real controller wire field** (capnp.md) — the only
-         * ones the UI should plot. [Current] (and its derived [Power]) are now
-         * plottable: `currentMotor @1` is calibrated signed deci-amps. Still
-         * excluded: [WhPerKm]/[EstRange] (rolling-window analytics, not per-sample
-         * series) and [BatteryTemp] (absent from the v1 wire, always 0). The enum
-         * keeps those entries so persistence/CSV/decode stay intact; they just
+         * Metrics backed by a **real controller wire field** (capnpble.md §3) — the
+         * only ones the UI should plot. [Current]/[Power] are plottable (calibrated
+         * `currentMotor @3`), and [BatteryTemp] is now plottable too (`tempBattery @8`
+         * became a real channel in the 2026-07-07 renumber). Still excluded:
+         * [WhPerKm]/[EstRange] (rolling-window analytics, not per-sample series). The
+         * enum keeps those entries so persistence/CSV/decode stay intact; they just
          * never surface as selectable series.
          */
         val displayable: List<TelemetryMetric> =
-            listOf(Speed, Rpm, Voltage, Current, Power, Battery, MotorTemp, ControllerTemp)
+            listOf(Speed, Rpm, Voltage, Current, Power, Battery, MotorTemp, BatteryTemp, ControllerTemp)
     }
 }

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -158,10 +160,10 @@ private fun DashboardPortrait(
         // Drive-mode selector sits directly below the speedometer so quick-
         // glance recognition has the gauge + active mode in one frame.
         ModeCard(mode = state.vehicleMode)
-        BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown)
+        BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown, charging = state.charging)
         TelemetryGrid(state = state)
-        MiniMapCard(
-            viewModel = mapsViewModel,
+        TitledMiniMap(
+            mapsViewModel = mapsViewModel,
             onOpenFullscreen = onOpenNavigation
         )
         Spacer(Modifier.height(Dim.sm))
@@ -209,8 +211,8 @@ private fun DashboardLandscape(
             ) {
                 SpeedometerSection(state = state)
                 ModeCard(mode = state.vehicleMode)
-                MiniMapCard(
-                    viewModel = mapsViewModel,
+                TitledMiniMap(
+                    mapsViewModel = mapsViewModel,
                     onOpenFullscreen = onOpenNavigation
                 )
             }
@@ -218,10 +220,34 @@ private fun DashboardLandscape(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(Dim.md)
             ) {
-                BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown)
+                BatteryRowCard(batteryPercent = state.batteryPercent, known = state.batteryKnown, charging = state.charging)
                 TelemetryGrid(state = state)
             }
         }
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Map section                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Mini-map with a section title above it, matching the Home page's card headers. */
+@Composable
+private fun TitledMiniMap(
+    mapsViewModel: MapsViewModel,
+    onOpenFullscreen: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(Dim.sm)) {
+        Text(
+            text = "Navigation",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        MiniMapCard(
+            viewModel = mapsViewModel,
+            onOpenFullscreen = onOpenFullscreen
+        )
     }
 }
 
