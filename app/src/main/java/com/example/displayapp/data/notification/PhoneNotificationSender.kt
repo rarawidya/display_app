@@ -26,6 +26,11 @@ class PhoneNotificationSender(
 
     suspend fun send(notification: PhoneNotification): Boolean {
         val frame = FrameEncoder.encode(PhoneNotificationSchema.encode(notification))
+        // Pre-write log (NOTIFICATION-APP-FIXME.md §2): pairs with the board's
+        // `DOWNLINK raw` line to localize a loss between encoder and radio.
+        Timber.tag(TAG).i(
+            "writing 0xAF07 frame len=%d id=%d cat=%d", frame.size, notification.id, notification.category
+        )
         val ok = dataSource.writeCommand(frame)
         diagnostics.reportNotificationPush(delivered = ok)
         Timber.tag(TAG).d(

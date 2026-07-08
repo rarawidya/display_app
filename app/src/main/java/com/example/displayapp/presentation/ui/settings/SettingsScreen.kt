@@ -38,9 +38,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -54,6 +62,7 @@ import com.example.displayapp.domain.model.AppSettings
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.domain.model.ThemeMode
 import com.example.displayapp.presentation.state.SettingsUiState
+import com.example.displayapp.service.NotificationRelayService
 import com.example.displayapp.presentation.ui.icons.EvIcons
 import com.example.displayapp.presentation.ui.settings.components.ActionRow
 import com.example.displayapp.presentation.ui.settings.components.ChoiceRow
@@ -88,6 +97,10 @@ fun SettingsScreen(
         mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName))
     }
 
+    // Doze can kill the bound notification listener (NOTIFICATION-APP-FIXME.md §1);
+    // surface a one-tap exemption row until the app is exempt.
+    var batteryExempt by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -96,11 +109,25 @@ fun SettingsScreen(
                 viewModel.refreshStorage()
                 notificationAccess =
                     NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+                batteryExempt = isIgnoringBatteryOptimizations(context)
+                // Just came back from the access screen: if it's now granted, nudge
+                // the system to bind the listener (it won't always on its own after
+                // an install/update) so relaying starts without a reboot.
+                if (notificationAccess) {
+                    NotificationRelayService.requestRebindIfGranted(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // Call mirroring needs READ_PHONE_STATE (calls don't reach the notification
+    // listener). Requested at point of use — when the relay toggle flips on — and
+    // the toggle is enabled either way: a denial just means notifications-only.
+    val phonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { viewModel.setNotificationRelayEnabled(true) }
 
     SettingsContent(
         state = state,
@@ -110,10 +137,27 @@ fun SettingsScreen(
         onAutoConnect = viewModel::setAutoConnect,
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
-        onNotificationRelay = viewModel::setNotificationRelayEnabled,
+        onNotificationRelay = { enabled ->
+            val needPhonePermission = enabled &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) !=
+                PackageManager.PERMISSION_GRANTED
+            if (needPhonePermission) {
+                phonePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+            } else {
+                viewModel.setNotificationRelayEnabled(enabled)
+            }
+        },
         onOpenNotificationAccess = {
             context.startActivity(
                 Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        },
+        batteryExempt = batteryExempt,
+        onRequestBatteryExemption = {
+            context.startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:${context.packageName}"))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         },
@@ -125,6 +169,10 @@ fun SettingsScreen(
         }
     )
 }
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
+    (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+        ?.isIgnoringBatteryOptimizations(context.packageName) ?: true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,6 +186,8 @@ fun SettingsContent(
     onSimulatorMode: (Boolean) -> Unit,
     onNotificationRelay: (Boolean) -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    batteryExempt: Boolean,
+    onRequestBatteryExemption: () -> Unit,
     onClearTrips: () -> Unit,
     onUnlockDeveloper: () -> Unit,
     onOpenDeveloper: () -> Unit,
@@ -196,7 +246,9 @@ fun SettingsContent(
                     app = state.app,
                     accessGranted = notificationAccessGranted,
                     onToggle = onNotificationRelay,
-                    onOpenAccess = onOpenNotificationAccess
+                    onOpenAccess = onOpenNotificationAccess,
+                    batteryExempt = batteryExempt,
+                    onRequestBatteryExemption = onRequestBatteryExemption
                 )
                 StorageSection(
                     storage = state.storage,
@@ -331,7 +383,9 @@ private fun NotificationsSection(
     app: AppSettings,
     accessGranted: Boolean,
     onToggle: (Boolean) -> Unit,
-    onOpenAccess: () -> Unit
+    onOpenAccess: () -> Unit,
+    batteryExempt: Boolean,
+    onRequestBatteryExemption: () -> Unit
 ) {
     SettingsSection(title = "Phone notifications") {
         SwitchRow(
@@ -349,6 +403,17 @@ private fun NotificationsSection(
             leadingTint = if (accessGranted) EvGreen else EvAmber,
             onClick = onOpenAccess
         )
+        // Doze can unbind the notification listener mid-ride; the exemption keeps
+        // relaying alive with the screen off. Hidden once granted.
+        if (!batteryExempt) {
+            SectionDivider()
+            ActionRow(
+                title = "Allow background delivery",
+                subtitle = "Exempt from battery optimization so relaying survives Doze",
+                leadingTint = EvAmber,
+                onClick = onRequestBatteryExemption
+            )
+        }
     }
 }
 

@@ -37,6 +37,15 @@ class DisplayApp : Application() {
         org.maplibre.android.MapLibre.getInstance(this)
         appContainer = AppContainer(this)
 
+        // Android doesn't always rebind the notification listener after an app
+        // install/update (it can stay dead until a reboot or an access toggle),
+        // so ask it to rebind at cold start when access is already granted.
+        com.example.displayapp.service.NotificationRelayService.requestRebindIfGranted(this)
+
+        // Calls don't arrive through the notification listener — the telephony
+        // relay follows the same "Mirror to vehicle display" toggle.
+        appContainer.callStateRelay.start()
+
         // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
             val retentionDays = appContainer.appPreferencesRepository.settings

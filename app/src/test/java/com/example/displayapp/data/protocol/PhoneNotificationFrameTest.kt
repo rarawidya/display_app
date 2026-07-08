@@ -60,6 +60,28 @@ class PhoneNotificationFrameTest {
         assertTrue("frame within MTU budget", FrameEncoder.encode(payload).size <= 244)
     }
 
+    @Test
+    fun `all three fields maxed stays within the board's no-reassembly limit`() {
+        // Worst case: a generic app (long label) with a maxed title AND body. Before
+        // the body budget was added this encoded to a 248 B payload / 252 B frame —
+        // 8 B over the board's hard ceiling — and the board (no RX reassembly) dropped
+        // it, so the notification never showed. Every frame must now fit one ATT write.
+        val payload = PhoneNotificationSchema.encode(
+            PhoneNotification(
+                id = 7,
+                category = PhoneNotificationSchema.CATEGORY_OTHER,
+                appName = "A".repeat(200),
+                title = "B".repeat(200),
+                body = "C".repeat(200)
+            )
+        )
+        assertTrue(
+            "payload ${payload.size} B must be ≤ ${PhoneNotificationSchema.MAX_FRAME_PAYLOAD_BYTES}",
+            payload.size <= PhoneNotificationSchema.MAX_FRAME_PAYLOAD_BYTES
+        )
+        assertTrue("frame within single-write budget", FrameEncoder.encode(payload).size <= 244)
+    }
+
     private fun hex(s: String): ByteArray =
         s.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
             .map { it.toInt(16).toByte() }.toByteArray()

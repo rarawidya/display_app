@@ -44,6 +44,14 @@ class MapsViewModel(
 
     private val _searchQuery = MutableStateFlow("")
 
+    // Bumped on a location-permission grant. LocationRepository.location is a cold
+    // flow that emits null and COMPLETES when permission is missing, so after a
+    // grant it must be re-collected — flatMapLatest restarts it on each bump.
+    private val _locationRestart = MutableStateFlow(0)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val liveLocation = _locationRestart.flatMapLatest { locationRepository.location }
+
     /**
      * Live place-search results (real geocoding), debounced on the query and biased to
      * the current location. Empty when the query is blank or the geocoder isn't
@@ -74,7 +82,7 @@ class MapsViewModel(
     )
 
     val uiState: StateFlow<MapsUiState> = combine(
-        locationRepository.location,
+        liveLocation,
         _searchQuery,
         _pendingPlace,
         coordinator.previewDestination,
@@ -108,6 +116,11 @@ class MapsViewModel(
 
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
+    }
+
+    /** The user just granted location permission — restart the location stream. */
+    fun onLocationPermissionGranted() {
+        _locationRestart.value += 1
     }
 
     /** Pick a searched place → PREVIEW it (plan + show the confirmation sheet). */

@@ -34,6 +34,18 @@ object PhoneNotificationSchema {
     const val MAX_TITLE_BYTES = 48
     const val MAX_BODY_BYTES = 96
 
+    /**
+     * Board hard limit (docs/capnpble.md §4, APP-NOTIFICATION-INTEGRATION.md §6): the
+     * server does **no RX reassembly**, so one ATT write must be one whole frame with
+     * **payload ≤ 240 B** (frame ≤ 244 B). The per-field caps above are an upper bound
+     * on *content*, but Cap'n Proto's NUL terminator + word-alignment padding + the
+     * fixed 56 B (seg table + root + 2 data words + 3 pointer words) push a fully-maxed
+     * notification to a 248 B payload — 8 B over. [encode] therefore budgets the body
+     * against the actual appName/title sizes so every frame is ≤ this, whatever the
+     * content; an over-limit frame is silently dropped by the board (never shown).
+     */
+    const val MAX_FRAME_PAYLOAD_BYTES = 240
+
     /** `flags` bitfield (§2b / §4). */
     const val FLAG_ONGOING = 0x01   // persistent (active/incoming call); send a removed/clear when it ends
     const val FLAG_REMOVED = 0x02   // dismiss — collapses the currently-shown banner
@@ -77,10 +89,21 @@ object PhoneNotificationSchema {
     /** Serialize [n] to an unpacked, single-segment Cap'n Proto payload. */
     fun encode(n: PhoneNotification): ByteArray {
         // UTF-8 text, control chars → space, truncated on a codepoint boundary.
+        // appName/title take their fixed caps; the body is then budgeted against the
+        // room actually left so the whole frame stays ≤ MAX_FRAME_PAYLOAD_BYTES (the
+        // board does no reassembly — see the constant's doc). Fixed overhead = 56 B
+        // (8 seg table + 8 root + 16 data + 24 pointer); each non-empty Text costs a
+        // word-aligned region of `roundUpToWord(bytes + 1)` (the +1 is the NUL).
+        val appBytes = sanitizeAndTruncate(n.appName, MAX_APP_NAME_BYTES)
+        val titleBytes = sanitizeAndTruncate(n.title, MAX_TITLE_BYTES)
+        val fixedOverhead = WORD * (1 + 1 + DATA_WORDS + PTR_WORDS)          // seg table + root + data + ptrs
+        val used = fixedOverhead + regionBytes(appBytes.size) + regionBytes(titleBytes.size)
+        // Words the body region may occupy → max body bytes (region = roundUp(bytes+1)).
+        val bodyBudget = (MAX_FRAME_PAYLOAD_BYTES - used - 1).coerceIn(0, MAX_BODY_BYTES)
         val texts = listOf(
-            sanitizeAndTruncate(n.appName, MAX_APP_NAME_BYTES),
-            sanitizeAndTruncate(n.title, MAX_TITLE_BYTES),
-            sanitizeAndTruncate(n.body, MAX_BODY_BYTES)
+            appBytes,
+            titleBytes,
+            sanitizeAndTruncate(n.body, bodyBudget)
         )
 
         // Lay out each non-empty Text as a word-aligned region after the pointer
@@ -142,6 +165,10 @@ object PhoneNotificationSchema {
     }
 
     private data class TextRegion(val startWord: Int, val listCount: Int, val wordLen: Int)
+
+    /** Word-aligned wire size of a Text region of [contentBytes] (0 → null pointer, no region). */
+    private fun regionBytes(contentBytes: Int): Int =
+        if (contentBytes == 0) 0 else ((contentBytes + 1 + (WORD - 1)) / WORD) * WORD
 
     /**
      * UTF-8 encode, replacing control chars with spaces (the board sanitizes the

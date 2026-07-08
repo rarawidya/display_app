@@ -31,7 +31,13 @@ enum class AppPermission(
     val displayName: String,
     val rationale: String,
     /** lowest SDK that exposes this permission as a runtime grant */
-    val minSdk: Int = Build.VERSION_CODES.M
+    val minSdk: Int = Build.VERSION_CODES.M,
+    /**
+     * Alternate grants that also satisfy this row. Location is the case in point:
+     * an Android 12+ "Approximate" grant gives only ACCESS_COARSE_LOCATION, which
+     * still powers the map — showing it as Denied would be misleading.
+     */
+    val alsoSatisfiedBy: List<String> = emptyList()
 ) {
     BLUETOOTH_SCAN(
         Manifest.permission.BLUETOOTH_SCAN,
@@ -48,7 +54,13 @@ enum class AppPermission(
     LOCATION(
         Manifest.permission.ACCESS_FINE_LOCATION,
         "Location",
-        "Used by Bluetooth scan and the live map."
+        "Used by the live map and navigation (and Bluetooth scan on Android 11 and below).",
+        alsoSatisfiedBy = listOf(Manifest.permission.ACCESS_COARSE_LOCATION)
+    ),
+    PHONE_STATE(
+        Manifest.permission.READ_PHONE_STATE,
+        "Phone state",
+        "Mirrors incoming calls to the vehicle display."
     ),
     NOTIFICATIONS(
         Manifest.permission.POST_NOTIFICATIONS,
@@ -61,10 +73,12 @@ enum class AppPermission(
 class PermissionStatusProvider(private val context: Context) {
 
     fun snapshot(): List<PermissionItem> = AppPermission.entries.map { p ->
+        val granted = (listOf(p.androidName) + p.alsoSatisfiedBy).any {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
         val state = when {
             Build.VERSION.SDK_INT < p.minSdk -> PermissionState.NOT_APPLICABLE
-            ContextCompat.checkSelfPermission(context, p.androidName) ==
-                PackageManager.PERMISSION_GRANTED -> PermissionState.GRANTED
+            granted -> PermissionState.GRANTED
             else -> PermissionState.DENIED
         }
         PermissionItem(p, state)

@@ -14,9 +14,17 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:targetApi="s" />
-    <!-- ACCESS_FINE_LOCATION still needed on Android 11 and below for BT discovery. -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- Precise location: BT discovery on Android 11 and below, and the live map /
+         turn-by-turn navigation on every version (coarse ~2 km is unusable there). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Call mirroring: incoming/ongoing calls don't arrive through the
+         NotificationListenerService, so CallStateRelay listens to telephony call
+         state and pushes category=1 frames to the board (NOTIFICATION-APP-FIXME.md §3). -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Doze can kill the bound notification listener; Settings offers the user a
+         one-tap exemption so relaying survives the screen being off on the bike. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

@@ -21,6 +21,7 @@ import com.example.displayapp.domain.repository.Geocoder
 import com.example.displayapp.domain.repository.NavigationProvider
 import com.example.displayapp.domain.repository.RoutePlanner
 import kotlinx.coroutines.flow.filterNotNull
+import com.example.displayapp.data.notification.CallStateRelay
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
@@ -255,6 +256,16 @@ class AppContainer(private val context: Context) {
      */
     val phoneNotificationSender: PhoneNotificationSender by lazy {
         PhoneNotificationSender(bluetoothDataSource, diagnosticsRepository)
+    }
+
+    /**
+     * Call capture (docs/NOTIFICATION-APP-FIXME.md §3) — calls don't arrive through
+     * the NotificationListenerService, so a TelephonyCallback mirrors ringing/
+     * in-call/ended to the board as `category=1` frames. Follows the same relay
+     * toggle as [phoneNotificationSender]; started once in DisplayApp.onCreate.
+     */
+    val callStateRelay: CallStateRelay by lazy {
+        CallStateRelay(context, phoneNotificationSender, appPreferencesRepository, appScope)
     }
 
     val vehicleRepository: VehicleRepository by lazy {

@@ -1,10 +1,14 @@
 package com.example.displayapp.service
 
+import android.content.ComponentName
+import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationManagerCompat
 import com.example.displayapp.DisplayApp
 import com.example.displayapp.data.notification.NotificationClassifier
 import com.example.displayapp.data.notification.PhoneNotificationSender
+import com.example.displayapp.data.protocol.PhoneNotificationSchema
 import com.example.displayapp.domain.repository.AppPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +52,13 @@ class NotificationRelayService : NotificationListenerService() {
     // so a stale post landing after the dismiss re-shows a cleared banner).
     private val events = Channel<Event>(Channel.UNLIMITED)
 
+    // Ids we relayed with flags.ongoing set (persistent call banners). The board
+    // never auto-expires those, and it filters `removed=1` frames — so on removal
+    // we send a transient "Call ended" replacement for tracked ids only, and drop
+    // every other removal (a removed frame would wrongly clear the latest-wins
+    // banner even when it belongs to a different notification).
+    private val ongoingIds = mutableSetOf<Int>()
+
     override fun onCreate() {
         super.onCreate()
         val container = (application as DisplayApp).appContainer
@@ -55,18 +66,52 @@ class NotificationRelayService : NotificationListenerService() {
         prefs = container.appPreferencesRepository
         ownPackage = packageName
         scope.launch {
+            // Some OEMs (observed on Samsung/OneUI) deliver the same listener
+            // callback twice back-to-back; the frames come out byte-identical
+            // (timestampUnix has 1 s resolution), so drop consecutive repeats
+            // rather than writing the same banner to the board twice.
+            var lastSent: PhoneNotificationSchema.PhoneNotification? = null
             for (event in events) {
-                if (!relayEnabled()) continue
-                val notification = when (event) {
-                    is Event.Posted ->
-                        NotificationClassifier.classify(event.sbn, appLabel(event.sbn.packageName))
-                            ?: continue
-                    is Event.Removed -> NotificationClassifier.dismissal(event.sbn)
+                if (!relayEnabled()) {
+                    Timber.tag(TAG).v("relay disabled — dropping %s", event.sbn.packageName)
+                    continue
                 }
+                val notification = when (event) {
+                    is Event.Posted -> {
+                        val classified =
+                            NotificationClassifier.classify(event.sbn, appLabel(event.sbn.packageName))
+                                ?: continue
+                        val id = NotificationClassifier.stableId(event.sbn)
+                        if (classified.flags and PhoneNotificationSchema.FLAG_ONGOING != 0) {
+                            ongoingIds.add(id)
+                        } else {
+                            ongoingIds.remove(id)
+                        }
+                        classified
+                    }
+                    is Event.Removed -> {
+                        // Only a tracked ongoing (call) banner needs collapsing;
+                        // transient banners auto-expire on the board (~12 s).
+                        if (!ongoingIds.remove(NotificationClassifier.stableId(event.sbn))) continue
+                        NotificationClassifier.callEnded(event.sbn)
+                    }
+                }
+                if (notification == lastSent) continue
+                lastSent = notification
                 sender.send(notification)
             }
         }
         Timber.tag(TAG).i("Notification listener created")
+    }
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        Timber.tag(TAG).i("onListenerConnected — system bound the notification listener")
+    }
+
+    override fun onListenerDisconnected() {
+        Timber.tag(TAG).w("onListenerDisconnected — listener unbound; no notifications will relay")
+        super.onListenerDisconnected()
     }
 
     override fun onDestroy() {
@@ -76,12 +121,16 @@ class NotificationRelayService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        // First statement on purpose: `adb logcat | grep -i onNotificationPosted`
+        // is the firmware team's split-the-bug-in-half probe (NOTIFICATION-APP-FIXME.md).
+        Timber.tag(TAG).i("onNotificationPosted pkg=%s key=%s", sbn?.packageName, sbn?.key)
         val n = sbn ?: return
         if (n.packageName == ownPackage) return // don't mirror our own notifications
         events.trySend(Event.Posted(n))
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        Timber.tag(TAG).i("onNotificationRemoved pkg=%s key=%s", sbn?.packageName, sbn?.key)
         val n = sbn ?: return
         if (n.packageName == ownPackage) return
         events.trySend(Event.Removed(n))
@@ -98,7 +147,28 @@ class NotificationRelayService : NotificationListenerService() {
         }.getOrNull()
     }
 
-    private companion object {
-        const val TAG = "NotifRelay"
+    companion object {
+        private const val TAG = "NotifRelay"
+
+        /**
+         * Nudge the system to (re)bind this listener when the user has granted
+         * "Notification access" but the service isn't currently connected.
+         *
+         * Android does **not** reliably bind a `NotificationListenerService` on its
+         * own after an app **install/update** — the binding can stay dead until a
+         * reboot or an access toggle off/on, during which nothing is relayed. Calling
+         * [requestRebind] at cold start and right after the user returns from the
+         * access-grant screen closes that gap. A no-op when access isn't granted (the
+         * system rejects the request) or the service is already bound. Safe on API 24+
+         * (our minSdk); wrapped in [runCatching] since it can throw on odd OEM builds.
+         */
+        fun requestRebindIfGranted(context: Context) {
+            val granted = NotificationManagerCompat.getEnabledListenerPackages(context)
+                .contains(context.packageName)
+            if (!granted) return
+            runCatching {
+                requestRebind(ComponentName(context, NotificationRelayService::class.java))
+            }.onFailure { Timber.tag(TAG).w(it, "requestRebind failed") }
+        }
     }
 }

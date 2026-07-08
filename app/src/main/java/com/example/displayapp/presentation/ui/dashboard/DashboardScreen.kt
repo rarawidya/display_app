@@ -1,5 +1,9 @@
 package com.example.displayapp.presentation.ui.dashboard
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,9 +26,12 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -57,6 +64,8 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDiagnostics by viewModel.showDiagnostics.collectAsStateWithLifecycle()
 
+    LocationPermissionEffect(onGranted = mapsViewModel::onLocationPermissionGranted)
+
     DashboardContent(
         state = uiState,
         mapsViewModel = mapsViewModel,
@@ -69,6 +78,37 @@ fun DashboardScreen(
         bluetoothAnchor = bluetoothAnchor,
         onToggleDiagnostics = viewModel::toggleDiagnostics
     )
+}
+
+/**
+ * Asks for location permission when the Drive page opens, so the mini-map's blue
+ * dot works without a detour through system Settings. Non-blocking: on denial the
+ * page renders normally and the map simply has no location puck. Requesting FINE +
+ * COARSE together lets Android 12+ users pick "approximate" if they prefer.
+ */
+@Composable
+private fun LocationPermissionEffect(onGranted: () -> Unit) {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result -> if (result.values.any { it }) onGranted() }
+
+    LaunchedEffect(Unit) {
+        val granted = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ).any {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (!granted) {
+            launcher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

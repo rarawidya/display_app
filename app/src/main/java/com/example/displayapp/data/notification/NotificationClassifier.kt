@@ -11,9 +11,17 @@ import com.example.displayapp.data.protocol.PhoneNotificationSchema.PhoneNotific
  * posting package** decides the branded messaging apps (WhatsApp / Telegram). The
  * board renders the right glyph from `category` + `appName`.
  *
- * Canonical strings match §3's table (WhatsApp / Telegram / Messages / Phone).
- * Anything unrecognized still relays as a generic banner (`category = 0`) rather
- * than being dropped — the board shows it with a message glyph.
+ * Board-side filter rules (docs/NOTIFICATION-APP-FIXME.md §4) shape every frame:
+ * the UI drops `category = 0`, `flags.removed = 1`, and empty-content frames, so
+ * - unrecognized apps relay as `category = 3` + their real label (generic glyph,
+ *   still shown) — never as the filtered `category = 0`;
+ * - `title`/`body` are backfilled so both are always non-empty;
+ * - `flags.ongoing` is set for **calls only** — the board never auto-expires an
+ *   ongoing banner, so a mirrored media/download notification would pin the
+ *   cluster forever. Non-call ongoing notifications are skipped outright;
+ * - a call that ends is collapsed with a *transient* [callEnded] frame (same id,
+ *   latest-wins replaces the persistent banner, auto-expires ~12 s) instead of a
+ *   filtered `removed = 1` dismissal.
  */
 object NotificationClassifier {
 
@@ -36,10 +44,11 @@ object NotificationClassifier {
     /**
      * Classify a posted notification.
      *
-     * @param appLabel human-readable label of the posting app, used for the
-     *   generic ([PhoneNotificationSchema.CATEGORY_OTHER]) path.
+     * @param appLabel human-readable label of the posting app, used as the
+     *   `appName` on the generic (`category = 3`, unbranded) path.
      * @return a ready-to-send notification, or null when it should be skipped
-     *   (group-summary shell, or a content-less non-call notification).
+     *   (group-summary shell, content-less non-call notification, or a non-call
+     *   ongoing notification such as a media player).
      */
     fun classify(sbn: StatusBarNotification, appLabel: String?): PhoneNotification? {
         val n = sbn.notification ?: return null
@@ -49,12 +58,16 @@ object NotificationClassifier {
 
         val pkg = sbn.packageName.orEmpty()
         val isCall = n.category == Notification.CATEGORY_CALL || pkg in DIALER
+        val isOngoing = sbn.isOngoing || n.flags and Notification.FLAG_ONGOING_EVENT != 0
 
         if (!isCall) {
             // Group summaries duplicate their children; skip the shell.
             if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
             // Nothing to show on the banner.
             if (title.isBlank() && body.isBlank()) return null
+            // Ongoing = non-dismissable (media playback, downloads, nav apps…).
+            // The board never expires an ongoing banner — don't pin the cluster.
+            if (isOngoing) return null
         }
 
         val (category, appName) = when {
@@ -62,13 +75,19 @@ object NotificationClassifier {
             pkg in WHATSAPP -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to "WhatsApp"
             pkg in TELEGRAM -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to "Telegram"
             pkg in SMS      -> PhoneNotificationSchema.CATEGORY_MESSAGE_SMS to "Messages"
-            else            -> PhoneNotificationSchema.CATEGORY_OTHER to (appLabel ?: pkg)
+            // category=0 is filtered board-side; 3 + a non-branded appName still
+            // renders (generic message glyph) — so everything else rides on 3.
+            else            -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to (appLabel ?: pkg)
         }
 
         var flags = 0
-        if (sbn.isOngoing || n.flags and Notification.FLAG_ONGOING_EVENT != 0) {
+        if (isCall && isOngoing) {
             flags = flags or PhoneNotificationSchema.FLAG_ONGOING
         }
+
+        // The board filters empty-content frames — guarantee both lines.
+        val safeTitle = title.ifBlank { if (isCall) "Call" else appName }
+        val safeBody = body.ifBlank { if (isCall) "Incoming call" else safeTitle }
 
         return PhoneNotification(
             id = stableId(sbn),
@@ -76,26 +95,31 @@ object NotificationClassifier {
             category = category,
             flags = flags,
             appName = appName,
-            title = title,
-            body = body
+            title = safeTitle,
+            body = safeBody
         )
     }
 
     /**
-     * A removal → a dismiss frame with the **same id** and `flags.removed` so the
-     * board collapses the banner it's currently showing for this alert (§4).
+     * Collapse a persistent (ongoing) call banner after the call notification is
+     * removed. `flags.removed = 1` is filtered by the board UI, so instead send a
+     * **transient** frame with the same id: latest-wins replaces the ongoing
+     * banner and the ~12 s auto-expiry clears the screen.
      */
-    fun dismissal(sbn: StatusBarNotification): PhoneNotification =
+    fun callEnded(sbn: StatusBarNotification): PhoneNotification =
         PhoneNotification(
             id = stableId(sbn),
             timestampUnix = (sbn.postTime / 1000L).toInt(),
-            category = PhoneNotificationSchema.CATEGORY_OTHER,
-            flags = PhoneNotificationSchema.FLAG_REMOVED
+            category = PhoneNotificationSchema.CATEGORY_CALL,
+            flags = 0,
+            appName = "Phone",
+            title = "Phone",
+            body = "Call ended"
         )
 
     /**
      * Stable per-alert id from the notification key so an update/dismissal of the
      * same alert reuses it (§4 correlation). Falls back to the numeric id pre-key.
      */
-    private fun stableId(sbn: StatusBarNotification): Int = sbn.key?.hashCode() ?: sbn.id
+    fun stableId(sbn: StatusBarNotification): Int = sbn.key?.hashCode() ?: sbn.id
 }
