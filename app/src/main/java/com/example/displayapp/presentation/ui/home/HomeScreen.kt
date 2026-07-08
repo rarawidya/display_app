@@ -53,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.R
 import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.presentation.state.DashboardUiState
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.icons.EvIcons
@@ -94,14 +95,22 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     onOpenBluetooth: () -> Unit,
     lastRide: LastRide? = null,
+    /** Last navigated route's polyline — drawn in the Last Ride map thumbnail. */
+    lastRoutePoints: List<GeoLocation>? = null,
     onEditDevice: () -> Unit = onOpenSettings,
-    onOpenNotifications: () -> Unit = {}
+    onOpenNotifications: () -> Unit = {},
+    /** Phone hotspot (soft AP) state for the header indicator; tap → tethering settings. */
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     HomeContent(
         state = state,
         deviceName = deviceName,
         lastRide = lastRide,
+        lastRoutePoints = lastRoutePoints,
+        hotspotActive = hotspotActive,
+        onHotspotTap = onHotspotTap,
         onStartMonitoring = onStartMonitoring,
         onOpenSettings = onOpenSettings,
         onOpenHistory = onOpenHistory,
@@ -120,6 +129,9 @@ private fun HomeContent(
     onResetTripB: () -> Unit = {},
     deviceName: String,
     lastRide: LastRide?,
+    lastRoutePoints: List<GeoLocation>? = null,
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {},
     onStartMonitoring: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit,
@@ -151,7 +163,9 @@ private fun HomeContent(
                     onOpenBluetooth = onOpenBluetooth,
                     onEditDevice = onEditDevice,
                     onOpenNotifications = onOpenNotifications,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
+                    hotspotActive = hotspotActive,
+                    onHotspotTap = onHotspotTap
                 )
                 HeroCard(
                     connected = connected,
@@ -173,6 +187,7 @@ private fun HomeContent(
                     )
                     LastRideCard(
                         lastRide = lastRide,
+                        routePoints = lastRoutePoints,
                         onOpenHistory = onOpenHistory,
                         modifier = Modifier.weight(1.35f).fillMaxHeight()
                     )
@@ -198,7 +213,9 @@ private fun GreetingHeader(
     onOpenBluetooth: () -> Unit,
     onEditDevice: () -> Unit,
     onOpenNotifications: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -235,6 +252,14 @@ private fun GreetingHeader(
             ConnectionLine(connectionState, onOpenBluetooth)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Dim.sm)) {
+            // Hotspot state — green while the phone's soft AP is on (the vehicle
+            // display joins it for map downloads). Tap → tethering settings.
+            SquareIconButton(
+                icon = EvIcons.Hotspot,
+                contentDescription = if (hotspotActive) "Hotspot on" else "Hotspot off",
+                tint = if (hotspotActive) EvGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = onHotspotTap
+            )
             SquareIconButton(
                 icon = EvIcons.Bell,
                 contentDescription = "Notifications",
@@ -512,6 +537,7 @@ private fun BatteryCard(
 @Composable
 private fun LastRideCard(
     lastRide: LastRide?,
+    routePoints: List<GeoLocation>?,
     onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -590,6 +616,7 @@ private fun LastRideCard(
                     RideMetric(durationValue, "min", "Duration")
                 }
                 RouteMini(
+                    points = routePoints,
                     modifier = Modifier
                         .padding(start = Dim.sm)
                         .fillMaxHeight()
@@ -626,9 +653,14 @@ private fun RideMetric(value: String, unit: String, label: String) {
     }
 }
 
-/** Route/map thumbnail — a stylised street grid + trip line (no Maps API needed). */
+/**
+ * Route/map thumbnail. With [points] (the last navigated route, persisted by
+ * `LastRouteStore`) it draws the **real route shape** — north-up, aspect-preserving,
+ * cos(lat)-corrected — over the stylised street grid. Without one it falls back to
+ * the decorative placeholder line. No Maps API/tiles involved either way.
+ */
 @Composable
-private fun RouteMini(modifier: Modifier = Modifier) {
+private fun RouteMini(points: List<GeoLocation>? = null, modifier: Modifier = Modifier) {
     val route = MaterialTheme.colorScheme.primary
     val road = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
     val roadMinor = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
@@ -655,24 +687,69 @@ private fun RouteMini(modifier: Modifier = Modifier) {
             drawLine(roadMinor, Offset(w * 0.52f, 0f), Offset(w * 0.47f, h), strokeWidth = px(1.5f))
             drawLine(roadMinor, Offset(0f, h * 0.50f), Offset(w, h * 0.48f), strokeWidth = px(1.5f))
 
-            // Trip route — a winding line snapping between the streets.
-            val p = Path().apply {
-                moveTo(w * 0.16f, h * 0.86f)
-                cubicTo(w * 0.32f, h * 0.66f, w * 0.22f, h * 0.52f, w * 0.44f, h * 0.46f)
-                cubicTo(w * 0.62f, h * 0.40f, w * 0.60f, h * 0.28f, w * 0.84f, h * 0.16f)
-            }
+            // The route line: real geometry when we have it, placeholder otherwise.
+            val line = points?.takeIf { it.size >= 2 }?.let { pts -> fitToCanvas(pts, w, h) }
+                ?: Path().apply {
+                    moveTo(w * 0.16f, h * 0.86f)
+                    cubicTo(w * 0.32f, h * 0.66f, w * 0.22f, h * 0.52f, w * 0.44f, h * 0.46f)
+                    cubicTo(w * 0.62f, h * 0.40f, w * 0.60f, h * 0.28f, w * 0.84f, h * 0.16f)
+                }.let { it to (Offset(w * 0.16f, h * 0.86f) to Offset(w * 0.84f, h * 0.16f)) }
+
+            val (path, endpoints) = line
             drawPath(
-                p, route,
+                path, route,
                 style = Stroke(width = px(3.5f), cap = StrokeCap.Round, join = StrokeJoin.Round)
             )
 
             // Start (green) + end (blue) markers, ringed in the card color for contrast.
-            drawCircle(marker, px(5f), Offset(w * 0.16f, h * 0.86f))
-            drawCircle(startDot, px(3.2f), Offset(w * 0.16f, h * 0.86f))
-            drawCircle(marker, px(5f), Offset(w * 0.84f, h * 0.16f))
-            drawCircle(route, px(3.2f), Offset(w * 0.84f, h * 0.16f))
+            val (start, end) = endpoints
+            drawCircle(marker, px(5f), start)
+            drawCircle(startDot, px(3.2f), start)
+            drawCircle(marker, px(5f), end)
+            drawCircle(route, px(3.2f), end)
         }
     }
+}
+
+/**
+ * Project [pts] into the w×h canvas: north-up equirectangular with a cos(lat)
+ * x-correction, aspect-preserving fit, centered, with a marker-safe margin.
+ * Returns the path plus the projected start/end points for the markers.
+ */
+private fun fitToCanvas(
+    pts: List<GeoLocation>,
+    w: Float,
+    h: Float,
+): Pair<Path, Pair<Offset, Offset>> {
+    val latMid = Math.toRadians(pts.sumOf { it.latitude } / pts.size)
+    val xScaleDeg = kotlin.math.cos(latMid).toFloat()
+
+    var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
+    var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+    val proj = pts.map { p ->
+        val x = p.longitude.toFloat() * xScaleDeg
+        val y = -p.latitude.toFloat() // canvas y grows downward; north stays up
+        if (x < minX) minX = x; if (x > maxX) maxX = x
+        if (y < minY) minY = y; if (y > maxY) maxY = y
+        x to y
+    }
+
+    val margin = kotlin.math.min(w, h) * 0.16f // keep the ringed markers inside
+    val spanX = (maxX - minX).coerceAtLeast(1e-6f)
+    val spanY = (maxY - minY).coerceAtLeast(1e-6f)
+    val scale = kotlin.math.min((w - 2 * margin) / spanX, (h - 2 * margin) / spanY)
+    val offX = (w - spanX * scale) / 2f
+    val offY = (h - spanY * scale) / 2f
+
+    fun place(p: Pair<Float, Float>) =
+        Offset(offX + (p.first - minX) * scale, offY + (p.second - minY) * scale)
+
+    val path = Path()
+    proj.forEachIndexed { i, p ->
+        val o = place(p)
+        if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
+    }
+    return path to (place(proj.first()) to place(proj.last()))
 }
 
 /* -------------------------------------------------------------------------- */
@@ -692,20 +769,13 @@ private fun VehicleInfoCard(
     val dash = "—"
     var confirmReset by remember { mutableStateOf<TripReset?>(null) }
 
-    // Odometer + Trip A/B + Bluetooth are live; Model + Firmware are static vehicle
-    // metadata until a BLE Device Information Service (0x180A) read exposes them.
+    // Odometer + Trip A/B are live; Model + Firmware are static vehicle metadata
+    // until a BLE Device Information Service (0x180A) read exposes them.
     // Trip A is the vehicle's own wire trip; Trip B is app-tracked (odometer − baseline).
     fun km(value: Float) = app.speedUnit.formatDistance((value * 1000).toLong())
     val odometerValue = if (state.odometer > 0f) km(state.odometer) else dash
     val tripAValue = if (connected) km(state.tripOdometer) else dash
     val tripBValue = if (connected) km(state.tripBOdometer) else dash
-    val (btLabel, btColor) = when (state.connectionState) {
-        ConnectionState.CONNECTED -> (state.rssi?.let { "$it dBm" } ?: "Connected") to EvGreen
-        ConnectionState.CONNECTING -> "Connecting" to EvAmber
-        ConnectionState.RECONNECTING -> "Reconnecting" to EvAmber
-        else -> "Disconnected" to EvRed
-    }
-    val btIcon = if (connected) EvIcons.Bluetooth else EvIcons.BluetoothOff
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -737,10 +807,8 @@ private fun VehicleInfoCard(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
 
-                // Vehicle metadata — three stats across.
+                // Vehicle metadata — two stats across.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    VehicleStat(btIcon, btColor, btLabel, "Bluetooth", Modifier.weight(1f))
-                    VDivider()
                     VehicleStat(EvIcons.Cpu, EvViolet, VEHICLE_FIRMWARE, "Firmware", Modifier.weight(1f))
                     VDivider()
                     VehicleStat(EvIcons.Motorcycle, EvAmber, VEHICLE_MODEL, "Model", Modifier.weight(1f))
@@ -946,7 +1014,8 @@ private fun IconBubble(icon: ImageVector, tint: Color) {
 private fun SquareIconButton(
     icon: ImageVector,
     contentDescription: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurface
 ) {
     Surface(
         shape = RoundedCornerShape(Dim.md),
@@ -961,7 +1030,7 @@ private fun SquareIconButton(
             androidx.compose.material3.Icon(
                 imageVector = icon,
                 contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = tint,
                 modifier = Modifier.size(20.dp)
             )
         }

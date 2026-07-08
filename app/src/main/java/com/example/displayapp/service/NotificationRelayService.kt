@@ -6,6 +6,8 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationManagerCompat
 import com.example.displayapp.DisplayApp
+import com.example.displayapp.data.notification.ActiveCallActions
+import com.example.displayapp.data.notification.CallNotificationActions
 import com.example.displayapp.data.notification.NotificationClassifier
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.protocol.PhoneNotificationSchema
@@ -125,6 +127,7 @@ class NotificationRelayService : NotificationListenerService() {
         Timber.tag(TAG).i("onNotificationPosted pkg=%s key=%s", sbn?.packageName, sbn?.key)
         val n = sbn ?: return
         if (n.packageName == ownPackage) return // don't mirror our own notifications
+        captureCallActions(n)
         events.trySend(Event.Posted(n))
     }
 
@@ -132,7 +135,28 @@ class NotificationRelayService : NotificationListenerService() {
         Timber.tag(TAG).i("onNotificationRemoved pkg=%s key=%s", sbn?.packageName, sbn?.key)
         val n = sbn ?: return
         if (n.packageName == ownPackage) return
+        if (NotificationClassifier.isCall(n)) ActiveCallActions.clear()
         events.trySend(Event.Removed(n))
+    }
+
+    /**
+     * Stash the fireable Answer/Hang-up PendingIntents of an incoming/ongoing call
+     * notification so a board button press ([com.example.displayapp.data.notification.CallControlHandler])
+     * can drive the originating app's own accept/decline flow — the only path that
+     * works for third-party VoIP (WhatsApp/Telegram) calls, which TelecomManager
+     * can't touch. Independent of the relay toggle: the intents stay on the phone
+     * and are only used when the board actually asks to act on the call.
+     */
+    private fun captureCallActions(sbn: StatusBarNotification) {
+        if (!NotificationClassifier.isCall(sbn)) return
+        val n = sbn.notification ?: return
+        CallNotificationActions.extract(n, sbn.packageName.orEmpty())?.let { actions ->
+            ActiveCallActions.set(actions)
+            Timber.tag(TAG).i(
+                "call actions captured pkg=%s answer=%b hangUp=%b",
+                sbn.packageName, actions.answer != null, actions.hangUp != null
+            )
+        }
     }
 
     private suspend fun relayEnabled(): Boolean =

@@ -58,7 +58,7 @@ object NotificationClassifier {
         val body = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
 
         val pkg = sbn.packageName.orEmpty()
-        val isCall = n.category == Notification.CATEGORY_CALL || pkg in DIALER
+        val isCall = isCall(sbn)
         val isOngoing = sbn.isOngoing || n.flags and Notification.FLAG_ONGOING_EVENT != 0
 
         if (!isCall) {
@@ -116,6 +116,16 @@ object NotificationClassifier {
             title = "Phone",
             body = "Call ended"
         )
+
+    /**
+     * True when [sbn] is a phone call — by notification category or a known dialer
+     * package. Shared with the call-action capture path so "is this a call?" is
+     * decided in exactly one place.
+     */
+    fun isCall(sbn: StatusBarNotification): Boolean {
+        val category = sbn.notification?.category
+        return category == Notification.CATEGORY_CALL || sbn.packageName.orEmpty() in DIALER
+    }
 
     /**
      * Stable per-alert id from the notification key so an update/dismissal of the

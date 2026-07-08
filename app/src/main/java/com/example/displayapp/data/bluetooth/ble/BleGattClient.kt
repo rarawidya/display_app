@@ -64,6 +64,14 @@ class BleGattClient(
                 when (newState) {
                     BluetoothGatt.STATE_CONNECTED -> {
                         Timber.d("BLE connected (status=$status), requesting MTU")
+                        // Invalidate Android's cached GATT attribute table before discovery.
+                        // This firmware is open/unbonded and does NOT implement the GATT
+                        // Service Changed indication, so Android otherwise reuses a table
+                        // cached before 0xAF05 (call control) existed — discovery then
+                        // returns from cache with no 0xAF05, the control subscribe is
+                        // skipped, and the board drops every Answer/End press. Forcing a
+                        // refresh makes the following discovery re-read the live database.
+                        refreshServiceCache(g)
                         if (!g.requestMtu(BleConstants.PREFERRED_MTU)) g.discoverServices()
                     }
                     BluetoothGatt.STATE_DISCONNECTED -> {
@@ -169,6 +177,20 @@ class BleGattClient(
         val ok = withTimeoutOrNull(timeoutMs) { ready.await() } ?: false
         if (!ok) close()
         return ok
+    }
+
+    /**
+     * Force-clear Android's cached GATT service database for this connection via the
+     * hidden `BluetoothGatt#refresh()`. Reflection is the only access path (no public
+     * API); it's best-effort — a failure or a no-op under non-SDK restrictions just
+     * leaves the cache in place, degrading to the prior behaviour. The board log line
+     * `CCCD call-action notify=1` after a connect is the definitive proof it worked.
+     */
+    private fun refreshServiceCache(g: BluetoothGatt) {
+        val ok = runCatching {
+            BluetoothGatt::class.java.getMethod("refresh").invoke(g) as? Boolean
+        }.getOrNull()
+        Timber.d("BLE: GATT cache refresh -> $ok")
     }
 
     /** Request the connected link's RSSI; the result arrives via [onRssi]. */

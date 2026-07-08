@@ -4,6 +4,7 @@ import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.Maneuver
 import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.NavState
+import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.NavigationProvider
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -33,7 +34,10 @@ class SimulatedNavigationProvider(
 
     @Volatile private var running = false
 
-    override suspend fun start(destination: GeoLocation) {
+    override suspend fun start(destination: GeoLocation, initialPlan: RoutePlan?) {
+        // Scripted route — an initial plan has nothing to adopt. Drop the previous
+        // session's replayed terminal state so a re-run isn't killed at birth.
+        _progress.resetReplayCache()
         running = true
         val total = 5300
         // Depart.
@@ -55,6 +59,7 @@ class SimulatedNavigationProvider(
         emit(state = NavState.Arrived, maneuver = Maneuver.Arrive, street = "",
             toTurn = 0, remaining = 0, eta = 0, speed = 0)
         running = false
+        _progress.resetReplayCache() // don't replay the terminal into the next run
     }
 
     override fun stop() {
@@ -62,6 +67,7 @@ class SimulatedNavigationProvider(
         running = false
         emit(state = NavState.Cancelled, maneuver = Maneuver.None, street = "",
             toTurn = 0, remaining = 0, eta = 0, speed = 0)
+        _progress.resetReplayCache() // don't replay the terminal into the next run
     }
 
     private fun emit(

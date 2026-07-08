@@ -85,22 +85,29 @@ class RouteNavigator(
     /**
      * Start navigating to [destination]; begins the frame stream. [destinationName]
      * is the human label for the board's bottom card (RouteSummary) — pass the
-     * picked place's name; blank shows "--" on the board.
+     * picked place's name; blank shows "--" on the board. [initialPlan] is the
+     * already-planned preview route; passing it means the provider doesn't have to
+     * plan again (a second request that can fail and silently cancel the session).
      */
-    fun startNavigation(destination: GeoLocation, destinationName: String = "") {
+    fun startNavigation(
+        destination: GeoLocation,
+        destinationName: String = "",
+        initialPlan: RoutePlan? = null,
+    ) {
         stopInternal(sendCancel = false)
         active = true
         resetSessionState()
         this.destinationName = destinationName
+        currentPlan = initialPlan // chunks available even before activeRoute emits
         sessionJob = scope.launch {
             // Subscribe concurrently with start(): some providers (the simulator, and
             // any SDK that drives progress from within start()) emit before start()
             // returns, so collecting *after* it would miss everything but the last
             // replayed value. The provider's SharedFlow replay covers the subscribe race.
-            launch { provider.activeRoute.collect { currentPlan = it } }
+            launch { provider.activeRoute.collect { it?.let { plan -> currentPlan = plan } } }
             launch { provider.progress.collect { onProgress(it) } }
             launch { heartbeat() }
-            provider.start(destination)
+            provider.start(destination, initialPlan)
         }
     }
 

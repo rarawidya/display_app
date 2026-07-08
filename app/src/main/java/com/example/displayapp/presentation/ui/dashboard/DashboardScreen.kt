@@ -59,7 +59,9 @@ fun DashboardScreen(
     onSettingsTap: () -> Unit = {},
     onOpenNavigation: () -> Unit = {},
     onBluetoothLongPress: () -> Unit = onConnectionTap,
-    bluetoothAnchor: @Composable (Modifier) -> Unit = {}
+    bluetoothAnchor: @Composable (Modifier) -> Unit = {},
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDiagnostics by viewModel.showDiagnostics.collectAsStateWithLifecycle()
@@ -76,7 +78,9 @@ fun DashboardScreen(
         onOpenNavigation = onOpenNavigation,
         onBluetoothLongPress = onBluetoothLongPress,
         bluetoothAnchor = bluetoothAnchor,
-        onToggleDiagnostics = viewModel::toggleDiagnostics
+        onToggleDiagnostics = viewModel::toggleDiagnostics,
+        hotspotActive = hotspotActive,
+        onHotspotTap = onHotspotTap
     )
 }
 
@@ -123,7 +127,9 @@ fun DashboardContent(
     onOpenNavigation: () -> Unit = {},
     onBluetoothLongPress: () -> Unit = onConnectionTap,
     bluetoothAnchor: @Composable (Modifier) -> Unit = {},
-    onToggleDiagnostics: () -> Unit = {}
+    onToggleDiagnostics: () -> Unit = {},
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -143,9 +149,9 @@ fun DashboardContent(
             // again would push the header down by the status-bar height twice.
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 if (maxWidth >= 720.dp) {
-                    DashboardLandscape(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor)
+                    DashboardLandscape(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor, hotspotActive, onHotspotTap)
                 } else {
-                    DashboardPortrait(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor)
+                    DashboardPortrait(state, mapsViewModel, wifiConnected, onConnectionTap, onSettingsTap, onOpenNavigation, onBluetoothLongPress, bluetoothAnchor, hotspotActive, onHotspotTap)
                 }
             }
 
@@ -174,7 +180,9 @@ private fun DashboardPortrait(
     onSettingsTap: () -> Unit,
     onOpenNavigation: () -> Unit,
     onBluetoothLongPress: () -> Unit,
-    bluetoothAnchor: @Composable (Modifier) -> Unit
+    bluetoothAnchor: @Composable (Modifier) -> Unit,
+    hotspotActive: Boolean,
+    onHotspotTap: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -192,7 +200,9 @@ private fun DashboardPortrait(
             onConnectTap = onConnectionTap,
             onSettingsTap = onSettingsTap,
             onBluetoothLongPress = onBluetoothLongPress,
-            bluetoothAnchor = bluetoothAnchor
+            bluetoothAnchor = bluetoothAnchor,
+            hotspotActive = hotspotActive,
+            onHotspotTap = onHotspotTap
         )
         // Warning-lamp strip mirrors the physical cluster's top telltale row.
         TelltaleRow(state = state)
@@ -223,7 +233,9 @@ private fun DashboardLandscape(
     onSettingsTap: () -> Unit,
     onOpenNavigation: () -> Unit,
     onBluetoothLongPress: () -> Unit,
-    bluetoothAnchor: @Composable (Modifier) -> Unit
+    bluetoothAnchor: @Composable (Modifier) -> Unit,
+    hotspotActive: Boolean,
+    onHotspotTap: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -238,7 +250,9 @@ private fun DashboardLandscape(
             onConnectTap = onConnectionTap,
             onSettingsTap = onSettingsTap,
             onBluetoothLongPress = onBluetoothLongPress,
-            bluetoothAnchor = bluetoothAnchor
+            bluetoothAnchor = bluetoothAnchor,
+            hotspotActive = hotspotActive,
+            onHotspotTap = onHotspotTap
         )
         TelltaleRow(state = state)
         Row(

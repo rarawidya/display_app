@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
+import com.example.displayapp.data.notification.BoardWifiCommands
+import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.persistence.StorageInfo
 import com.example.displayapp.data.persistence.StorageInfoProvider
@@ -54,6 +56,7 @@ class SettingsViewModel(
     private val diagnosticsRepository: DiagnosticsRepository,
     private val storageProvider: StorageInfoProvider,
     private val permissionProvider: PermissionStatusProvider,
+    private val notificationSender: PhoneNotificationSender,
     private val onSimulatorModeChange: suspend (Boolean) -> Unit,
     private val onSimulatorScenarioChange: suspend (TelemetryScenario) -> Unit,
     private val onRunNavDemo: () -> Unit,
@@ -61,6 +64,11 @@ class SettingsViewModel(
     appVersion: String,
     appBuildNumber: String
 ) : ViewModel() {
+
+    /** One-shot user-facing result of a board Wi-Fi action (snackbar); null = none. */
+    private val _wifiSendResult = MutableStateFlow<String?>(null)
+    val wifiSendResult: StateFlow<String?> = _wifiSendResult
+    fun consumeWifiSendResult() { _wifiSendResult.value = null }
 
     /** Developer: play the scripted navigation route → BLE nav frames (0xAF06). */
     fun runNavDemo() = onRunNavDemo()
@@ -169,6 +177,43 @@ class SettingsViewModel(
         viewModelScope.launch { devicePreferences.clear() }
     }
 
+    /* ---------------------- Vehicle internet (Wi-Fi STA) ---------------------- */
+
+    /** Persist the phone-hotspot credentials the board will join with. */
+    fun setHotspotCredentials(ssid: String, password: String) {
+        viewModelScope.launch { appPreferences.setHotspotCredentials(ssid.trim(), password) }
+    }
+
+    /**
+     * Push the stored hotspot credentials to the board over `0xAF07`
+     * (docs/BOARD-WIFI-STA-INTEGRATION.md §2): SSID → PSK → JOIN, each a reliable
+     * write. All three must be delivered for the board to commit.
+     */
+    fun sendWifiCredentialsToBoard() {
+        viewModelScope.launch {
+            val app = state.value.app
+            if (app.hotspotSsid.isBlank()) {
+                _wifiSendResult.value = "Set the hotspot name and password first"
+                return@launch
+            }
+            val ok = BoardWifiCommands.joinSequence(app.hotspotSsid, app.hotspotPassword)
+                .all { notificationSender.send(it) }
+            _wifiSendResult.value =
+                if (ok) "Wi-Fi credentials sent — turn the hotspot on"
+                else "Couldn't reach the display — is it connected?"
+        }
+    }
+
+    /** Tell the board to wipe its stored credentials and return to AP mode. */
+    fun forgetBoardWifi() {
+        viewModelScope.launch {
+            val ok = notificationSender.send(BoardWifiCommands.forget())
+            _wifiSendResult.value =
+                if (ok) "Display Wi-Fi credentials cleared"
+                else "Couldn't reach the display — is it connected?"
+        }
+    }
+
     /* ---------------------- Diagnostics ---------------------- */
 
     fun resetDiagnostics() {
@@ -220,6 +265,7 @@ class SettingsViewModelFactory(
     private val diagnosticsRepository: DiagnosticsRepository,
     private val storageProvider: StorageInfoProvider,
     private val permissionProvider: PermissionStatusProvider,
+    private val notificationSender: PhoneNotificationSender,
     private val onSimulatorModeChange: suspend (Boolean) -> Unit,
     private val onSimulatorScenarioChange: suspend (TelemetryScenario) -> Unit,
     private val onRunNavDemo: () -> Unit,
@@ -234,6 +280,7 @@ class SettingsViewModelFactory(
             return SettingsViewModel(
                 themeRepository, appPreferences, devicePreferences, vehicleRepository,
                 diagnosticsRepository, storageProvider, permissionProvider,
+                notificationSender,
                 onSimulatorModeChange, onSimulatorScenarioChange,
                 onRunNavDemo, onStopNavDemo,
                 appVersion, appBuildNumber

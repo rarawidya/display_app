@@ -190,7 +190,9 @@ fun NavigationScreen(
                     distance = state.distanceLabel,
                     eta = state.etaLabel,
                     planning = state.previewPlanning,
+                    failed = state.previewFailed,
                     onStart = viewModel::startNavigation,
+                    onRetry = viewModel::retryPreview,
                     onDismiss = viewModel::dismissPreview,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -395,7 +397,9 @@ private fun DestinationConfirmSheet(
     distance: String?,
     eta: String?,
     planning: Boolean,
+    failed: Boolean,
     onStart: () -> Unit,
+    onRetry: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -460,6 +464,28 @@ private fun DestinationConfirmSheet(
                         text = "Calculating route…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (failed) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Couldn't calculate a route",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = "Retry",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onRetry)
+                            .padding(horizontal = Dim.sm, vertical = Dim.xxs)
                     )
                 }
             } else {

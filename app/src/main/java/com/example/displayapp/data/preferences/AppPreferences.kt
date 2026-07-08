@@ -46,7 +46,9 @@ class AppPreferences(private val context: Context) {
             showDiagnosticsOverlay = p[KEY_DIAGNOSTICS_OVERLAY] ?: false,
             notificationRelayEnabled = p[KEY_NOTIFICATION_RELAY] ?: false,
             tripBBaselineKm = p[KEY_TRIP_B_BASELINE] ?: 0f,
-            devModeUnlocked = p[KEY_DEV_MODE_UNLOCKED] ?: false
+            devModeUnlocked = p[KEY_DEV_MODE_UNLOCKED] ?: false,
+            hotspotSsid = p[KEY_HOTSPOT_SSID] ?: "",
+            hotspotPassword = p[KEY_HOTSPOT_PSK] ?: ""
         )
     }
 
@@ -85,6 +87,12 @@ class AppPreferences(private val context: Context) {
     suspend fun setDevModeUnlocked(value: Boolean) {
         context.appPrefsDataStore.edit { it[KEY_DEV_MODE_UNLOCKED] = value }
     }
+    suspend fun setHotspotCredentials(ssid: String, password: String) {
+        context.appPrefsDataStore.edit {
+            it[KEY_HOTSPOT_SSID] = ssid
+            it[KEY_HOTSPOT_PSK] = password
+        }
+    }
 
     private companion object {
         val KEY_SPEED_UNIT          = stringPreferencesKey("speed_unit")
@@ -98,6 +106,10 @@ class AppPreferences(private val context: Context) {
         val KEY_NOTIFICATION_RELAY  = booleanPreferencesKey("notification_relay_enabled")
         val KEY_TRIP_B_BASELINE     = floatPreferencesKey("trip_b_baseline_km")
         val KEY_DEV_MODE_UNLOCKED   = booleanPreferencesKey("dev_mode_unlocked")
+        // Hotspot credentials for the board's Wi-Fi STA join. Plaintext in the app's
+        // private DataStore — same trust level as Android's own saved Wi-Fi networks.
+        val KEY_HOTSPOT_SSID        = stringPreferencesKey("hotspot_ssid")
+        val KEY_HOTSPOT_PSK         = stringPreferencesKey("hotspot_psk")
 
         // Defensive parse — bad/older string keys silently fall back to default.
         private fun <E : Enum<E>> parseEnum(raw: String?, values: List<E>, default: E): E {

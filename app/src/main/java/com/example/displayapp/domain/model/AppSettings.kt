@@ -96,5 +96,13 @@ data class AppSettings(
     val tripBBaselineKm: Float = 0f,
 
     /** Set true once the user taps version row 7 times. Survives app restart. */
-    val devModeUnlocked: Boolean = false
+    val devModeUnlocked: Boolean = false,
+
+    /**
+     * Phone-hotspot credentials handed to the board so it can join as a Wi-Fi
+     * client and download map packs (docs/BOARD-WIFI-STA-INTEGRATION.md).
+     * Stored so re-sending doesn't require retyping; blank = not configured.
+     */
+    val hotspotSsid: String = "",
+    val hotspotPassword: String = ""
 )

@@ -93,6 +93,22 @@ object EvIcons {
         }
     } }
 
+    /** Official Material "wifi_tethering" — hotspot: center dot + radiating arcs. */
+    val Hotspot: ImageVector by lazy { vec("Hotspot") {
+        addPath(
+            pathData = PathParser().parsePathString(
+                "M12,11c-1.1,0 -2,0.9 -2,2c0,0.74 0.4,1.38 1,1.72L11,21h2v-6.28c0.6,-0.35 1,-0.98 1,-1.72" +
+                    "c0,-1.1 -0.9,-2 -2,-2zM12,3C7.03,3 3,7.03 3,12c0,2.76 1.24,5.26 3.2,6.92l1.42,-1.42" +
+                    "C6.04,16.19 5,14.22 5,12c0,-3.87 3.13,-7 7,-7s7,3.13 7,7c0,2.22 -1.04,4.19 -2.62,5.5" +
+                    "l1.42,1.42C19.76,17.26 21,14.76 21,12c0,-4.97 -4.03,-9 -9,-9zM12,7c-2.76,0 -5,2.24 -5,5" +
+                    "c0,1.66 0.81,3.13 2.05,4.04l1.43,-1.43C9.58,14.06 9,13.1 9,12c0,-1.66 1.34,-3 3,-3" +
+                    "s3,1.34 3,3c0,1.1 -0.58,2.06 -1.45,2.61l1.43,1.43C16.19,15.13 17,13.66 17,12" +
+                    "c0,-2.76 -2.24,-5 -5,-5z"
+            ).toNodes(),
+            fill = SolidColor(Color.White)
+        )
+    } }
+
     /** Official Material "bluetooth_disabled" — fragmented glyph, no slash. */
     val BluetoothOff: ImageVector by lazy { vec("BluetoothOff") {
         path(fill = SolidColor(Color.White)) {

@@ -27,4 +27,6 @@ class AppPreferencesRepositoryImpl(
     override suspend fun setNotificationRelayEnabled(value: Boolean) = prefs.setNotificationRelayEnabled(value)
     override suspend fun setTripBBaselineKm(value: Float)           = prefs.setTripBBaselineKm(value)
     override suspend fun setDevModeUnlocked(value: Boolean)         = prefs.setDevModeUnlocked(value)
+    override suspend fun setHotspotCredentials(ssid: String, password: String) =
+        prefs.setHotspotCredentials(ssid, password)
 }

@@ -236,9 +236,18 @@ private fun AppNavGraph(
                     )
                 }
             }
+            // Last navigated route → the real shape in the Last Ride map thumbnail.
+            val lastRoute by container.lastRouteStore.route
+                .collectAsStateWithLifecycle(initialValue = null)
+            // Phone hotspot (soft AP) state for the header indicator.
+            val hotspotActive by container.hotspotStateMonitor.isHotspotActive
+                .collectAsStateWithLifecycle(initialValue = false)
             HomeScreen(
                 viewModel = vm,
                 lastRide = lastRide,
+                lastRoutePoints = lastRoute?.points,
+                hotspotActive = hotspotActive,
+                onHotspotTap = { openTetherSettings(context) },
                 deviceName = savedDevice?.name?.takeIf { it.isNotBlank() && it != "Unknown" } ?: "My Scooter",
                 onStartMonitoring = {
                     navController.navigateTopLevel(Destination.Drive)
@@ -280,6 +289,8 @@ private fun AppNavGraph(
             )
             val wifiConnected by container.wifiStateMonitor.isWifiConnected
                 .collectAsStateWithLifecycle(initialValue = false)
+            val hotspotActive by container.hotspotStateMonitor.isHotspotActive
+                .collectAsStateWithLifecycle(initialValue = false)
 
             // Sheet + popover are siblings of the cockpit content. Both live at
             // the NavHost level so the BrandHeader callbacks can flip them.
@@ -291,6 +302,8 @@ private fun AppNavGraph(
                 viewModel = vm,
                 mapsViewModel = mapsVm,
                 wifiConnected = wifiConnected,
+                hotspotActive = hotspotActive,
+                onHotspotTap = { openTetherSettings(context) },
                 onConnectionTap = { showPopover = true },
                 onBluetoothLongPress = { showSheet = true },
                 bluetoothAnchor = { _ ->
@@ -352,6 +365,7 @@ private fun AppNavGraph(
                     diagnosticsRepository = container.diagnosticsRepository,
                     storageProvider = container.storageInfoProvider,
                     permissionProvider = container.permissionStatusProvider,
+                    notificationSender = container.phoneNotificationSender,
                     onSimulatorModeChange = { useSim -> container.setSimulatorSession(useSim) },
                     onSimulatorScenarioChange = { scenario ->
                         container.simulatorScenario = scenario
@@ -389,6 +403,7 @@ private fun AppNavGraph(
                     diagnosticsRepository = container.diagnosticsRepository,
                     storageProvider = container.storageInfoProvider,
                     permissionProvider = container.permissionStatusProvider,
+                    notificationSender = container.phoneNotificationSender,
                     onSimulatorModeChange = { useSim -> container.setSimulatorSession(useSim) },
                     onSimulatorScenarioChange = { scenario ->
                         container.simulatorScenario = scenario
@@ -442,6 +457,22 @@ private fun AppNavGraph(
                 onBack = { navController.popBackStack() }
             )
         }
+    }
+}
+
+/**
+ * Deep-link to Android's tethering settings — apps cannot toggle the hotspot
+ * themselves (system-only since Android 8). The hidden action resolves on most
+ * builds (incl. One UI); fall back to the wireless page.
+ */
+private fun openTetherSettings(context: android.content.Context) {
+    val tether = android.content.Intent("android.settings.TETHER_SETTINGS")
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(tether) }.onFailure {
+        context.startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
 

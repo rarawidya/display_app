@@ -27,6 +27,7 @@ import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
 import com.example.displayapp.data.preferences.AppPreferences
 import com.example.displayapp.data.preferences.DevicePreferences
+import com.example.displayapp.data.preferences.LastRouteStore
 import com.example.displayapp.data.preferences.ThemePreferences
 import com.example.displayapp.data.persistence.RetentionPolicy
 import com.example.displayapp.data.persistence.StorageInfoProvider
@@ -41,6 +42,7 @@ import com.example.displayapp.data.repository.AppPreferencesRepositoryImpl
 import com.example.displayapp.data.repository.ThemeRepositoryImpl
 import com.example.displayapp.data.repository.TripRepositoryImpl
 import com.example.displayapp.data.repository.VehicleRepositoryImpl
+import com.example.displayapp.data.system.HotspotStateMonitor
 import com.example.displayapp.data.system.WifiStateMonitor
 import com.example.displayapp.data.simulator.SampleTripSeeder
 import com.example.displayapp.data.simulator.SimulatedDataSource
@@ -114,6 +116,11 @@ class AppContainer(private val context: Context) {
         WifiStateMonitor(context)
     }
 
+    /** Phone hotspot (soft-AP) on/off — the Home/Drive header indicator. */
+    val hotspotStateMonitor: HotspotStateMonitor by lazy {
+        HotspotStateMonitor(context)
+    }
+
     val locationRepository: LocationRepository by lazy {
         FusedLocationRepository(context)
     }
@@ -175,8 +182,12 @@ class AppContainer(private val context: Context) {
             routePlanner = routePlanner,
             locations = locationRepository.location.filterNotNull(),
             scope = appScope,
+            lastRouteStore = lastRouteStore,
         )
     }
+
+    /** Last navigated route, persisted for the Home page's Last Ride thumbnail. */
+    val lastRouteStore: LastRouteStore by lazy { LastRouteStore(context) }
 
     val tripRepository: TripRepository by lazy {
         TripRepositoryImpl(tripDao, telemetryDao)

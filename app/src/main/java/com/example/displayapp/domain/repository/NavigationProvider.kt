@@ -36,8 +36,16 @@ interface NavigationProvider {
      */
     val activeRoute: Flow<RoutePlan?> get() = flowOf(null)
 
-    /** Begin routing to [destination] and start emitting [progress]. */
-    suspend fun start(destination: GeoLocation)
+    /**
+     * Begin routing to [destination] and start emitting [progress].
+     *
+     * [initialPlan] is a route already computed for this destination (the
+     * confirmation-sheet preview). Providers that can should adopt it instead of
+     * re-planning — the user just confirmed THAT route, a second routing request
+     * costs seconds of dead air after the Start tap, and if it fails the session
+     * dies before it ever became visible. Null → plan from scratch.
+     */
+    suspend fun start(destination: GeoLocation, initialPlan: RoutePlan? = null)
 
     /** Stop navigation and release SDK resources. Emits a terminal [NavProgress]. */
     fun stop()

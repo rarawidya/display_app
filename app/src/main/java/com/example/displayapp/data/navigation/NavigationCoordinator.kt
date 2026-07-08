@@ -1,5 +1,6 @@
 package com.example.displayapp.data.navigation
 
+import com.example.displayapp.data.preferences.LastRouteStore
 import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.RoutePlan
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -39,6 +41,10 @@ class NavigationCoordinator(
     private val routePlanner: RoutePlanner,
     locations: Flow<GeoLocation>,
     private val scope: CoroutineScope,
+    /** When set, every activated route (start/reroute) is persisted for the Home
+     *  page's Last Ride map thumbnail — the only place route geometry outlives
+     *  the session (trips don't record GPS). */
+    private val lastRouteStore: LastRouteStore? = null,
 ) {
     private val progressFlow: Flow<NavProgress?> = provider.progress
 
@@ -60,22 +66,53 @@ class NavigationCoordinator(
     /** Planned preview route (distance/ETA/geometry); null while planning or none. */
     val previewRoute: StateFlow<RoutePlan?> = _previewRoute.asStateFlow()
 
+    private val _previewFailed = MutableStateFlow(false)
+
+    /**
+     * Preview planning failed (routing request failed/offline, or no GPS fix to plan
+     * from). Without this the sheet spins on "Calculating route…" forever with Start
+     * disabled — the UI shows an error + Retry instead.
+     */
+    val previewFailed: StateFlow<Boolean> = _previewFailed.asStateFlow()
+
     @Volatile private var lastLocation: GeoLocation? = null
+    @Volatile private var activeDestinationName: String = ""
     private var previewJob: Job? = null
 
     init {
         locations.onEach { lastLocation = it }.launchIn(scope)
+        // Remember the latest activated route (start or reroute) for the Home
+        // page's Last Ride thumbnail. Distinct-until-changed via StateFlow.
+        if (lastRouteStore != null) {
+            scope.launch {
+                provider.activeRoute.filterNotNull().collect { plan ->
+                    lastRouteStore.save(plan, destinationName = activeDestinationName)
+                }
+            }
+        }
     }
 
     /** Plan a route to [destination] for confirmation — does NOT start navigation. */
     fun preview(destination: GeoLocation) {
         _previewDestination.value = destination
         _previewRoute.value = null // "planning…"
+        _previewFailed.value = false
         previewJob?.cancel()
         previewJob = scope.launch {
-            val origin = lastLocation ?: return@launch
-            _previewRoute.value = routePlanner.plan(origin, destination)
+            val origin = lastLocation
+            if (origin == null) {
+                // No fix to plan from — fail visibly instead of spinning forever.
+                _previewFailed.value = true
+                return@launch
+            }
+            val plan = routePlanner.plan(origin, destination)
+            if (plan == null) _previewFailed.value = true else _previewRoute.value = plan
         }
+    }
+
+    /** Re-plan the pending preview after a failure (the Retry action). */
+    fun retryPreview() {
+        _previewDestination.value?.let { preview(it) }
     }
 
     /**
@@ -85,8 +122,13 @@ class NavigationCoordinator(
      */
     fun startPending(destinationName: String = "") {
         val dest = _previewDestination.value ?: return
+        // Hand the previewed plan to the session — the user confirmed THIS route;
+        // re-planning costs a second network round-trip and, when it fails, kills
+        // the session before anything is drawn ("Start does nothing").
+        val plan = _previewRoute.value
         clearPreview()
-        routeNavigator.startNavigation(dest, destinationName)
+        activeDestinationName = destinationName
+        routeNavigator.startNavigation(dest, destinationName, plan)
     }
 
     /** Discard the pending preview without starting navigation. */
@@ -102,5 +144,6 @@ class NavigationCoordinator(
         previewJob?.cancel()
         _previewDestination.value = null
         _previewRoute.value = null
+        _previewFailed.value = false
     }
 }

@@ -27,6 +27,8 @@ data class MapsUiState(
     val previewing: Boolean = false,
     /** Preview route still being planned → sheet shows "Calculating…". */
     val previewPlanning: Boolean = false,
+    /** Preview planning failed (routing/network/no fix) → sheet shows error + Retry. */
+    val previewFailed: Boolean = false,
     /** Destination name + address for the confirmation sheet. */
     val previewName: String = "",
     val previewDetail: String = "",

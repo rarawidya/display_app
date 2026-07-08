@@ -58,7 +58,7 @@ class RouteNavigatorTest {
         val plan = MutableStateFlow<RoutePlan?>(null)
         override val progress: Flow<NavProgress> = flow
         override val activeRoute: Flow<RoutePlan?> = plan
-        override suspend fun start(destination: GeoLocation) {}
+        override suspend fun start(destination: GeoLocation, initialPlan: RoutePlan?) {}
         override fun stop() {}
         suspend fun emit(p: NavProgress) = flow.emit(p)
     }

@@ -53,6 +53,8 @@ fun BrandHeader(
     onSettingsTap: () -> Unit,
     onBluetoothLongPress: () -> Unit = onConnectTap,
     bluetoothAnchor: @Composable (Modifier) -> Unit = { _ -> },
+    hotspotActive: Boolean = false,
+    onHotspotTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val bluetoothConnected = connectionState == ConnectionState.CONNECTED
@@ -67,6 +69,14 @@ fun BrandHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
+            // Hotspot state — green while the phone's soft AP is on (the board
+            // joins it for map downloads). Tap → tethering settings.
+            StatusIcon(
+                icon = EvIcons.Hotspot,
+                connected = hotspotActive,
+                contentDescription = if (hotspotActive) "Hotspot on" else "Hotspot off",
+                onClick = onHotspotTap
+            )
             // Bluetooth icon has two gestures + an anchored slot for the popover.
             // Tap → small popover with status + quick action.
             // Long-press → BluetoothQuickSheet (full management).

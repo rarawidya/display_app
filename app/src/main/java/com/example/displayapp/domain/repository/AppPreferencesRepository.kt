@@ -28,4 +28,5 @@ interface AppPreferencesRepository {
     suspend fun setNotificationRelayEnabled(value: Boolean)
     suspend fun setTripBBaselineKm(value: Float)
     suspend fun setDevModeUnlocked(value: Boolean)
+    suspend fun setHotspotCredentials(ssid: String, password: String)
 }

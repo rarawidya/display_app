@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -39,7 +42,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -48,6 +53,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -89,6 +95,7 @@ fun SettingsScreen(
     onOpenDeveloper: () -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val wifiSendResult by viewModel.wifiSendResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // Whether the user has granted this app "Notification access" in system
@@ -123,14 +130,48 @@ fun SettingsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Call mirroring needs READ_PHONE_STATE (calls don't reach the notification
-    // listener) and ANSWER_PHONE_CALLS (the cluster's Answer/End buttons — same
-    // "Phone" permission group, so it's one dialog). Requested at point of use —
-    // when the relay toggle flips on — and the toggle is enabled either way: a
-    // denial just means notifications-only.
-    val phonePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { viewModel.setNotificationRelayEnabled(true) }
+    // Answering calls needs two runtime permissions, requested ONE AT A TIME so each
+    // gets its own system dialog: READ_PHONE_STATE (call *mirroring* — calls don't
+    // reach the notification listener) and, on API 26+, ANSWER_PHONE_CALLS (the
+    // cluster's Answer/End buttons). They must NOT be batched: ANSWER_PHONE_CALLS is
+    // not granted by the shared "Phone" group dialog on modern Android / One UI, so a
+    // batched request silently leaves it denied (no USER_SET). The relay toggle is
+    // enabled either way — a denial just means notifications-only / no call control.
+    var showAnswerCallsSettings by remember { mutableStateOf(false) }
+
+    val answerCallsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.setNotificationRelayEnabled(true)
+        // Denied here with rationale no longer allowed = permanent denial or a dialog
+        // the OS suppressed (the One UI case). The only path left to grant it is the
+        // app's system permission page — offer a one-tap route there.
+        if (!granted) {
+            val canRetry = context.findActivity()?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(
+                    it, Manifest.permission.ANSWER_PHONE_CALLS
+                )
+            } ?: false
+            if (!canRetry) showAnswerCallsSettings = true
+        }
+    }
+
+    // After READ_PHONE_STATE resolves, chain the separate ANSWER_PHONE_CALLS ask (its
+    // own dialog); if it's already granted or the device is pre-O, just enable relay.
+    val requestAnswerCallsOrEnable: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            answerCallsLauncher.launch(Manifest.permission.ANSWER_PHONE_CALLS)
+        } else {
+            viewModel.setNotificationRelayEnabled(true)
+        }
+    }
+
+    val phoneStateLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { requestAnswerCallsOrEnable() }
 
     SettingsContent(
         state = state,
@@ -141,19 +182,14 @@ fun SettingsScreen(
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
         onNotificationRelay = { enabled ->
-            val phonePermissions = buildList {
-                add(Manifest.permission.READ_PHONE_STATE)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    add(Manifest.permission.ANSWER_PHONE_CALLS)
-                }
-            }
-            val missing = enabled && phonePermissions.any {
-                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-            }
-            if (missing) {
-                phonePermissionLauncher.launch(phonePermissions.toTypedArray())
-            } else {
-                viewModel.setNotificationRelayEnabled(enabled)
+            when {
+                !enabled -> viewModel.setNotificationRelayEnabled(false)
+                // Request READ_PHONE_STATE first; its result callback chains the
+                // separate ANSWER_PHONE_CALLS ask so each shows its own dialog.
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) !=
+                    PackageManager.PERMISSION_GRANTED ->
+                    phoneStateLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+                else -> requestAnswerCallsOrEnable()
             }
         },
         onOpenNotificationAccess = {
@@ -175,13 +211,53 @@ fun SettingsScreen(
         onOpenDeveloper = onOpenDeveloper,
         onManagePermissions = {
             context.startActivity(permissionProvider.appDetailsIntent())
+        },
+        wifiSendResult = wifiSendResult,
+        onWifiResultShown = viewModel::consumeWifiSendResult,
+        onSaveHotspotCredentials = viewModel::setHotspotCredentials,
+        onSendWifiToBoard = viewModel::sendWifiCredentialsToBoard,
+        onForgetBoardWifi = viewModel::forgetBoardWifi,
+        onOpenHotspotSettings = {
+            // There is no public tethering-settings action; the hidden one resolves
+            // on most builds (incl. One UI). Fall back to the wireless page. The app
+            // cannot toggle the hotspot itself — Android reserves that for system apps.
+            val tether = Intent("android.settings.TETHER_SETTINGS")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(tether) }.onFailure {
+                context.startActivity(
+                    Intent(Settings.ACTION_WIRELESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
         }
     )
+
+    if (showAnswerCallsSettings) {
+        ConfirmDialog(
+            title = "Allow answering calls",
+            message = "To answer or end calls from the vehicle display's buttons, grant the " +
+                "\"Answer phone calls\" permission for this app in system settings.",
+            confirmLabel = "Open Settings",
+            cancelLabel = "Not now",
+            onDismiss = { showAnswerCallsSettings = false },
+            onConfirm = {
+                showAnswerCallsSettings = false
+                context.startActivity(permissionProvider.appDetailsIntent())
+            }
+        )
+    }
 }
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean =
     (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
         ?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+
+/** Unwrap the composition [Context] to its hosting [Activity] (needed for
+ *  `shouldShowRequestPermissionRationale`), tolerating ContextWrapper nesting. */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -200,10 +276,24 @@ fun SettingsContent(
     onClearTrips: () -> Unit,
     onUnlockDeveloper: () -> Unit,
     onOpenDeveloper: () -> Unit,
-    onManagePermissions: () -> Unit
+    onManagePermissions: () -> Unit,
+    wifiSendResult: String? = null,
+    onWifiResultShown: () -> Unit = {},
+    onSaveHotspotCredentials: (String, String) -> Unit = { _, _ -> },
+    onSendWifiToBoard: () -> Unit = {},
+    onForgetBoardWifi: () -> Unit = {},
+    onOpenHotspotSettings: () -> Unit = {}
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // One-shot outcome of a board Wi-Fi action → snackbar, then consumed.
+    LaunchedEffect(wifiSendResult) {
+        wifiSendResult?.let {
+            snackbar.showSnackbar(it)
+            onWifiResultShown()
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -258,6 +348,14 @@ fun SettingsContent(
                     onOpenAccess = onOpenNotificationAccess,
                     batteryExempt = batteryExempt,
                     onRequestBatteryExemption = onRequestBatteryExemption
+                )
+                VehicleInternetSection(
+                    app = state.app,
+                    connected = state.connectionState == ConnectionState.CONNECTED,
+                    onSave = onSaveHotspotCredentials,
+                    onSend = onSendWifiToBoard,
+                    onForget = onForgetBoardWifi,
+                    onOpenHotspotSettings = onOpenHotspotSettings
                 )
                 StorageSection(
                     storage = state.storage,
@@ -424,6 +522,118 @@ private fun NotificationsSection(
             )
         }
     }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  2c. Vehicle internet — phone hotspot → board Wi-Fi STA                     */
+/*      (docs/BOARD-WIFI-STA-INTEGRATION.md)                                   */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun VehicleInternetSection(
+    app: AppSettings,
+    connected: Boolean,
+    onSave: (String, String) -> Unit,
+    onSend: () -> Unit,
+    onForget: () -> Unit,
+    onOpenHotspotSettings: () -> Unit
+) {
+    var showEdit by remember { mutableStateOf(false) }
+    val configured = app.hotspotSsid.isNotBlank()
+
+    SettingsSection(title = "Vehicle internet") {
+        ActionRow(
+            title = if (configured) "Hotspot: ${app.hotspotSsid}" else "Set hotspot credentials",
+            subtitle = if (configured) "Tap to edit the hotspot the display joins"
+                else "The display joins your phone's hotspot to download maps",
+            onClick = { showEdit = true }
+        )
+        SectionDivider()
+        ActionRow(
+            title = "Send Wi-Fi to display",
+            subtitle = when {
+                !configured -> "Set the hotspot credentials first"
+                connected -> "Push the credentials over Bluetooth"
+                else -> "Connect to the display first"
+            },
+            leadingTint = if (configured && connected) EvGreen else EvAmber,
+            onClick = onSend
+        )
+        SectionDivider()
+        ActionRow(
+            title = "Open hotspot settings",
+            subtitle = "Turn the phone's hotspot on for the download",
+            onClick = onOpenHotspotSettings
+        )
+        if (configured) {
+            SectionDivider()
+            ActionRow(
+                title = "Clear Wi-Fi from display",
+                subtitle = "Wipe the stored credentials on the vehicle display",
+                leadingTint = EvRed,
+                onClick = onForget
+            )
+        }
+    }
+
+    if (showEdit) {
+        HotspotCredentialsDialog(
+            initialSsid = app.hotspotSsid,
+            initialPassword = app.hotspotPassword,
+            onSave = { ssid, psk ->
+                onSave(ssid, psk)
+                showEdit = false
+            },
+            onDismiss = { showEdit = false }
+        )
+    }
+}
+
+@Composable
+private fun HotspotCredentialsDialog(
+    initialSsid: String,
+    initialPassword: String,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var ssid by remember { mutableStateOf(initialSsid) }
+    var psk by remember { mutableStateOf(initialPassword) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Phone hotspot") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Dim.sm)) {
+                Text(
+                    text = "The vehicle display joins this hotspot to download maps. " +
+                        "Use your hotspot's own password — it is sent to the display " +
+                        "over Bluetooth.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = ssid,
+                    onValueChange = { ssid = it },
+                    label = { Text("Hotspot name (SSID)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = psk,
+                    onValueChange = { psk = it },
+                    label = { Text("Password") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(ssid, psk) }, enabled = ssid.isNotBlank()) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 /* -------------------------------------------------------------------------- */

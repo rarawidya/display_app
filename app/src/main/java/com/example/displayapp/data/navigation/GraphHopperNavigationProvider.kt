@@ -56,9 +56,26 @@ class GraphHopperNavigationProvider(
     @Volatile private var tracker: RouteProgressTracker? = null
     @Volatile private var offRouteStreak = 0
 
-    override suspend fun start(destination: GeoLocation) {
+    override suspend fun start(destination: GeoLocation, initialPlan: RoutePlan?) {
         teardown(emitCancel = false)
+        // A terminal state from the PREVIOUS session lives in the replay cache —
+        // without this, the new session's collector receives that stale
+        // Cancelled/Arrived instantly and RouteNavigator ends the session before
+        // it starts ("Start Navigation does nothing" after any prior cancel).
+        _progress.resetReplayCache()
         this.destination = destination
+        if (initialPlan != null) {
+            // Adopt the confirmed preview route: no second routing request (which
+            // could fail and silently cancel), and progress starts NOW instead of
+            // after the next GPS fix — the map flips to navigating and the board
+            // receives RouteSummary/RouteChunks immediately.
+            routeId += 1
+            val t = RouteProgressTracker(initialPlan, routeId)
+            tracker = t
+            _activeRoute.value = initialPlan
+            offRouteStreak = 0
+            _progress.tryEmit(t.onLocation(initialPlan.origin))
+        }
         job = scope.launch {
             locations.collect { onFix(it) }
         }
@@ -122,6 +139,11 @@ class GraphHopperNavigationProvider(
         val hadSession = destination != null
         destination = null
         if (emitCancel && hadSession) emitTerminal(NavState.Cancelled)
+        // The terminal state was just delivered live to this session's collectors;
+        // wipe it from the replay cache so the NEXT session's collector (which may
+        // subscribe before start() runs) can never receive it and kill the new
+        // session at birth ("Start Navigation does nothing" after a cancel).
+        _progress.resetReplayCache()
     }
 
     private fun emitTerminal(state: NavState) {

@@ -76,6 +76,7 @@ class MapsViewModel(
 
     private data class RouteState(
         val preview: RoutePlan?,
+        val previewFailed: Boolean,
         val active: RoutePlan?,
         val fitToken: Int,
         val overview: Boolean,
@@ -86,9 +87,10 @@ class MapsViewModel(
         _searchQuery,
         _pendingPlace,
         coordinator.previewDestination,
-        combine(coordinator.previewRoute, coordinator.activeRoute, _fitToken, _overviewActive) {
-            p, a, t, o -> RouteState(p, a, t, o)
-        },
+        combine(
+            coordinator.previewRoute, coordinator.previewFailed, coordinator.activeRoute,
+            _fitToken, _overviewActive,
+        ) { p, f, a, t, o -> RouteState(p, f, a, t, o) },
     ) { loc, query, place, pendingDest, rs ->
         val navigating = rs.active != null
         val previewing = pendingDest != null && !navigating
@@ -100,7 +102,8 @@ class MapsViewModel(
             destination = rs.active?.destination ?: pendingDest,
             route = drawn,
             previewing = previewing,
-            previewPlanning = previewing && rs.preview == null,
+            previewPlanning = previewing && rs.preview == null && !rs.previewFailed,
+            previewFailed = previewing && rs.previewFailed,
             previewName = place?.name.orEmpty(),
             previewDetail = place?.detail.orEmpty(),
             navigating = navigating,
@@ -176,6 +179,9 @@ class MapsViewModel(
             _overviewActive.value = false
         }
     }
+
+    /** Re-plan the previewed route after a failure (sheet's Retry action). */
+    fun retryPreview() = coordinator.retryPreview()
 
     /** Back out of the confirmation without navigating. */
     fun dismissPreview() {
