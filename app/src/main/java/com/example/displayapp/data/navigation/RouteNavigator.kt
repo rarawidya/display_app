@@ -12,9 +12,12 @@ import com.example.displayapp.domain.repository.NavigationProvider
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 
 /**
@@ -29,8 +32,17 @@ import timber.log.Timber
  *    heartbeat at ≤1 Hz (0.2 Hz while stationary). Frames are full state, so a
  *    dropped stream frame self-heals on the next.
  *  - **Terminal** (arrived/cancelled) — reliable write, then the session ends.
- *  - **Reconnect** while a session is active — re-send the cached RouteSummary
- *    (the board lost its state), then resume the stream.
+ *  - **Reconnect** while a session is active — re-send the cached RouteSummary +
+ *    geometry (the board lost its state), then the latest instruction immediately.
+ *
+ * The heartbeat is **driven by its own ticker**, not by provider emissions: a
+ * provider only emits per GPS fix, so a stationary phone (no fixes) would go
+ * silent and the board declares NAV OFFLINE after 15 s (its `/var/run/nav_state`
+ * mtime is the liveness signal). The ticker re-sends the last snapshot — the
+ * board interpolates the countdown between checkpoints from its own speed, so
+ * repeating the same values is correct. `seq` increments on every frame sent
+ * (the board's stale/out-of-order guard). All sends are serialized by a [Mutex]
+ * (ticker + progress collector race otherwise).
  *
  * All timing uses monotonic [SystemClock.elapsedRealtime]. This class holds no
  * routing-SDK types — those live behind [NavigationProvider].
@@ -45,16 +57,23 @@ class RouteNavigator(
     private var sessionJob: Job? = null
     private var seq = 0
 
-    // Per-session send-state (guarded by single-collector confinement).
+    // Per-session send-state (all mutations confined to [sendMutex]).
+    private val sendMutex = Mutex()
     private var active = false
     private var lastSentRouteId = -1L
     private var lastSummary: NavProgress? = null
+    private var lastProgress: NavProgress? = null
     private var lastManeuverKey: Int? = null
     private var lastState: NavState? = null
     private var lastSendMs = 0L
 
     // Latest route geometry (from the provider's activeRoute), for sending RouteChunks.
     @Volatile private var currentPlan: RoutePlan? = null
+
+    // Board-facing destination label for this session's RouteSummary; the plan/provider
+    // rarely knows the human name (a routing API returns geometry, not the picked
+    // place), so the UI hands it in at startNavigation().
+    private var destinationName: String = ""
 
     init {
         // Re-seed the board's route context after a reconnect mid-session.
@@ -63,11 +82,16 @@ class RouteNavigator(
             .launchIn(scope)
     }
 
-    /** Start navigating to [destination]; begins the frame stream. */
-    fun startNavigation(destination: GeoLocation) {
+    /**
+     * Start navigating to [destination]; begins the frame stream. [destinationName]
+     * is the human label for the board's bottom card (RouteSummary) — pass the
+     * picked place's name; blank shows "--" on the board.
+     */
+    fun startNavigation(destination: GeoLocation, destinationName: String = "") {
         stopInternal(sendCancel = false)
         active = true
         resetSessionState()
+        this.destinationName = destinationName
         sessionJob = scope.launch {
             // Subscribe concurrently with start(): some providers (the simulator, and
             // any SDK that drives progress from within start()) emit before start()
@@ -75,6 +99,7 @@ class RouteNavigator(
             // replayed value. The provider's SharedFlow replay covers the subscribe race.
             launch { provider.activeRoute.collect { currentPlan = it } }
             launch { provider.progress.collect { onProgress(it) } }
+            launch { heartbeat() }
             provider.start(destination)
         }
     }
@@ -84,53 +109,81 @@ class RouteNavigator(
         if (!active) return
         val last = lastSummary
         scope.launch {
-            transport.writeNav(
-                NavigationSchema.frameNavInstruction(
-                    instruction(
-                        NavProgress(
-                            routeId = last?.routeId ?: 0L,
-                            state = NavState.Cancelled,
-                            maneuver = com.example.displayapp.domain.model.Maneuver.None,
-                        ),
+            sendMutex.withLock {
+                sendInstruction(
+                    NavProgress(
+                        routeId = last?.routeId ?: 0L,
+                        state = NavState.Cancelled,
+                        maneuver = com.example.displayapp.domain.model.Maneuver.None,
                     ),
-                ),
-                reliable = true,
-            )
+                    reliable = true,
+                )
+            }
         }
         stopInternal(sendCancel = false)
     }
 
     private suspend fun onProgress(p: NavProgress) {
-        // New route (initial or reroute) → send the route (summary + geometry) first, reliably.
-        if (p.routeId != lastSentRouteId && p.state == NavState.Navigating) {
-            lastSummary = p
-            sendRoute(p)
-            lastSentRouteId = p.routeId
-        }
+        sendMutex.withLock {
+            // New route (initial or reroute) → send the route (summary + geometry) first, reliably.
+            if (p.routeId != lastSentRouteId && p.state == NavState.Navigating) {
+                lastSummary = p
+                sendRoute(p)
+                lastSentRouteId = p.routeId
+            }
 
-        val maneuverKey = maneuverKey(p)
-        val maneuverChanged = maneuverKey != lastManeuverKey
-        val stateChanged = p.state != lastState
-        val heartbeatDue = now() - lastSendMs >= sendIntervalMs(p)
+            lastProgress = p
+            val maneuverChanged = maneuverKey(p) != lastManeuverKey
+            val stateChanged = p.state != lastState
+            val heartbeatDue = now() - lastSendMs >= sendIntervalMs(p)
 
-        if (maneuverChanged || stateChanged || heartbeatDue) {
-            transport.writeNav(
-                NavigationSchema.frameNavInstruction(instruction(p, seq++)),
-                reliable = p.state.isTerminal,
-            )
-            lastManeuverKey = maneuverKey
-            lastState = p.state
-            lastSendMs = now()
+            if (maneuverChanged || stateChanged || heartbeatDue) {
+                sendInstruction(p, reliable = p.state.isTerminal)
+            }
         }
 
         if (p.state.isTerminal) stopInternal(sendCancel = false)
     }
 
+    /**
+     * The countdown heartbeat (docs/NAVIGATION-INTEGRATION.md §5): re-send the last
+     * snapshot at ≤1 Hz moving / 0.2 Hz stationary even when the provider is silent
+     * (no GPS fixes) — the board's liveness window is 5 s (dim) / 15 s (NAV OFFLINE).
+     * Lives inside the session job, so it dies with the session.
+     */
+    private suspend fun heartbeat() {
+        while (true) {
+            delay(HEARTBEAT_POLL_MS)
+            sendMutex.withLock {
+                val p = lastProgress ?: return@withLock
+                if (p.state.isTerminal) return@withLock
+                if (now() - lastSendMs >= heartbeatIntervalMs(p)) {
+                    sendInstruction(p, reliable = false)
+                }
+            }
+        }
+    }
+
+    /** Encode + write one NavInstruction; bumps `seq` and the shared send-state. */
+    private suspend fun sendInstruction(p: NavProgress, reliable: Boolean) {
+        transport.writeNav(NavigationSchema.frameNavInstruction(instruction(p, seq)), reliable)
+        // Rolling 16-bit counter (the board's stale/order guard handles wraparound);
+        // u16() clamping would freeze it after 65535 frames (~18 h at 1 Hz).
+        seq = (seq + 1) and 0xFFFF
+        lastManeuverKey = maneuverKey(p)
+        lastState = p.state
+        lastSendMs = now()
+    }
+
     private suspend fun resendSummary() {
-        val s = lastSummary ?: return
-        Timber.d("Nav: reconnect — re-seeding route for ${s.routeId}")
-        sendRoute(s)
-        lastManeuverKey = null // force the next instruction to send immediately
+        sendMutex.withLock {
+            val s = lastSummary ?: return
+            Timber.d("Nav: reconnect — re-seeding route for ${s.routeId}")
+            sendRoute(s)
+            // "…then the next instruction": the board just lost all nav state, so
+            // follow the summary with the latest snapshot immediately.
+            lastProgress?.let { sendInstruction(it, reliable = false) }
+        }
     }
 
     /**
@@ -202,10 +255,12 @@ class RouteNavigator(
         seq = 0
         lastSentRouteId = -1L
         lastSummary = null
+        lastProgress = null
         lastManeuverKey = null
         lastState = null
         lastSendMs = 0L
         currentPlan = null
+        destinationName = ""
     }
 
     /** Send cadence: immediate on non-navigating states, 0.2 Hz stationary, else 1 Hz. */
@@ -214,6 +269,10 @@ class RouteNavigator(
         p.speedKmh < 2 -> 5_000L
         else -> 1_000L
     }
+
+    /** Ticker cadence (no immediate case — event sends are the collector's job). */
+    private fun heartbeatIntervalMs(p: NavProgress): Long =
+        if (p.speedKmh < 2) 5_000L else 1_000L
 
     private fun maneuverKey(p: NavProgress): Int =
         (p.routeId.toInt() * 31) xor (p.maneuver.wire shl 8) xor p.roundaboutExit
@@ -225,10 +284,12 @@ class RouteNavigator(
         maneuverCount = u16(p.maneuverCount),
         polylineChunks = polylineChunks,
         schemaVersion = SCHEMA_VERSION,
-        destinationName = p.destinationName,
+        // The provider rarely knows the picked place's label; fall back to the
+        // session name handed in by the UI so the board's title isn't "--".
+        destinationName = p.destinationName.ifBlank { destinationName },
     )
 
-    private fun instruction(p: NavProgress, seqValue: Int = seq) = NavigationSchema.NavInstruction(
+    private fun instruction(p: NavProgress, seqValue: Int) = NavigationSchema.NavInstruction(
         routeId = p.routeId,
         distanceRemainingM = u32(p.distanceRemainingM),
         etaSeconds = u32(p.etaSeconds),
@@ -249,6 +310,8 @@ class RouteNavigator(
 
     private companion object {
         const val SCHEMA_VERSION = 1
+        /** Ticker granularity; actual send rate is [heartbeatIntervalMs]-gated. */
+        const val HEARTBEAT_POLL_MS = 250L
         // Route-geometry sending: cap the drawn line's resolution and keep each chunk
         // well under the 240-byte single-frame limit (≤40 pts ⇒ ~197 B payload).
         const val MAX_ROUTE_POINTS = 200

@@ -78,11 +78,15 @@ class NavigationCoordinator(
         }
     }
 
-    /** Confirm the previewed destination → start the session (map overlay + BLE). */
-    fun startPending() {
+    /**
+     * Confirm the previewed destination → start the session (map overlay + BLE).
+     * [destinationName] is the picked place's label, forwarded to the board's
+     * RouteSummary (the planner only knows coordinates, not names).
+     */
+    fun startPending(destinationName: String = "") {
         val dest = _previewDestination.value ?: return
         clearPreview()
-        routeNavigator.startNavigation(dest)
+        routeNavigator.startNavigation(dest, destinationName)
     }
 
     /** Discard the pending preview without starting navigation. */

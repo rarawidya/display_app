@@ -4,7 +4,18 @@
 push to the controller display.
 
 **Status:** phone side **implemented** (schema, encoder, transport, orchestrator,
-golden-frame tests). Firmware side **to do** (§7). The routing/map SDK is deliberately
+golden-frame tests). Firmware side **implemented and deployed** (§7; server decodes
+`0xAF06` → publishes `/var/run/nav_state`; the board's maps screen renders the
+maneuver banner, distance/ETA card, and a live position marker on a stylized map
+with touch zoom — board-local rendering, no protocol impact). **Live end-to-end with
+the real app confirmed 2026-07-08:** the board received and correctly rendered the
+app's `RouteSummary`, a `NavInstruction`, and a 29-point `RouteChunk` (real route
+polyline + destination pin + live position marker drawn from the app's geometry).
+Remaining gaps are all app-side and are exactly the action block below (heartbeat
+cadence, `streetName`, `destinationName`). Phones must clear their GATT cache after
+firmware updates to see `0xAF06`; every received write is hex-dumped to
+`/var/log/ble-gatt.log` on the board for instant verification. The routing/map SDK is
+deliberately
 **not chosen** — this transport is **provider-independent**: any SDK (Mapbox Nav,
 HERE, TomTom, Valhalla/GraphHopper/openrouteservice) plugs in behind one adapter
 interface (§4), and nothing below the adapter depends on the provider.
@@ -19,6 +30,84 @@ interface (§4), and nothing below the adapter depends on the provider.
 The app computes the route (phone GPS + routing SDK) and **streams compact
 instructions** to the board; the board renders the current maneuver. Navigation logic
 stays on the phone — the board is a thin renderer.
+
+---
+
+## ⭐ ACTION REQUIRED (Android developer) — status 2026-07-08 EVENING (live-test update), in priority order
+
+> **Live test result (phone connected, route created + cancelled):** RouteSummary +
+> **RouteChunk (29 pts — decoded & rendered!)** + 1 NavInstruction + the `cancelled`
+> event all arrived and worked. Still missing/broken in this build: **the ≤1 Hz
+> heartbeat (item 1 — nothing between route-create and cancel)**, `streetName`
+> carries maneuver text, `destinationName` empty. `seq` did increment on the cancel
+> frame (0→1) — good.
+
+**No API key / tile service is involved anywhere in this integration.** The board
+renders a styled offline map and overlays LIVE DATA (position marker, distance
+countdowns, ETA, maneuver banner). "Real-time" = the app streaming the frames below.
+Transport, CRC, and decode are **proven end-to-end with your own frames**: on
+2026-07-08 the board received and correctly rendered your RouteSummary +
+NavInstruction (`dist=4219m/eta=510s` displayed as `4.2 km / 8 min`, matching the
+phone). What is missing is exactly this:
+
+### 1. STREAM the NavInstruction heartbeat (the one change that makes it real-time)
+
+Observed live: the app sends **one burst when the route is created, then nothing**
+(60 s watch while the route was active on the phone: zero further writes). The board
+declares the feed dead after 15 s by design. Implement the §5 cadence in
+`RouteNavigator`:
+
+- **≤1 Hz** `NavInstruction` while moving (countdown heartbeat — full state, not deltas);
+- **0.2 Hz** (every 5 s) when stationary (`speedKmh < 2`);
+- **immediately** on maneuver change, state change (rerouting/offRoute/arrived/cancelled);
+- **on BLE reconnect** mid-route: re-send the cached `RouteSummary`, then the next instruction.
+
+Write-Without-Response, one frame per GATT write (§2/§6 — the §9 golden frame is the
+byte-exact reference). The board interpolates between your 1 Hz checkpoints using its
+own speed, so this cadence is smooth on screen.
+
+### 2. Fix three field encodes (seen in your live frames)
+
+| Field | You sent | Must be |
+|---|---|---|
+| `streetName` | `"Turn right"` (the maneuver text) | the **road you turn onto** (e.g. `"Jl. Sudirman"`); the maneuver comes from the `maneuver` enum — the board shows both, so today it prints "Turn right - Turn right" |
+| `destinationName` (RouteSummary) | `""` | the destination label (e.g. `"Pacing"`) — the board's bottom-card title shows "--" until this is non-empty |
+| `seq` | stuck at `0` | rolling counter, +1 per frame (stale/out-of-order guard) |
+
+### 3. `RouteChunk` — ✅ WORKING END-TO-END (verified live 2026-07-08 evening)
+
+**GREENLIT and shipped on both sides.** The board now decodes `navType 0x03`,
+reassembles chunks per `routeId` (out-of-order tolerated), and **renders the received
+polyline + destination pin on the maps screen**, driving the live position marker
+along the real geometry. Your app's first real RouteChunk (`route=1, 29 points,
+1 chunk`) was received, decoded, and rendered during the live test — geometry,
+start point, and direction all correct. Keep doing exactly what you do; for longer
+routes: downsample to ~1 point per 25–50 m, **≤45 points per chunk** stays under the
+240 B frame cap, Write-With-Response, resend on reroute with the bumped `routeId`.
+
+**Note on what the rider sees (sets expectations for QA):** the board draws YOUR
+route shape and live position on a *stylized offline base map* — the streets/labels
+around the route are decorative, not real imagery. The dot's position ON the route is
+real (distance-based). Pixel-identical base imagery is the separate map-stream
+feature ([`MAP-STREAM-INTEGRATION.md`](MAP-STREAM-INTEGRATION.md)).
+
+**Reference-verified golden frame** (encoder validated byte-exact against the §9
+goldens): `routeId=287454020, anchorLatE7=-75123456, anchorLonE7=1124567890, index=0,
+total=1, deltas=[1500,0, 0,-1100, -1660,-80, 0,-620, -1800,-200]` (5 points, 1e-5 deg):
+
+```
+AA 41 03 00 00 00 00 07 00 00 00 00 00 00 00 02 00 01 00 44 33 22 11 00 B5 85 FB 52
+8B 07 43 00 01 00 00 01 00 00 00 53 00 00 00 DC 05 00 00 00 00 B4 FB 84 F9 B0 FF 00
+00 94 FD F8 F8 38 FF 00 00 00 00 31 74
+```
+(69 bytes; `LEN=0x41=65`, `navType=0x03`, CRC=`0x7431`.)
+
+### Instant verification (no board tooling needed)
+
+While connected, every accepted RouteSummary prints a line in the board's
+`/var/log/ble-gatt.log`, and `/var/run/nav_state`'s mtime must tick at your heartbeat
+rate (`ssh root@192.168.42.1`, password `root`). If the heartbeat works, the maps
+screen goes LIVE within 1 s and stays live.
 
 ---
 
@@ -68,7 +157,7 @@ Reuse the **exact** shared frame wrapper (`FrameEncoder` / `Crc16`):
   |---|---|
   | `0x01` | `RouteSummary` |
   | `0x02` | `NavInstruction` |
-  | `0x03` | `RouteChunk` (phase 2) |
+  | `0x03` | `RouteChunk` (**live** since 2026-07-08 — board renders the polyline) |
 
 - `payload[1..]` — the **unpacked, single-segment** Cap'n Proto message for that type.
 - `CRC16` — **CRC16-CCITT** (poly `0x1021`, init `0xFFFF`, no final XOR, MSB-first)
@@ -118,7 +207,7 @@ struct RouteSummary {
   destinationName  @6 :Text;        # <= 48 UTF-8 B
 }
 
-# navType 0x03 — OPTIONAL (phase 2), only if the board draws a route line.
+# navType 0x03 — LIVE end-to-end since 2026-07-08; the board draws the route line.
 struct RouteChunk {
   routeId     @0 :UInt32;
   anchorLatE7 @1 :Int32;            # first point, 1e-7 deg
@@ -245,15 +334,20 @@ reroute / arrival as `NavState` transitions.
 
 ---
 
-## 7. Firmware processing & rendering (to build)
+## 7. Firmware processing & rendering (IMPLEMENTED — deployed 2026-07-07/08)
 
-Mirror the notification handler (`handle_downlink_write` → `/var/run/phone_notification`
-→ LVGL poll):
+Mirrors the notification handler (`handle_downlink_write` → `/var/run/phone_notification`
+→ LVGL poll). Note: the actual IPC path is **`/var/run/nav_state`** (not the
+`/var/run/phone_nav` originally sketched here) — a key=value file, one pair per
+line (`seq route_id state maneuver dist_turn_m next_maneuver next_dist_m rb_exit
+limit_kmh street dist_rem_m eta_s dest recv_ms`), atomically replaced on every
+accepted frame; its mtime is the liveness signal (fresh <5 s = LIVE, 5–15 s =
+dimmed STALE, >15 s = NAV OFFLINE).
 
-1. **Add characteristic `0xAF06`** with a write handler; validate the same
-   `[0xAA][LEN][payload][CRC16-LE]` frame (reuse the existing CRC path). Read
-   `payload[0] = navType`; decode `payload[1..]` as the matching struct. Publish
-   atomically to `/var/run/phone_nav`.
+1. **Characteristic `0xAF06`** with a write handler; validates the same
+   `[0xAA][LEN][payload][CRC16-LE]` frame (reuses the existing CRC path). Reads
+   `payload[0] = navType`; decodes `payload[1..]` as the matching struct. Publishes
+   atomically to `/var/run/nav_state`.
 2. **Freshness** — keep `recv_ms` + `seq`; ignore a frame whose `seq` is older than
    current (16-bit wraparound). `now − recv_ms > 5 s` → mark nav stale/dim.
 3. **`routeId` change** → clear cached maneuver / route-line state; new route.
@@ -266,8 +360,14 @@ Mirror the notification handler (`handle_downlink_write` → `/var/run/phone_not
    `arrived`→"Arrived" then auto-clear; `cancelled`/`idle`→hide.
 7. **Coexistence** — nav is its own IPC file/widget, independent of the notification
    banner. Board decides layout priority.
-8. **Optional route line (phase 2)** — buffer `RouteChunk`s by `routeId`+`index` until
-   `total` arrive; render a simplified north-up breadcrumb; reset on `routeId` change.
+8. **Route line — IMPLEMENTED (2026-07-08):** `RouteChunk`s are buffered by
+   `routeId`+`index` (≤16 chunks × 65 points, out-of-order OK); when complete the
+   polyline is published atomically to **`/var/run/nav_route`**
+   (`route_id=`/`chunks=`/`points=`/`complete=1`, then one `p=<latE7>,<lonE7>` per
+   point, then `recv_ms=`). The UI fits it north-up (aspect-preserving,
+   cos(lat)-corrected), swaps to a route-free base art, draws the real polyline +
+   destination pin, and drives the position dot along it; falls back to the stylized
+   route when absent/mismatched. Buffer resets on `routeId` change.
 
 **Constraint:** the server has **no RX reassembly** — one write = one whole frame.
 Every nav message fits one frame by design; keep text within the caps so no frame

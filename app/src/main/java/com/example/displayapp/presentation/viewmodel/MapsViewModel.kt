@@ -154,7 +154,10 @@ class MapsViewModel(
 
     /** Confirm the previewed destination → start the navigation session. */
     fun startNavigation() {
-        coordinator.startPending()
+        // Snapshot the place label at confirm time (a dropped pin has usually been
+        // reverse-geocoded to a real name by now) — it becomes the board's
+        // RouteSummary.destinationName.
+        coordinator.startPending(destinationName = _pendingPlace.value?.name.orEmpty())
         _pendingPlace.value = null
         _overviewActive.value = false
     }

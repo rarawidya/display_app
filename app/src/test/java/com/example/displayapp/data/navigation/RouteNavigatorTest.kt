@@ -150,6 +150,50 @@ class RouteNavigatorTest {
     }
 
     @Test
+    fun heartbeat_resends_last_state_while_the_provider_is_silent() {
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val transport = FakeTransport()
+        val provider = FakeProvider()
+        var clock = 0L
+        val nav = RouteNavigator(provider, transport, scope, now = { clock })
+
+        nav.startNavigation(GeoLocation(0.0, 0.0))
+        runBlocking {
+            provider.emit(
+                NavProgress(
+                    routeId = 1L, state = NavState.Navigating, maneuver = Maneuver.TurnLeft,
+                    distanceToTurnM = 200, streetName = "A", speedKmh = 20,
+                ),
+            )
+        }
+        val afterBurst = transport.navFrames.size // summary + first instruction
+
+        // No further provider emissions (stationary phone, no GPS fixes) — but the
+        // moving heartbeat interval elapses, so the ticker must re-send on its own.
+        clock = 1_500L
+        runBlocking { kotlinx.coroutines.delay(700) } // > 2 ticker polls (250 ms)
+
+        assertTrue(
+            "heartbeat sent while provider silent (got ${transport.navFrames.size - afterBurst})",
+            transport.navFrames.size > afterBurst,
+        )
+        // Heartbeat frames are stream (Write-Without-Response) instructions.
+        val hb = transport.navFrames.last()
+        assertEquals(NavigationSchema.NAV_TYPE_NAV_INSTRUCTION, navType(hb.first))
+        assertTrue("heartbeat is a WWR write", !hb.second)
+
+        // seq must roll +1 per frame: [AA][LEN][navType][8B seg table][8B root][data…],
+        // seq is data bytes 12..13 → frame offset 31 (LE).
+        val seqOf = { f: ByteArray -> (f[31].toInt() and 0xFF) or ((f[32].toInt() and 0xFF) shl 8) }
+        val instructions = transport.navFrames.map { it.first }
+            .filter { navType(it) == NavigationSchema.NAV_TYPE_NAV_INSTRUCTION }
+        val seqs = instructions.map(seqOf)
+        assertEquals("seq increments per instruction frame", seqs.indices.toList(), seqs)
+
+        scope.cancel()
+    }
+
+    @Test
     fun same_maneuver_without_time_or_state_change_is_not_resent() {
         val scope = CoroutineScope(Dispatchers.Unconfined)
         val transport = FakeTransport()

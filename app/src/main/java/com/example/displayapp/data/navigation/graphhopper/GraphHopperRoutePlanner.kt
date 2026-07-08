@@ -97,7 +97,11 @@ class GraphHopperRoutePlanner(
                     // First instruction is the departure; the rest map by sign.
                     maneuver = if (i == 0) Maneuver.Depart else signToManeuver(ins.optInt("sign", 0)),
                     location = polyline.getOrElse(startIdx) { polyline.first() },
-                    streetName = ins.optString("street_name").ifBlank { ins.optString("text") },
+                    // The road you turn ONTO only — never the instruction "text"
+                    // (a maneuver sentence like "Turn right"): the board prints the
+                    // maneuver from the enum already, so a text fallback renders as
+                    // "Turn right - Turn right". Unnamed roads stay blank.
+                    streetName = ins.optString("street_name"),
                     distanceMeters = ins.optDouble("distance", 0.0).toInt(),
                     roundaboutExit = ins.optInt("exit_number", 0),
                     polylineIndex = startIdx,
