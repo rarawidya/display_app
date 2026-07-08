@@ -43,6 +43,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -123,10 +124,12 @@ fun SettingsScreen(
     }
 
     // Call mirroring needs READ_PHONE_STATE (calls don't reach the notification
-    // listener). Requested at point of use — when the relay toggle flips on — and
-    // the toggle is enabled either way: a denial just means notifications-only.
+    // listener) and ANSWER_PHONE_CALLS (the cluster's Answer/End buttons — same
+    // "Phone" permission group, so it's one dialog). Requested at point of use —
+    // when the relay toggle flips on — and the toggle is enabled either way: a
+    // denial just means notifications-only.
     val phonePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestMultiplePermissions()
     ) { viewModel.setNotificationRelayEnabled(true) }
 
     SettingsContent(
@@ -138,11 +141,17 @@ fun SettingsScreen(
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
         onNotificationRelay = { enabled ->
-            val needPhonePermission = enabled &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) !=
-                PackageManager.PERMISSION_GRANTED
-            if (needPhonePermission) {
-                phonePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+            val phonePermissions = buildList {
+                add(Manifest.permission.READ_PHONE_STATE)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    add(Manifest.permission.ANSWER_PHONE_CALLS)
+                }
+            }
+            val missing = enabled && phonePermissions.any {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing) {
+                phonePermissionLauncher.launch(phonePermissions.toTypedArray())
             } else {
                 viewModel.setNotificationRelayEnabled(enabled)
             }

@@ -49,6 +49,9 @@ class SwitchableDataSource(
     private val _incomingData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 128)
     override val incomingData: SharedFlow<ByteArray> = _incomingData.asSharedFlow()
 
+    private val _controlFrames = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    override val controlFrames: SharedFlow<ByteArray> = _controlFrames.asSharedFlow()
+
     private val _discoveredDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     override val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>> = _discoveredDevices.asStateFlow()
 
@@ -89,6 +92,7 @@ class SwitchableDataSource(
     private fun wire(d: BluetoothDataSource) {
         mirrorJobs.add(scope.launch { d.connectionState.collect { _connectionState.value = it } })
         mirrorJobs.add(scope.launch { d.incomingData.collect { _incomingData.emit(it) } })
+        mirrorJobs.add(scope.launch { d.controlFrames.collect { _controlFrames.emit(it) } })
         mirrorJobs.add(scope.launch { d.discoveredDevices.collect { _discoveredDevices.value = it } })
         mirrorJobs.add(scope.launch { d.rssi.collect { _rssi.value = it } })
     }

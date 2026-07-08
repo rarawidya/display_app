@@ -67,6 +67,10 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private val _incomingData = MutableSharedFlow<ByteArray>(extraBufferCapacity = 256)
     override val incomingData: SharedFlow<ByteArray> = _incomingData.asSharedFlow()
 
+    // Board→phone control events (0xAF05): whole frames, low rate (button taps).
+    private val _controlFrames = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    override val controlFrames: SharedFlow<ByteArray> = _controlFrames.asSharedFlow()
+
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -171,7 +175,8 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
                     _incomingData.tryEmit(chunk)
                 },
                 onDisconnected = { scope.launch { handleConnectionLost() } },
-                onRssi = { _rssi.value = it }
+                onRssi = { _rssi.value = it },
+                onControlBytes = { _controlFrames.tryEmit(it) }
             )
             gattClient = client
 

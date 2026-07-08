@@ -14,6 +14,7 @@ import java.util.UUID
  *     • 0xAF08  NOTIFY  + CCCD   → telemetry stream (board → phone)   [TX]
  *     • 0xAF07  WRITE / WRITE_NR → notification channel (phone → board) [RX]
  *     • 0xAF06  WRITE / WRITE_NR → navigation channel (phone → board)   [NAV]
+ *     • 0xAF05  NOTIFY  + CCCD   → control events (board → phone)    [CONTROL]
  */
 object BleConstants {
 
@@ -32,6 +33,14 @@ object BleConstants {
      * verified 0xAF07 path is untouched. Absent on pre-nav firmware → nav disabled.
      */
     val NAV_CHAR_UUID: UUID = uuid16("AF06")
+
+    /**
+     * Control-event notify characteristic (board → phone): call answer/end button
+     * taps from the cluster (docs/CALL-CONTROL-INTEGRATION.md). Optional — absent
+     * on firmware without call control; the subscribe is skipped and the feature
+     * stays off. The phone never writes this characteristic.
+     */
+    val CONTROL_CHAR_UUID: UUID = uuid16("AF05")
 
     /** Standard Client Characteristic Configuration Descriptor. */
     val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")

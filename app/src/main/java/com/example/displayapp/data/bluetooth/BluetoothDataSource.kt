@@ -2,6 +2,7 @@ package com.example.displayapp.data.bluetooth
 
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -9,6 +10,18 @@ interface BluetoothDataSource {
     val incomingData: SharedFlow<ByteArray>
     val connectionState: StateFlow<ConnectionState>
     val discoveredDevices: StateFlow<List<BluetoothDeviceInfo>>
+
+    /**
+     * Board→phone control events (`0xAF05`, docs/CALL-CONTROL-INTEGRATION.md): one
+     * complete `[0xAA][LEN][ctrlType‖capnp][CRC16]` frame per emission (cluster
+     * button taps — call answer/end). Sources without a control uplink (simulator,
+     * pre-control firmware) leave the default, which never emits.
+     */
+    val controlFrames: SharedFlow<ByteArray> get() = NoControlFrames
+
+    companion object {
+        private val NoControlFrames = MutableSharedFlow<ByteArray>()
+    }
 
     /** Live signal strength of the connected link in dBm; null when disconnected. */
     val rssi: StateFlow<Int?>

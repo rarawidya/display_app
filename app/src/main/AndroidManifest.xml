@@ -22,6 +22,9 @@
          NotificationListenerService, so CallStateRelay listens to telephony call
          state and pushes category=1 frames to the board (NOTIFICATION-APP-FIXME.md §3). -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Call control: the cluster's Answer/End buttons (0xAF05 uplink) act on the
+         phone call via TelecomManager (docs/CALL-CONTROL-INTEGRATION.md). -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <!-- Doze can kill the bound notification listener; Settings offers the user a
          one-tap exemption so relaying survives the screen being off on the bike. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

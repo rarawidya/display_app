@@ -21,6 +21,7 @@ import com.example.displayapp.domain.repository.Geocoder
 import com.example.displayapp.domain.repository.NavigationProvider
 import com.example.displayapp.domain.repository.RoutePlanner
 import kotlinx.coroutines.flow.filterNotNull
+import com.example.displayapp.data.notification.CallControlHandler
 import com.example.displayapp.data.notification.CallStateRelay
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
@@ -266,6 +267,15 @@ class AppContainer(private val context: Context) {
      */
     val callStateRelay: CallStateRelay by lazy {
         CallStateRelay(context, phoneNotificationSender, appPreferencesRepository, appScope)
+    }
+
+    /**
+     * The reverse direction (docs/CALL-CONTROL-INTEGRATION.md): board button taps
+     * arrive on the `0xAF05` uplink and answer/end the phone call. Bound to the
+     * stable [bluetoothDataSource] facade; started once in DisplayApp.onCreate.
+     */
+    val callControlHandler: CallControlHandler by lazy {
+        CallControlHandler(context, bluetoothDataSource, appPreferencesRepository, appScope)
     }
 
     val vehicleRepository: VehicleRepository by lazy {

@@ -32,7 +32,9 @@ class BleGattClient(
     private val context: Context,
     private val onBytes: (ByteArray) -> Unit,
     private val onDisconnected: () -> Unit,
-    private val onRssi: (Int) -> Unit = {}
+    private val onRssi: (Int) -> Unit = {},
+    /** Frames from the optional control uplink (0xAF05, board→phone button events). */
+    private val onControlBytes: (ByteArray) -> Unit = {}
 ) {
     private var gatt: BluetoothGatt? = null
 
@@ -53,8 +55,9 @@ class BleGattClient(
         val ready = CompletableDeferred<Boolean>()
 
         val cb = object : BluetoothGattCallback() {
-            private fun deliver(v: ByteArray) {
-                if (v.isNotEmpty()) onBytes(v)
+            private fun deliver(c: BluetoothGattCharacteristic, v: ByteArray) {
+                if (v.isEmpty()) return
+                if (c.uuid == BleConstants.CONTROL_CHAR_UUID) onControlBytes(v) else onBytes(v)
             }
 
             override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
@@ -104,19 +107,50 @@ class BleGattClient(
             }
 
             override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-                if (descriptor.uuid == BleConstants.CCCD_UUID && !ready.isCompleted) {
-                    subscribed = status == BluetoothGatt.GATT_SUCCESS
-                    ready.complete(subscribed)
+                if (descriptor.uuid != BleConstants.CCCD_UUID) return
+                when (descriptor.characteristic.uuid) {
+                    BleConstants.TX_CHAR_UUID -> {
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            if (!ready.isCompleted) ready.complete(false)
+                            return
+                        }
+                        subscribed = true
+                        // Chain the OPTIONAL control-uplink subscribe (0xAF05) before
+                        // reporting ready: GATT allows one outstanding op, and a caller
+                        // may write a command the moment connect() returns — this CCCD
+                        // write must not collide with it. Absent char (old firmware) or
+                        // rejected setup → skip; telemetry alone is a successful connect.
+                        val ctrl = g.getService(BleConstants.SERVICE_UUID)
+                            ?.getCharacteristic(BleConstants.CONTROL_CHAR_UUID)
+                        val ctrlCccd = ctrl?.getDescriptor(BleConstants.CCCD_UUID)
+                        if (ctrl != null && ctrlCccd != null && g.setCharacteristicNotification(ctrl, true)) {
+                            @Suppress("DEPRECATION") run {
+                                ctrlCccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                g.writeDescriptor(ctrlCccd)
+                            }
+                        } else {
+                            if (!ready.isCompleted) ready.complete(true)
+                        }
+                    }
+                    BleConstants.CONTROL_CHAR_UUID -> {
+                        // Optional feature: enable failure downgrades to telemetry-only.
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            Timber.w("BLE: control CCCD enable failed (status=$status) — call control off")
+                        } else {
+                            Timber.i("BLE: control uplink ${BleConstants.CONTROL_CHAR_UUID} subscribed")
+                        }
+                        if (!ready.isCompleted) ready.complete(true)
+                    }
                 }
             }
 
             // Android 13+ delivers the value directly; older devices read it off the char.
             override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) =
-                deliver(value)
+                deliver(c, value)
 
             @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
             override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) =
-                deliver(c.value ?: ByteArray(0))
+                deliver(c, c.value ?: ByteArray(0))
 
             override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) onRssi(rssi)

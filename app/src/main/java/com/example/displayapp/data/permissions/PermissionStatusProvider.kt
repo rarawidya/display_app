@@ -62,6 +62,12 @@ enum class AppPermission(
         "Phone state",
         "Mirrors incoming calls to the vehicle display."
     ),
+    CALL_CONTROL(
+        Manifest.permission.ANSWER_PHONE_CALLS,
+        "Call control",
+        "Answer or end calls from the vehicle display's buttons.",
+        minSdk = Build.VERSION_CODES.O
+    ),
     NOTIFICATIONS(
         Manifest.permission.POST_NOTIFICATIONS,
         "Notifications",

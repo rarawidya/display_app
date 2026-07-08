@@ -46,6 +46,10 @@ class DisplayApp : Application() {
         // relay follows the same "Mirror to vehicle display" toggle.
         appContainer.callStateRelay.start()
 
+        // The reverse direction: cluster Answer/End button taps (0xAF05 uplink)
+        // acting on the phone call. Same toggle gates it.
+        appContainer.callControlHandler.start()
+
         // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
             val retentionDays = appContainer.appPreferencesRepository.settings
