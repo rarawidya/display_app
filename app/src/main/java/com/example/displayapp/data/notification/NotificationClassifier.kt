@@ -11,10 +11,12 @@ import com.example.displayapp.data.protocol.PhoneNotificationSchema.PhoneNotific
  * posting package** decides the branded messaging apps (WhatsApp / Telegram). The
  * board renders the right glyph from `category` + `appName`.
  *
+ * **Only calls, SMS, WhatsApp, and Telegram are relayed** — anything else returns
+ * null and never reaches the board (product decision: the cluster shows the four
+ * categories the rider cares about; everything else is noise at riding speed).
+ *
  * Board-side filter rules (docs/NOTIFICATION-APP-FIXME.md §4) shape every frame:
  * the UI drops `category = 0`, `flags.removed = 1`, and empty-content frames, so
- * - unrecognized apps relay as `category = 3` + their real label (generic glyph,
- *   still shown) — never as the filtered `category = 0`;
  * - `title`/`body` are backfilled so both are always non-empty;
  * - `flags.ongoing` is set for **calls only** — the board never auto-expires an
  *   ongoing banner, so a mirrored media/download notification would pin the
@@ -44,13 +46,12 @@ object NotificationClassifier {
     /**
      * Classify a posted notification.
      *
-     * @param appLabel human-readable label of the posting app, used as the
-     *   `appName` on the generic (`category = 3`, unbranded) path.
-     * @return a ready-to-send notification, or null when it should be skipped
-     *   (group-summary shell, content-less non-call notification, or a non-call
-     *   ongoing notification such as a media player).
+     * @return a ready-to-send notification, or **null when it should not relay**:
+     *   any app outside the allow-list (calls / SMS / WhatsApp / Telegram),
+     *   group-summary shells, content-less non-call notifications, and non-call
+     *   ongoing notifications such as media players.
      */
-    fun classify(sbn: StatusBarNotification, appLabel: String?): PhoneNotification? {
+    fun classify(sbn: StatusBarNotification): PhoneNotification? {
         val n = sbn.notification ?: return null
         val extras = n.extras
         val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
@@ -75,9 +76,8 @@ object NotificationClassifier {
             pkg in WHATSAPP -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to "WhatsApp"
             pkg in TELEGRAM -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to "Telegram"
             pkg in SMS      -> PhoneNotificationSchema.CATEGORY_MESSAGE_SMS to "Messages"
-            // category=0 is filtered board-side; 3 + a non-branded appName still
-            // renders (generic message glyph) — so everything else rides on 3.
-            else            -> PhoneNotificationSchema.CATEGORY_MESSAGING_APP to (appLabel ?: pkg)
+            // Allow-list only: everything else stays on the phone.
+            else            -> return null
         }
 
         var flags = 0

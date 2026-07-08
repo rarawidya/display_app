@@ -25,8 +25,9 @@ import timber.log.Timber
  * Once the user (1) grants **Notification access** in system settings — a
  * system-bound grant, not a runtime permission — and (2) enables the in-app
  * toggle ([com.example.displayapp.domain.model.AppSettings.notificationRelayEnabled]),
- * every posted/removed notification is classified ([NotificationClassifier]) and
- * pushed over BLE `0xAF07` as a framed Cap'n Proto `PhoneNotification`
+ * posted notifications from the allow-listed apps (calls / SMS / WhatsApp /
+ * Telegram — see [NotificationClassifier]; everything else never leaves the phone)
+ * are pushed over BLE `0xAF07` as a framed Cap'n Proto `PhoneNotification`
  * (docs/APP-NOTIFICATION-INTEGRATION.md). The board renders it (latest-wins,
  * single banner) so the rider sees calls/messages without looking at the phone.
  *
@@ -78,9 +79,7 @@ class NotificationRelayService : NotificationListenerService() {
                 }
                 val notification = when (event) {
                     is Event.Posted -> {
-                        val classified =
-                            NotificationClassifier.classify(event.sbn, appLabel(event.sbn.packageName))
-                                ?: continue
+                        val classified = NotificationClassifier.classify(event.sbn) ?: continue
                         val id = NotificationClassifier.stableId(event.sbn)
                         if (classified.flags and PhoneNotificationSchema.FLAG_ONGOING != 0) {
                             ongoingIds.add(id)
@@ -138,14 +137,6 @@ class NotificationRelayService : NotificationListenerService() {
 
     private suspend fun relayEnabled(): Boolean =
         runCatching { prefs.settings.first().notificationRelayEnabled }.getOrDefault(false)
-
-    private fun appLabel(pkg: String?): String? {
-        pkg ?: return null
-        return runCatching {
-            val pm = packageManager
-            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-        }.getOrNull()
-    }
 
     companion object {
         private const val TAG = "NotifRelay"
