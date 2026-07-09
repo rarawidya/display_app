@@ -205,6 +205,67 @@ board (seq 6/7/8 delivered); the call did NOT answer — the gap is between the
 app's BLE receive and its telecom action. `adb logcat -s NotifRelay` during the
 next test call is the decisive next evidence.**
 
+## ⭐ STATUS UPDATE 2026-07-08 ~21:00 — Reject WORKS, Answer does NOT
+
+Live user test result: **`action=2` (hangUp/reject) now works end-to-end** — a
+dashboard Reject press declines the ringing call on the phone. This proves the
+ENTIRE chain (board button → BLE `0xAF05` CallControl → app receive → telecom
+action) for action 2. **`action=1` (answer) is still ignored** — frames are
+delivered identically (earlier sessions byte-verified answer frames on the wire,
+e.g. seq=7: `action=0x01`, valid CRC) but the call never answers.
+
+Because reject works in the same sessions, the asymmetry is in the app's ANSWER
+code path, not transport. Known Android platform cause: `TelecomManager.
+acceptRingingCall()` is far more restricted than `endCall()` (deprecated since
+API 28, needs default-dialer-level standing on many OEM builds, and does not
+answer third-party VoIP calls). **Recommended fix: implement an `InCallService`
+and act on the live `Call` object with `Call.answer(videoState)` / `Call.reject()`**
+— this also makes both actions work uniformly for WhatsApp/VoIP calls.
+
+Decisive evidence to collect app-side: `adb logcat -s NotifRelay` while pressing
+Answer on the dashboard during a ring — per your spec it logs the action taken
+or the reason ignored.
+
+## ✅ PHONE-SIDE RESOLUTION 2026-07-09 — Telegram answer/reject fixed (WhatsApp already worked)
+
+**Symptom (app team):** answering/rejecting a **Telegram** call from the cluster
+did nothing, while **WhatsApp** worked end-to-end.
+
+**Root cause — phone-side classification, not transport.** The app answers/rejects
+a VoIP call by firing the call notification's own Answer/Hang-up `PendingIntent`
+(the only path that reaches a third-party `ConnectionService` call —
+`TelecomManager` can't, matching the board team's earlier diagnosis). Those intents
+are only captured when the app recognizes the notification as a call. The
+recognizer (`NotificationClassifier.isCall`) keyed on `Notification.CATEGORY_CALL`
+or a dialer package:
+
+- **WhatsApp** tags its incoming-call notification with `CATEGORY_CALL` (uses
+  `Notification.CallStyle`) → recognized → Answer/Hang-up intents captured → board
+  Answer fires WhatsApp's own answer action → **works**.
+- **Telegram** does **not** set `CATEGORY_CALL` (classic full-screen intent +
+  `addAction` "Answer"/"Decline") and isn't a dialer package → **not** recognized →
+  intents never captured → on a board Answer the app fell through to
+  `TelecomManager.acceptRingingCall()`, which no-ops on a VoIP call → **silently
+  ignored**. (Telegram calls also mis-rendered as a transient *message* banner,
+  category 3, instead of a persistent call banner.)
+
+**Fix (`NotificationClassifier.isCall`):** additionally treat a notification as a
+call when it comes from an allow-listed VoIP app (WhatsApp/Telegram) **and carries
+a full-screen intent** — the signal unique to an incoming-call ring. Telegram's
+Answer/Hang-up intents are now captured and fired through the same path WhatsApp
+already used; Telegram calls now also render as a proper persistent call banner
+(category 1, ongoing) with a "Call ended" collapse. No board or wire change.
+
+**Confirm on-device** (`adb logcat -s NotifRelay` during a Telegram ring):
+`call actions captured pkg=org.telegram.messenger answer=true hangUp=true`, then
+`call-control: action=1 … → answered (notification action)` and the call connects.
+
+**Known residual limitation:** if a future Telegram build ships an incoming-call
+notification with **no action buttons** (full-screen UI only), there is nothing to
+fire and answer would still fail — that case alone would need an `InCallService`
+(deliberately avoided: it requires default-dialer standing, inappropriate for a
+cockpit app). The common case (Telegram exposes Answer/Decline actions) is fixed.
+
 ## Board sources
 
 - Server: `EVDISPLAY/ble-gatt/ble-gatt-server.c` (`check_call_action`,

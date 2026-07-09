@@ -118,13 +118,28 @@ object NotificationClassifier {
         )
 
     /**
-     * True when [sbn] is a phone call — by notification category or a known dialer
-     * package. Shared with the call-action capture path so "is this a call?" is
-     * decided in exactly one place.
+     * True when [sbn] is a phone call — by notification category, a known dialer
+     * package, or a VoIP incoming-call ring from an allow-listed messaging app.
+     * Shared with the call-action capture path so "is this a call?" is decided in
+     * exactly one place.
+     *
+     * WhatsApp tags its call notification with [Notification.CATEGORY_CALL] (via
+     * `CallStyle`), so the category branch catches it. **Telegram does not set
+     * `CATEGORY_CALL`** on its incoming-call notification (classic full-screen
+     * intent + `addAction` "Answer"/"Decline") and isn't a dialer package, so it
+     * used to fall through to the messaging branch — its Answer/Hang-up intents
+     * were never captured and a board Answer press silently no-op'd on the
+     * `TelecomManager` fallback (docs/CALL-ACTION-INTEGRATION.md). A **full-screen
+     * intent** is the reliable signal of an incoming call and is set by no other
+     * notification type; gating on the allow-listed VoIP apps keeps a stray
+     * full-screen notification elsewhere from being miscounted as a call.
      */
     fun isCall(sbn: StatusBarNotification): Boolean {
-        val category = sbn.notification?.category
-        return category == Notification.CATEGORY_CALL || sbn.packageName.orEmpty() in DIALER
+        val n = sbn.notification ?: return false
+        if (n.category == Notification.CATEGORY_CALL) return true
+        val pkg = sbn.packageName.orEmpty()
+        if (pkg in DIALER) return true
+        return (pkg in WHATSAPP || pkg in TELEGRAM) && n.fullScreenIntent != null
     }
 
     /**
