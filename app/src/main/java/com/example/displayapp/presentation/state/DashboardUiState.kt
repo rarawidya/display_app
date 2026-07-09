@@ -19,7 +19,6 @@ import com.example.displayapp.domain.model.VehicleMode
 data class DashboardUiState(
     val speed: Int = 0,                          // km/h
     val rpm: Int = 0,                            // derived in TelemetryMapper (speed×100)
-    val maxSpeed: Int = 120,
     val batteryPercent: Int = 0,
     val voltage: Float = 0f,                     // V
     val current: Float = 0f,                     // A (signed; negative = regen)

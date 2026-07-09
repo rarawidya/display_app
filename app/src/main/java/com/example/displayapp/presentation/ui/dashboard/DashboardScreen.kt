@@ -312,20 +312,28 @@ private fun TitledMiniMap(
 @Composable
 private fun SpeedometerSection(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    // RPM is derived in TelemetryMapper (single source of truth) — no UI math.
-    val progress = if (state.maxSpeed > 0) state.speed.toFloat() / state.maxSpeed else 0f
+    // Gauge scales match the vehicle cluster: speed 0..180 km/h drives the arc,
+    // rpm 0..5000 fills the center. RPM is derived in TelemetryMapper (single
+    // source of truth) — the only UI math here is clamping into those ranges so
+    // the arc never overshoots and the readout never exceeds the dial.
+    val progress = state.speed.coerceIn(0, GAUGE_MAX_SPEED_KMH).toFloat() / GAUGE_MAX_SPEED_KMH
+    val rpm = state.rpm.coerceIn(0, GAUGE_MAX_RPM)
 
     // Secondary readout honors the user's speed-unit preference (km/h ↔ mph).
     val secondary = app.speedUnit.formatSpeed(state.speed.toFloat()).uppercase()
 
     SpeedometerGauge(
-        heroValue = state.rpm,
+        heroValue = rpm,
         heroUnit = "RPM",
         progressFraction = progress,
         secondaryText = secondary,
         modifier = Modifier.fillMaxWidth()
     )
 }
+
+/** Drive-gauge full-scale ranges — mirror the physical cluster's dial limits. */
+private const val GAUGE_MAX_SPEED_KMH = 180
+private const val GAUGE_MAX_RPM = 5000
 
 /* -------------------------------------------------------------------------- */
 /*  EV telemetry grid — real controller channels only (capnp.md).             */
