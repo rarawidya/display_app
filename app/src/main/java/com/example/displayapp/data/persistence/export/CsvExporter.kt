@@ -71,13 +71,16 @@ class CsvExporter(
                 for (sample in samples) {
                     val vd = TelemetryDerivations.decodeEntity(sample)
                     val speedKmh = sample.speed / 10f
+                    // Pin Locale.US on every float: a comma-decimal locale (id-ID, de-DE,
+                    // …) would emit "45,2" and split one field into two, shifting every
+                    // column and corrupting the machine-readable CSV.
                     writer.append(sample.timestamp.toString()).append(',')
-                    writer.append("%.1f".format(speedKmh)).append(',')
+                    writer.append("%.1f".format(Locale.US, speedKmh)).append(',')
                     writer.append(vd.rpm.toString()).append(',')
                     writer.append(vd.batteryPercent.toString()).append(',')
-                    writer.append("%.2f".format(vd.voltage)).append(',')
-                    writer.append("%.2f".format(vd.current)).append(',')
-                    writer.append("%.1f".format(vd.power)).append(',')
+                    writer.append("%.2f".format(Locale.US, vd.voltage)).append(',')
+                    writer.append("%.2f".format(Locale.US, vd.current)).append(',')
+                    writer.append("%.1f".format(Locale.US, vd.power)).append(',')
                     writer.append(vd.temperature.toString()).append(',')
                     writer.append(vd.batteryTemperature.toString()).append(',')
                     writer.append(vd.controllerTemperature.toString()).append(',')
@@ -121,14 +124,14 @@ class CsvExporter(
         writer.appendLine("# end=${trip.endTime?.let { isoFormat.format(Date(it)) } ?: "—"}")
         writer.appendLine("# duration_sec=$durationSec")
         writer.appendLine("# samples=$sampleCount")
-        writer.appendLine("# distance_km=${"%.3f".format(distanceKm)}")
+        writer.appendLine("# distance_km=${"%.3f".format(Locale.US, distanceKm)}")
         writer.appendLine("# avg_speed_kmh=${formatOptional(avgSpeedKmh)}")
         writer.appendLine("# max_speed_kmh=${formatOptional(maxSpeedKmh)}")
         writer.appendLine("# battery_start_pct=${trip.startBattery}")
         writer.appendLine("# battery_end_pct=${trip.endBattery ?: "—"}")
-        writer.appendLine("# energy_used_wh=${"%.2f".format(trip.energyUsedWh)}")
-        writer.appendLine("# energy_regen_wh=${"%.2f".format(trip.energyRegenWh)}")
-        writer.appendLine("# energy_net_wh=${"%.2f".format(netEnergyWh)}")
+        writer.appendLine("# energy_used_wh=${"%.2f".format(Locale.US, trip.energyUsedWh)}")
+        writer.appendLine("# energy_regen_wh=${"%.2f".format(Locale.US, trip.energyRegenWh)}")
+        writer.appendLine("# energy_net_wh=${"%.2f".format(Locale.US, netEnergyWh)}")
         writer.appendLine("# avg_power_w=${formatOptional(avgPowerW)}")
         writer.appendLine("# max_power_w=${formatOptional(maxPowerW)}")
         writer.appendLine("# peak_motor_temp_c=${peakTempLabel(trip.peakMotorTempC)}")
@@ -142,7 +145,7 @@ class CsvExporter(
 
     /** Renders `0` aggregates from pre-v5 trips as `—` instead of fake zeros. */
     private fun formatOptional(value: Float): String =
-        if (value == 0f) "—" else "%.2f".format(value)
+        if (value == 0f) "—" else "%.2f".format(Locale.US, value)
 
     /** Same for peak temps (pre-v5 default 0 → "—"). */
     private fun peakTempLabel(value: Int): String =

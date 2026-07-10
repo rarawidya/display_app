@@ -59,22 +59,23 @@ class DisplayApp : Application() {
             appContainer.retentionPolicy.enforce(overrideDays = retentionDays)
         }
 
-        // Hardware-free demo: when running against the simulator and the trips
-        // table is empty, seed a handful of plausible past trips so the Logs
-        // page has content. No-op once any trip exists, so user deletes stick.
-        if (appContainer.useSimulator) {
-            appScope.launch {
-                appContainer.sampleTripSeeder.seedIfEmpty()
-            }
-        }
-
-        // If Simulator mode is on, open the simulated session at launch so
-        // telemetry streams immediately — otherwise the fake source is selected
-        // but idle (nothing calls connect() on it) and every screen reads
-        // "Disconnected". The Settings toggle drives the same path at runtime.
+        // Reconcile the data + location sources with the persisted Simulator-mode
+        // preference at cold start. `useSimulator` defaults true, so a real-mode user
+        // must be switched to the real transport + fused GPS explicitly — otherwise the
+        // map shows the simulated fixed location and demo trips leak in before any
+        // device connects.
         appScope.launch {
-            if (appContainer.appPreferencesRepository.settings.first().simulatorMode) {
+            val simulatorMode = appContainer.appPreferencesRepository.settings.first().simulatorMode
+            if (simulatorMode) {
+                // Open the simulated session so telemetry streams immediately (a freshly
+                // selected SimulatedDataSource is idle until connect()).
                 appContainer.setSimulatorSession(true)
+                // Hardware-free demo: seed a few past trips so Logs isn't empty.
+                // Idempotent — no-op once any trip exists, so user deletes stick.
+                appContainer.sampleTripSeeder.seedIfEmpty()
+            } else {
+                // Simulator off → real BLE transport + fused GPS; no seeded demo trips.
+                appContainer.switchDataSource(simulator = false)
             }
         }
     }

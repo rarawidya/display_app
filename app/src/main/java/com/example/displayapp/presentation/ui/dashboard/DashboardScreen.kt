@@ -62,12 +62,18 @@ fun DashboardScreen(
     onBluetoothLongPress: () -> Unit = onConnectionTap,
     bluetoothAnchor: @Composable (Modifier) -> Unit = {},
     hotspotActive: Boolean = false,
-    onHotspotTap: () -> Unit = {}
+    onHotspotTap: () -> Unit = {},
+    onLocationPermissionGranted: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDiagnostics by viewModel.showDiagnostics.collectAsStateWithLifecycle()
 
-    LocationPermissionEffect(onGranted = mapsViewModel::onLocationPermissionGranted)
+    LocationPermissionEffect(onGranted = {
+        // Restart the VM's own puck stream AND the shared source, so the app-scoped
+        // nav coordinator/provider recover too (they collect the flow once).
+        mapsViewModel.onLocationPermissionGranted()
+        onLocationPermissionGranted()
+    })
 
     DashboardContent(
         state = uiState,

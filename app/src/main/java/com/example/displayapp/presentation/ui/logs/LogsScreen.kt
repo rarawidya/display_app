@@ -57,8 +57,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.data.sharing.ShareHelper
 import com.example.displayapp.domain.repository.TripRepository
+import com.example.displayapp.data.energy.EnergyFormatter
 import com.example.displayapp.presentation.state.DateRange
 import com.example.displayapp.presentation.state.LogsSummary
+import com.example.displayapp.presentation.state.TelemetryMetric
+import com.example.displayapp.ui.theme.seriesColor
 import com.example.displayapp.presentation.state.LogsUiState
 import com.example.displayapp.presentation.state.SortBy
 import com.example.displayapp.presentation.state.TripFilter
@@ -303,36 +306,44 @@ private fun SummaryBand(summary: LogsSummary) {
     val app = LocalAppSettings.current
     val distanceLabel = app.speedUnit.formatDistance(summary.totalDistanceMeters)
     val avgSpeedLabel = app.speedUnit.formatSpeed(summary.avgSpeedKmh10 / 10f)
+    // Net energy consumed across the visible trips (SI Wh); "—" when no trip carries
+    // energy data (all pre-energy rows). Auto-switches Wh ↔ kWh.
+    val energyLabel = if (summary.totalEnergyKwh != 0f) {
+        EnergyFormatter.formatEnergyWh(summary.totalEnergyKwh.toDouble() * 1000.0)
+    } else "—"
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(Dim.sm)
         ) {
-            SummaryStat("Trips", summary.tripCount.toString(), EvBlue)
+            SummaryStat("Trips", summary.tripCount.toString(), EvBlue, Modifier.weight(0.7f))
             // Theme-adaptive accent (bright EV-blue in dark, standard in light) so the
             // distance reads cleanly in both themes — the old fixed neon lime did not.
-            SummaryStat("Distance", distanceLabel, MaterialTheme.colorScheme.primary)
-            SummaryStat("Avg speed", avgSpeedLabel, EvBlue)
+            SummaryStat("Distance", distanceLabel, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+            SummaryStat("Avg speed", avgSpeedLabel, EvBlue, Modifier.weight(1f))
+            SummaryStat("Energy", energyLabel, TelemetryMetric.Power.seriesColor(), Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun SummaryStat(label: String, value: String, accent: Color) {
-    Column(horizontalAlignment = Alignment.Start) {
+private fun SummaryStat(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+    Column(horizontalAlignment = Alignment.Start, modifier = modifier) {
         Text(
             text = label.uppercase(),
             fontSize = 10.sp,
             letterSpacing = 1.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            color = accent
+            color = accent,
+            maxLines = 1
         )
     }
 }

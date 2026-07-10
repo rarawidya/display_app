@@ -1,5 +1,6 @@
 package com.example.displayapp.presentation.navigation
 
+import android.widget.Toast
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +15,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,6 +32,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.example.displayapp.DisplayApp
+import com.example.displayapp.data.notification.BoardWifiConnector
+import com.example.displayapp.di.AppContainer
 import com.example.displayapp.presentation.ui.maps.LocalMapProvider
 import com.example.displayapp.domain.model.ConnectionState
 import com.example.displayapp.presentation.ui.charts.ChartsScreen
@@ -58,6 +62,8 @@ import com.example.displayapp.presentation.viewmodel.SettingsViewModel
 import com.example.displayapp.presentation.viewmodel.SettingsViewModelFactory
 import com.example.displayapp.presentation.viewmodel.ThemeViewModel
 import com.example.displayapp.presentation.viewmodel.ThemeViewModelFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModelFactory
 
@@ -118,6 +124,9 @@ private fun AppNavGraph(
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as DisplayApp).appContainer
+    // Drives the one-tap header hotspot button: push Wi-Fi to the display, then
+    // deep-link to the phone's tethering settings.
+    val hotspotScope = rememberCoroutineScope()
 
     NavHost(
         navController = navController,
@@ -247,7 +256,9 @@ private fun AppNavGraph(
                 lastRide = lastRide,
                 lastRoutePoints = lastRoute?.points,
                 hotspotActive = hotspotActive,
-                onHotspotTap = { openTetherSettings(context) },
+                onHotspotTap = {
+                    connectDisplayToHotspot(hotspotScope, context, navController, container)
+                },
                 deviceName = savedDevice?.name?.takeIf { it.isNotBlank() && it != "Unknown" } ?: "My Scooter",
                 onStartMonitoring = {
                     navController.navigateTopLevel(Destination.Drive)
@@ -303,7 +314,10 @@ private fun AppNavGraph(
                 mapsViewModel = mapsVm,
                 wifiConnected = wifiConnected,
                 hotspotActive = hotspotActive,
-                onHotspotTap = { openTetherSettings(context) },
+                onHotspotTap = {
+                    connectDisplayToHotspot(hotspotScope, context, navController, container)
+                },
+                onLocationPermissionGranted = { container.onLocationPermissionGranted() },
                 onConnectionTap = { showPopover = true },
                 onBluetoothLongPress = { showSheet = true },
                 bluetoothAnchor = { _ ->
@@ -457,6 +471,40 @@ private fun AppNavGraph(
                 onBack = { navController.popBackStack() }
             )
         }
+    }
+}
+
+/**
+ * One-tap "connect the display to my hotspot" from the header icon: automatically
+ * push the stored Wi-Fi credentials to the board (SSID → PSK → JOIN over 0xAF07),
+ * then deep-link to the phone's tethering settings so the user just flips the
+ * hotspot on. No more digging into Settings → "Send Wi-Fi to display" by hand.
+ *
+ * A [Toast] reports the outcome. If no credentials are stored yet, we route to
+ * Settings (where they're entered) instead of the tethering page, which wouldn't help.
+ */
+private fun connectDisplayToHotspot(
+    scope: CoroutineScope,
+    context: android.content.Context,
+    navController: NavHostController,
+    container: AppContainer,
+) {
+    scope.launch {
+        val message = when (container.boardWifiConnector.pushCredentials()) {
+            BoardWifiConnector.Result.NOT_CONFIGURED -> {
+                navController.navigate(Destination.Settings.route) { launchSingleTop = true }
+                "Set your hotspot name & password first"
+            }
+            BoardWifiConnector.Result.SENT -> {
+                openTetherSettings(context)
+                "Wi-Fi sent to the display — turn your hotspot on"
+            }
+            BoardWifiConnector.Result.FAILED -> {
+                openTetherSettings(context)
+                "Couldn't reach the display — is it connected?"
+            }
+        }
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
 }
 

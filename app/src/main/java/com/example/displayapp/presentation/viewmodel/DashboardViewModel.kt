@@ -212,8 +212,11 @@ class DashboardViewModel(
         // distance use the same algorithm.
         val dtMsRaw = data.timestamp - sessionLastTimestampMs
         if (sessionLastTimestampMs > 0L && dtMsRaw in 1..TelemetryConstants.MAX_SAMPLE_DT_MS) {
+            // avgSpeedMs is metres/second; km = m/s × ms ÷ 1_000_000 (÷1000 ms→s,
+            // ÷1000 m→km). Dividing by 3_600_000 (the km/h divisor) would apply the
+            // 3.6 conversion twice and under-report distance 3.6×.
             val avgSpeedMs = ((sessionLastSpeed + data.speed) / 2.0) / 3.6
-            sessionDistanceKm += avgSpeedMs * dtMsRaw / 3_600_000.0
+            sessionDistanceKm += avgSpeedMs * dtMsRaw / 1_000_000.0
         }
         sessionLastSpeed = data.speed
         sessionLastTimestampMs = data.timestamp

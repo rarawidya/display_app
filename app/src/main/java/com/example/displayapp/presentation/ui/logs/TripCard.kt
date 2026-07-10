@@ -102,9 +102,12 @@ fun TripCard(
             // Lazy sparkline — see produceState block below for the load policy.
             val sparkline: FloatArray by produceState(initialValue = FloatArray(0), key1 = row.id) {
                 value = withContext(Dispatchers.IO) {
-                    // Aim for ~30 visual points regardless of trip length.
+                    // Aim for ~30 visual points regardless of trip length. Derive the
+                    // stride from the persisted sample COUNT — not from an assumed sample
+                    // rate — so seeded (1 Hz) and live (~10 Hz) trips both decimate to a
+                    // full sparkline instead of the old 20 Hz guess collapsing them to ~1 point.
                     val target = 30
-                    val sampleEvery = (row.durationSec * 20 / target).toInt().coerceAtLeast(1)
+                    val sampleEvery = (row.sampleCount / target).toInt().coerceAtLeast(1)
                     val samples = try {
                         tripRepository.getDownsampledTelemetry(row.id, sampleEvery)
                     } catch (_: Throwable) { emptyList() }
@@ -122,33 +125,37 @@ fun TripCard(
                     .height(36.dp)
             )
 
-            // Only speed/battery are real wire fields; the former energy/power/
-            // Wh-per-km/regen row derived from the 0-valued current channel and was
-            // removed so trips show trustworthy data only.
+            // Speed, battery, and efficiency are all wire-backed now: `currentMotor` is
+            // calibrated signed deci-amps, so energy = ∫V·I·dt (and thus Wh/km) is real —
+            // TripSessionManager persists it and SampleTripSeeder recomputes it, so both
+            // live and demo trips show accurate values ("—" only for pre-energy rows).
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(Dim.xs)
             ) {
-                MiniStat("AVG", avgSpeedLabel, speedColor)
-                MiniStat("MAX", maxSpeedLabel, speedColor)
-                MiniStat("BATT", row.batteryLabel, batteryColor)
+                MiniStat("AVG", avgSpeedLabel, speedColor, Modifier.weight(1f))
+                MiniStat("MAX", maxSpeedLabel, speedColor, Modifier.weight(1f))
+                MiniStat("BATT", row.batteryLabel, batteryColor, Modifier.weight(1.4f))
+                MiniStat("EFF", row.efficiencyLabel, TelemetryMetric.Power.seriesColor(), Modifier.weight(1.1f))
             }
         }
     }
 }
 
 @Composable
-private fun MiniStat(label: String, value: String, color: Color) {
-    Column {
+private fun MiniStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = color
+            color = color,
+            maxLines = 1
         )
     }
 }

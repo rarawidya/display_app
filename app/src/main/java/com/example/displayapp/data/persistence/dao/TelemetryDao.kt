@@ -59,11 +59,18 @@ interface TelemetryDao {
 
     /**
      * Downsampled query: picks every Nth row for graph overview.
-     * Uses rowid modulo for efficient server-side downsampling.
+     *
+     * The stride is taken **relative to the trip's first row** (`id - MIN(id)`), not the
+     * global autoincrement id. A trip's rows form a contiguous id block, but that block's
+     * offset from a multiple of `sampleEvery` is arbitrary — a bare `id % sampleEvery = 0`
+     * could match zero rows for a short trip (empty sparkline). Anchoring to `MIN(id)`
+     * guarantees the first row is always included and rows are evenly spaced by exactly
+     * `sampleEvery`, so the result count is predictable (~total/sampleEvery).
      */
     @Query("""
         SELECT * FROM telemetry
-        WHERE tripId = :tripId AND (id % :sampleEvery) = 0
+        WHERE tripId = :tripId
+          AND ((id - (SELECT MIN(id) FROM telemetry WHERE tripId = :tripId)) % :sampleEvery) = 0
         ORDER BY timestamp ASC
     """)
     suspend fun getDownsampled(tripId: Long, sampleEvery: Int): List<TelemetryEntity>

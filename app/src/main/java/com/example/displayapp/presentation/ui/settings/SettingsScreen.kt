@@ -1,17 +1,26 @@
 package com.example.displayapp.presentation.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -67,6 +76,7 @@ import com.example.displayapp.data.persistence.StorageInfo
 import com.example.displayapp.data.preferences.SavedDevice
 import com.example.displayapp.domain.model.AppSettings
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.RetentionPeriod
 import com.example.displayapp.domain.model.ThemeMode
 import com.example.displayapp.presentation.state.SettingsUiState
 import com.example.displayapp.service.NotificationRelayService
@@ -75,7 +85,6 @@ import com.example.displayapp.presentation.ui.settings.components.ActionRow
 import com.example.displayapp.presentation.ui.settings.components.ChoiceRow
 import com.example.displayapp.presentation.ui.settings.components.ConfirmDialog
 import com.example.displayapp.presentation.ui.settings.components.PermissionRow
-import com.example.displayapp.presentation.ui.settings.components.PreferenceRow
 import com.example.displayapp.presentation.ui.settings.components.SectionDivider
 import com.example.displayapp.presentation.ui.settings.components.SettingsSection
 import com.example.displayapp.presentation.ui.settings.components.SwitchRow
@@ -178,6 +187,7 @@ fun SettingsScreen(
         notificationAccessGranted = notificationAccess,
         onBack = onBack,
         onThemeMode = viewModel::setThemeMode,
+        onRetention = viewModel::setRetention,
         onAutoConnect = viewModel::setAutoConnect,
         onForgetDevice = viewModel::forgetDevice,
         onSimulatorMode = viewModel::setSimulatorMode,
@@ -215,7 +225,6 @@ fun SettingsScreen(
         wifiSendResult = wifiSendResult,
         onWifiResultShown = viewModel::consumeWifiSendResult,
         onSaveHotspotCredentials = viewModel::setHotspotCredentials,
-        onSendWifiToBoard = viewModel::sendWifiCredentialsToBoard,
         onForgetBoardWifi = viewModel::forgetBoardWifi,
         onOpenHotspotSettings = {
             // There is no public tethering-settings action; the hidden one resolves
@@ -266,6 +275,7 @@ fun SettingsContent(
     notificationAccessGranted: Boolean,
     onBack: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
+    onRetention: (RetentionPeriod) -> Unit,
     onAutoConnect: (Boolean) -> Unit,
     onForgetDevice: () -> Unit,
     onSimulatorMode: (Boolean) -> Unit,
@@ -280,7 +290,6 @@ fun SettingsContent(
     wifiSendResult: String? = null,
     onWifiResultShown: () -> Unit = {},
     onSaveHotspotCredentials: (String, String) -> Unit = { _, _ -> },
-    onSendWifiToBoard: () -> Unit = {},
     onForgetBoardWifi: () -> Unit = {},
     onOpenHotspotSettings: () -> Unit = {}
 ) {
@@ -351,14 +360,14 @@ fun SettingsContent(
                 )
                 VehicleInternetSection(
                     app = state.app,
-                    connected = state.connectionState == ConnectionState.CONNECTED,
                     onSave = onSaveHotspotCredentials,
-                    onSend = onSendWifiToBoard,
                     onForget = onForgetBoardWifi,
                     onOpenHotspotSettings = onOpenHotspotSettings
                 )
                 StorageSection(
                     storage = state.storage,
+                    app = state.app,
+                    onRetention = onRetention,
                     onClearTrips = onClearTrips
                 )
                 PermissionsSection(state = state, onManage = onManagePermissions)
@@ -392,26 +401,158 @@ private fun AppearanceSection(
     onThemeMode: (ThemeMode) -> Unit
 ) {
     SettingsSection(title = "Appearance") {
-        ChoiceRow(
-            title = "Theme",
-            options = ThemeMode.entries,
-            selected = theme.mode,
-            onSelected = onThemeMode,
-            labelFor = { themeLabel(it) },
-            descriptionFor = { themeDescription(it) }
-        )
+        ThemeSelector(selected = theme.mode, onSelected = onThemeMode)
     }
 }
 
 private fun themeLabel(mode: ThemeMode) = when (mode) {
     ThemeMode.LIGHT  -> "Light"
     ThemeMode.DARK   -> "Dark"
-    ThemeMode.SYSTEM -> "Follow system"
+    ThemeMode.SYSTEM -> "System"
 }
-private fun themeDescription(mode: ThemeMode): String? = when (mode) {
-    ThemeMode.LIGHT  -> "Bright cockpit · daytime"
-    ThemeMode.DARK   -> "Carbon cockpit · night driving"
-    ThemeMode.SYSTEM -> "Switches with your phone's mode"
+private fun themeDescription(mode: ThemeMode): String = when (mode) {
+    ThemeMode.LIGHT  -> "Daytime"
+    ThemeMode.DARK   -> "Night driving"
+    ThemeMode.SYSTEM -> "Match phone"
+}
+
+/**
+ * Visual theme picker: a row of tappable preview cards, each rendering a mini cockpit
+ * mock in that theme's own palette so the choice is shown, not just labelled. The
+ * selected card gets an accent ring + tinted label.
+ */
+@Composable
+private fun ThemeSelector(selected: ThemeMode, onSelected: (ThemeMode) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(Dim.md),
+        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+    ) {
+        ThemeMode.entries.forEach { mode ->
+            ThemeCard(
+                mode = mode,
+                selected = mode == selected,
+                onClick = { onSelected(mode) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeCard(
+    mode: ThemeMode,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val ringColor = if (selected) accent else MaterialTheme.colorScheme.outlineVariant
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(Dim.xxs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Dim.xs)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.82f)
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    width = if (selected) 2.5.dp else 1.dp,
+                    color = ringColor,
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .padding(3.dp)
+                .clip(RoundedCornerShape(11.dp))
+        ) {
+            ThemeMock(mode)
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(5.dp)
+                        .size(14.dp)
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = themeLabel(mode),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            )
+            Text(
+                text = themeDescription(mode),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** Representative per-theme palette for the preview mock (independent of the live theme). */
+private data class MockPalette(val bg: Color, val surface: Color, val line: Color, val accent: Color)
+private val LIGHT_MOCK = MockPalette(Color(0xFFEDF1F6), Color(0xFFFFFFFF), Color(0xFFCAD3DE), Color(0xFF2F6BFF))
+private val DARK_MOCK  = MockPalette(Color(0xFF0F1218), Color(0xFF20262F), Color(0xFF39424E), Color(0xFF5B9CFF))
+
+/** Tiny "cockpit screen" mock — gauge + tiles — in [mode]'s palette; a diagonal split for System. */
+@Composable
+private fun ThemeMock(mode: ThemeMode) {
+    when (mode) {
+        ThemeMode.LIGHT -> MockScreen(LIGHT_MOCK)
+        ThemeMode.DARK  -> MockScreen(DARK_MOCK)
+        ThemeMode.SYSTEM -> Box(Modifier.fillMaxSize()) {
+            // Diagonal split: light top-left, dark bottom-right.
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.linearGradient(
+                        0f to LIGHT_MOCK.bg, 0.5f to LIGHT_MOCK.bg,
+                        0.5f to DARK_MOCK.bg, 1f to DARK_MOCK.bg,
+                    )
+                )
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(0.5f)
+                    .aspectRatio(1f)
+                    .clip(CircleShape)
+                    .border(2.5.dp, DARK_MOCK.accent, CircleShape)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MockScreen(p: MockPalette) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(p.bg).padding(9.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Title/status bar
+        Box(Modifier.fillMaxWidth(0.6f).height(5.dp).clip(RoundedCornerShape(3.dp)).background(p.line))
+        // Gauge
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxWidth(0.62f).aspectRatio(1f)
+                    .clip(CircleShape)
+                    .background(p.surface)
+                    .border(3.dp, p.accent, CircleShape)
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        // Two tiles
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.weight(1f).height(13.dp).clip(RoundedCornerShape(4.dp)).background(p.surface))
+            Box(Modifier.weight(1f).height(13.dp).clip(RoundedCornerShape(4.dp)).background(p.surface))
+        }
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -434,19 +575,16 @@ private fun ConnectionSection(
             else                          -> EvAmber to connection.name.lowercase()
                 .replaceFirstChar { it.uppercase() }
         }
-        ValueRow(
-            title = "Status",
-            value = statusLabel,
-            leadingIcon = EvIcons.Bluetooth,
-            valueColor = statusColor
-        )
-        SectionDivider()
 
+        // Device + live status in one row (the standalone "Status" row was redundant
+        // with the always-visible Drive/Home header indicator).
         if (savedDevice != null) {
-            PreferenceRow(
+            ValueRow(
                 title = savedDevice.name,
+                value = statusLabel,
                 subtitle = savedDevice.address,
-                leadingIcon = EvIcons.Bluetooth
+                leadingIcon = EvIcons.Bluetooth,
+                valueColor = statusColor
             )
             SectionDivider()
             ActionRow(
@@ -459,8 +597,10 @@ private fun ConnectionSection(
         } else {
             ValueRow(
                 title = "Paired device",
-                value = "—",
-                subtitle = "No device saved · pair from the Drive screen"
+                value = statusLabel,
+                subtitle = "No device saved · pair from the Drive screen",
+                leadingIcon = EvIcons.Bluetooth,
+                valueColor = statusColor
             )
             SectionDivider()
         }
@@ -532,9 +672,7 @@ private fun NotificationsSection(
 @Composable
 private fun VehicleInternetSection(
     app: AppSettings,
-    connected: Boolean,
     onSave: (String, String) -> Unit,
-    onSend: () -> Unit,
     onForget: () -> Unit,
     onOpenHotspotSettings: () -> Unit
 ) {
@@ -544,20 +682,11 @@ private fun VehicleInternetSection(
     SettingsSection(title = "Vehicle internet") {
         ActionRow(
             title = if (configured) "Hotspot: ${app.hotspotSsid}" else "Set hotspot credentials",
-            subtitle = if (configured) "Tap to edit the hotspot the display joins"
+            // The header hotspot button now sends these to the display automatically,
+            // so this is just where you enter/edit them — no separate "send" step.
+            subtitle = if (configured) "Tap to edit — the hotspot button sends these to the display"
                 else "The display joins your phone's hotspot to download maps",
             onClick = { showEdit = true }
-        )
-        SectionDivider()
-        ActionRow(
-            title = "Send Wi-Fi to display",
-            subtitle = when {
-                !configured -> "Set the hotspot credentials first"
-                connected -> "Push the credentials over Bluetooth"
-                else -> "Connect to the display first"
-            },
-            leadingTint = if (configured && connected) EvGreen else EvAmber,
-            onClick = onSend
         )
         SectionDivider()
         ActionRow(
@@ -643,6 +772,8 @@ private fun HotspotCredentialsDialog(
 @Composable
 private fun StorageSection(
     storage: StorageInfo?,
+    app: AppSettings,
+    onRetention: (RetentionPeriod) -> Unit,
     onClearTrips: () -> Unit
 ) {
     var confirmTrips by remember { mutableStateOf(false) }
@@ -652,6 +783,18 @@ private fun StorageSection(
             title = "Database",
             value = storage?.let { it.format(it.databaseBytes) } ?: "—",
             subtitle = storage?.let { "${it.tripCount} trips · ${it.telemetrySampleCount} samples" }
+        )
+        SectionDivider()
+        ChoiceRow(
+            title = "Keep trip history",
+            options = RetentionPeriod.entries,
+            selected = app.retention,
+            onSelected = onRetention,
+            labelFor = { it.label },
+            descriptionFor = {
+                if (it == RetentionPeriod.FOREVER) "Never auto-delete recorded trips"
+                else "Older trips are pruned automatically"
+            }
         )
         SectionDivider()
         ActionRow(

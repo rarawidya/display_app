@@ -4,6 +4,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -134,8 +137,7 @@ private fun MetricTileShell(
         tonalElevation = 2.dp
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.fillMaxHeight().padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -156,6 +158,11 @@ private fun MetricTileShell(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // Pin the value to the bottom of the tile: every tile in a row shares the
+            // same height, so bottom-anchoring makes the numbers line up even when a
+            // longer label ("Controller Temp") wraps to two lines while a shorter one
+            // ("Battery Temp") stays on one. Min 14.dp keeps the label/value gap.
+            Spacer(Modifier.heightIn(min = 14.dp).weight(1f))
             content()
         }
     }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.navigation.NavigationCoordinator
 import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.GeoPlace
+import com.example.displayapp.domain.model.NavProgress
 import com.example.displayapp.domain.model.Route
 import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.Geocoder
@@ -62,7 +63,17 @@ class MapsViewModel(
         .debounce(300)
         .flatMapLatest { q ->
             if (q.isBlank()) flowOf(emptyList())
-            else flow { emit(geocoder.search(q, near = uiState.value.currentLocation)) }
+            else flow {
+                // Dedupe by name+coords. The geocoder can return identical entries
+                // (e.g. the same terminal indexed twice); duplicates both clutter the
+                // list and collide the Navigation list's LazyColumn key — same key twice
+                // is a hard crash. This identity matches SuggestionList's `key`, so the
+                // rendered keys are unique by construction.
+                emit(
+                    geocoder.search(q, near = uiState.value.currentLocation)
+                        .distinctBy { "${it.name}|${it.location.latitude},${it.location.longitude}" }
+                )
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -74,7 +85,7 @@ class MapsViewModel(
     private val _overviewActive = MutableStateFlow(false)
     private var overviewJob: Job? = null
 
-    private data class RouteState(
+    private data class RouteCore(
         val preview: RoutePlan?,
         val previewFailed: Boolean,
         val active: RoutePlan?,
@@ -82,15 +93,33 @@ class MapsViewModel(
         val overview: Boolean,
     )
 
+    private data class RouteState(
+        val preview: RoutePlan?,
+        val previewFailed: Boolean,
+        val active: RoutePlan?,
+        val fitToken: Int,
+        val overview: Boolean,
+        val progress: NavProgress?,
+    )
+
+    // Fold the live NavProgress in with the route/preview state so the ETA card can
+    // count down (combine's typed overload caps at 5 flows, hence the nested combine).
+    private val routeStateFlow = combine(
+        combine(
+            coordinator.previewRoute, coordinator.previewFailed, coordinator.activeRoute,
+            _fitToken, _overviewActive,
+        ) { p, f, a, t, o -> RouteCore(p, f, a, t, o) },
+        coordinator.progress,
+    ) { core, prog ->
+        RouteState(core.preview, core.previewFailed, core.active, core.fitToken, core.overview, prog)
+    }
+
     val uiState: StateFlow<MapsUiState> = combine(
         liveLocation,
         _searchQuery,
         _pendingPlace,
         coordinator.previewDestination,
-        combine(
-            coordinator.previewRoute, coordinator.previewFailed, coordinator.activeRoute,
-            _fitToken, _overviewActive,
-        ) { p, f, a, t, o -> RouteState(p, f, a, t, o) },
+        routeStateFlow,
     ) { loc, query, place, pendingDest, rs ->
         val navigating = rs.active != null
         val previewing = pendingDest != null && !navigating
@@ -110,6 +139,10 @@ class MapsViewModel(
             overviewActive = navigating && rs.overview,
             fitToken = rs.fitToken,
             permissionGranted = loc != null,
+            // Live countdown from the tracked progress while navigating; null otherwise
+            // (labels then fall back to the route's static totals).
+            remainingMeters = rs.progress?.distanceRemainingM?.takeIf { navigating },
+            etaSeconds = rs.progress?.etaSeconds?.takeIf { navigating },
         )
     }.stateIn(
         scope = viewModelScope,

@@ -337,6 +337,8 @@ private fun SuggestionList(
                     )
                 }
             } else {
+                // Key must be unique — MapsViewModel.searchResults dedupes on this exact
+                // name+coords identity, so keep the two in sync (duplicate key = crash).
                 items(results, key = { "${it.name}|${it.location.latitude},${it.location.longitude}" }) { place ->
                     Row(
                         modifier = Modifier

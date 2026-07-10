@@ -32,6 +32,19 @@ object CallNotificationActions {
     )
 
     /**
+     * Match a lowercased action [title] against [keywords]. Multi-word keywords
+     * ("hang up", "end call", "pick up") use substring match; single-word keywords use
+     * **whole-word** match so the short token "end" doesn't flag a "Send message" button
+     * (`"send".contains("end")` is true) and hang up the call instead of texting.
+     */
+    private fun titleMatches(title: String, keywords: List<String>): Boolean {
+        val words = title.split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
+        return keywords.any { kw ->
+            if (kw.contains(' ')) title.contains(kw) else words.contains(kw)
+        }
+    }
+
+    /**
      * Pull the answer/hang-up actions out of a call [notification], or null if it
      * exposes no actionable buttons. Each [Notification.Action] is classified by its
      * title keyword; for a two-button incoming call where nothing matched "answer",
@@ -46,8 +59,8 @@ object CallNotificationActions {
         for (a in actions) {
             val title = a.title?.toString()?.lowercase().orEmpty()
             when {
-                HANGUP.any { title.contains(it) } -> if (hangUp == null) hangUp = a.actionIntent
-                ANSWER.any { title.contains(it) } -> if (answer == null) answer = a.actionIntent
+                titleMatches(title, HANGUP) -> if (hangUp == null) hangUp = a.actionIntent
+                titleMatches(title, ANSWER) -> if (answer == null) answer = a.actionIntent
             }
         }
         // Two-button incoming call, hang-up found but no title matched "answer":

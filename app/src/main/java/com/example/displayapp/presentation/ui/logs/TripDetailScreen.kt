@@ -49,6 +49,7 @@ import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.components.mode.ModeBadge
 import com.example.displayapp.presentation.ui.icons.EvIcons
+import com.example.displayapp.presentation.ui.logs.components.EnergySummaryCard
 import com.example.displayapp.presentation.ui.logs.components.StaticTelemetryChart
 import com.example.displayapp.presentation.viewmodel.TripDetailViewModel
 import com.example.displayapp.ui.theme.Dim
@@ -311,6 +312,16 @@ private fun DetailBody(state: TripDetailUiState) {
     val app = LocalAppSettings.current
     HeroSummaryCard(state = state)
 
+    // Energy analytics (Used / Recovered / Net / Efficiency). Real now that
+    // `currentMotor` is calibrated signed deci-amps → energy = ∫V·I·dt is persisted
+    // per trip; shows "—" only for pre-energy rows.
+    EnergySummaryCard(
+        energyUsedWh = state.energyUsedWh,
+        energyRegenWh = state.energyRegenWh,
+        distanceMeters = state.distanceMeters,
+        ratePerKwh = state.ratePerKwh,
+    )
+
     // Trip Detail charts only real controller channels (capnp.md). Current & Power
     // are back now that `currentMotor` (@1) is calibrated signed deci-amps. Battery
     // Temp stays absent from the v1 wire, so its chart is still omitted.
@@ -443,8 +454,8 @@ private fun HeroSummaryCard(state: TripDetailUiState) {
 
             Spacer(Modifier.height(0.dp))
 
-            // Speed + battery are the real wire-backed trip aggregates. Power/energy
-            // stats were removed (derived from the 0-valued current channel).
+            // Speed + battery headline stats; energy/efficiency live in the
+            // EnergySummaryCard below (all wire-backed via the calibrated current channel).
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat(label = "AVG", value = avgSpeedLabel, accent = speedColor)
                 Stat(label = "MAX", value = maxSpeedLabel, accent = speedColor)

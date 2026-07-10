@@ -185,24 +185,10 @@ class SettingsViewModel(
     }
 
     /**
-     * Push the stored hotspot credentials to the board over `0xAF07`
-     * (docs/BOARD-WIFI-STA-INTEGRATION.md §2): SSID → PSK → JOIN, each a reliable
-     * write. All three must be delivered for the board to commit.
+     * Sending the credentials to the board now happens automatically from the header
+     * hotspot button (see [com.example.displayapp.data.notification.BoardWifiConnector]),
+     * so there's no separate "send" action here — this screen only sets/edits them.
      */
-    fun sendWifiCredentialsToBoard() {
-        viewModelScope.launch {
-            val app = state.value.app
-            if (app.hotspotSsid.isBlank()) {
-                _wifiSendResult.value = "Set the hotspot name and password first"
-                return@launch
-            }
-            val ok = BoardWifiCommands.joinSequence(app.hotspotSsid, app.hotspotPassword)
-                .all { notificationSender.send(it) }
-            _wifiSendResult.value =
-                if (ok) "Wi-Fi credentials sent — turn the hotspot on"
-                else "Couldn't reach the display — is it connected?"
-        }
-    }
 
     /** Tell the board to wipe its stored credentials and return to AP mode. */
     fun forgetBoardWifi() {

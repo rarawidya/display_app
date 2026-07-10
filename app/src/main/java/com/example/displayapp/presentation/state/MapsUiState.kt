@@ -39,17 +39,25 @@ data class MapsUiState(
     /** Bumps whenever a fresh camera fit is wanted (new destination or Overview). */
     val fitToken: Int = 0,
     val chargingStations: List<ChargingStation> = emptyList(),
-    val permissionGranted: Boolean = false
+    val permissionGranted: Boolean = false,
+    /**
+     * Live remaining distance / ETA from the tracked [NavProgress] once navigating —
+     * null before navigation (preview) or before the first fix arrives, in which case
+     * the labels fall back to the route's static totals. Without this the ETA card
+     * would freeze at the plan totals and never count down during the drive.
+     */
+    val remainingMeters: Int? = null,
+    val etaSeconds: Int? = null
 ) {
-    /** Driver-friendly distance label — used by the ETA card. */
+    /** Driver-friendly distance label — live remaining while navigating, else route total. */
     val distanceLabel: String?
-        get() = route?.distanceMeters?.let {
+        get() = (remainingMeters ?: route?.distanceMeters)?.let {
             if (it >= 1000) "%.1f km".format(it / 1000f) else "$it m"
         }
 
-    /** Driver-friendly ETA label. */
+    /** Driver-friendly ETA label — live while navigating, else route total. */
     val etaLabel: String?
-        get() = route?.durationSeconds?.let { sec ->
+        get() = (etaSeconds ?: route?.durationSeconds)?.let { sec ->
             val h = sec / 3600
             val m = (sec % 3600) / 60
             if (h > 0) "${h}h ${m}m" else "${m} min"

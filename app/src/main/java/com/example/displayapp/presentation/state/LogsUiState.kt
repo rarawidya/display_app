@@ -31,7 +31,9 @@ data class TripRow(
     val durationSec: Long,
     val maxSpeedKmh10: Int,
     val avgSpeedKmh10: Int,
-    val energyKwh: Float
+    val energyKwh: Float,
+    /** Persisted sample count — drives rate-agnostic sparkline decimation. */
+    val sampleCount: Long
 )
 
 /** Date-range filter chip values. */
@@ -125,11 +127,17 @@ data class LogsUiState(
         get() {
             val list = visibleTrips
             if (list.isEmpty()) return LogsSummary()
+            // Duration-weighted mean of per-trip averages — a plain mean of the averages
+            // over-weights short trips and misrepresents the true fleet average speed.
+            val totalDurationSec = list.sumOf { it.durationSec }
+            val weightedAvgSpeed = if (totalDurationSec > 0L) {
+                list.sumOf { it.avgSpeedKmh10.toLong() * it.durationSec } / totalDurationSec
+            } else 0L
             return LogsSummary(
                 tripCount = list.size,
                 totalDistanceMeters = list.sumOf { it.distanceMeters },
                 totalEnergyKwh = list.sumOf { it.energyKwh.toDouble() }.toFloat(),
-                avgSpeedKmh10 = list.sumOf { it.avgSpeedKmh10.toLong() } / list.size
+                avgSpeedKmh10 = weightedAvgSpeed
             )
         }
 
@@ -177,8 +185,10 @@ fun TripEntity.toRow(): TripRow {
     val energyLabel = if (hasRealEnergy) EnergyFormatter.formatNetEnergyWh(netWh) else "—"
     val regenLabel = if (hasRealEnergy) "%.0f Wh".format(energyRegenWh) else "—"
 
+    // Efficiency uses NET energy (used − regen), matching EnergySummaryCard on the
+    // Trip Detail screen — the same trip must not show two different Wh/km numbers.
     val effLabel: String = if (hasRealEnergy && distKm > 0.05f) {
-        "%.0f Wh/km".format(energyUsedWh / distKm)
+        "%.0f Wh/km".format(netWh / distKm)
     } else "—"
 
     // v5 aggregates: pre-v5 trips default to 0 → render "—".
@@ -210,7 +220,8 @@ fun TripEntity.toRow(): TripRow {
         durationSec = durationSec,
         maxSpeedKmh10 = maxSpeedKmh10,
         avgSpeedKmh10 = avgSpeedKmh10,
-        energyKwh = energyKwh
+        energyKwh = energyKwh,
+        sampleCount = sampleCount
     )
 }
 

@@ -24,6 +24,7 @@ import com.example.displayapp.domain.repository.NavigationProvider
 import com.example.displayapp.domain.repository.RoutePlanner
 import kotlinx.coroutines.flow.filterNotNull
 import com.example.displayapp.data.notification.CallControlHandler
+import com.example.displayapp.data.notification.BoardWifiConnector
 import com.example.displayapp.data.notification.CallStateRelay
 import com.example.displayapp.data.notification.PhoneNotificationSender
 import com.example.displayapp.data.permissions.PermissionStatusProvider
@@ -154,6 +155,15 @@ class AppContainer(private val context: Context) {
     }
 
     val locationRepository: LocationRepository get() = switchableLocationRepository
+
+    /**
+     * A location-permission grant arrived — force the shared location source to
+     * re-subscribe so the app-scoped nav coordinator/provider (which collect it once)
+     * recover. Fused GPS otherwise stays completed-and-silent from the pre-grant attempt.
+     */
+    fun onLocationPermissionGranted() {
+        switchableLocationRepository.restart()
+    }
 
     /**
      * Active map renderer (MapLibre). Behind the renderer-neutral
@@ -311,6 +321,15 @@ class AppContainer(private val context: Context) {
     }
 
     /**
+     * Reads the stored hotspot credentials and pushes them to the board's Wi-Fi STA
+     * (SSID → PSK → JOIN). Shared by the Settings action and the one-tap header
+     * hotspot button so both hand the display its Wi-Fi through one code path.
+     */
+    val boardWifiConnector: BoardWifiConnector by lazy {
+        BoardWifiConnector(appPreferencesRepository, phoneNotificationSender)
+    }
+
+    /**
      * Call capture (docs/NOTIFICATION-APP-FIXME.md §3) — calls don't arrive through
      * the NotificationListenerService, so a TelephonyCallback mirrors ringing/
      * in-call/ended to the board as `category=1` frames. Follows the same relay
@@ -388,9 +407,18 @@ class AppContainer(private val context: Context) {
     /**
      * Force-restart the current data source — used when the simulator scenario
      * changes and the running SimulatedDataSource needs to be replaced.
+     *
+     * A freshly constructed [SimulatedDataSource] is idle (it only emits after
+     * [connect]), and [SwitchableDataSource.swap] resets state to DISCONNECTED — so
+     * without re-opening the session the scenario change would freeze telemetry and
+     * flip the UI to "Disconnected". Reconnect (simulator only) so the new scenario
+     * streams immediately; a real link is left alone (scenario has no effect there).
      */
     fun restartDataSource() {
         switchableDataSource.swap(createDelegate())
+        if (useSimulator) {
+            appScope.launch { vehicleRepository.connect(SIMULATOR_SESSION_ADDRESS) }
+        }
     }
 
     /**
