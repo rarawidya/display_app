@@ -288,7 +288,7 @@ private fun AppNavGraph(
                 factory = DashboardViewModelFactory(container.vehicleRepository, container.efficiencyTracker, container.diagnosticsRepository, container.phoneNotificationSender, container.appPreferencesRepository)
             )
             val mapsVm: MapsViewModel = viewModel(
-                factory = MapsViewModelFactory(container.locationRepository, container.navigationCoordinator, container.geocoder)
+                factory = MapsViewModelFactory(container.locationRepository, container.navigationCoordinator, container.geocoder, container.vehicleRepository.vehicleData, container.efficiencyTracker.state)
             )
             val btVm: BluetoothViewModel = viewModel(
                 factory = BluetoothViewModelFactory(
@@ -358,7 +358,7 @@ private fun AppNavGraph(
 
         composable(Destination.Navigation.route) {
             val mapsVm: MapsViewModel = viewModel(
-                factory = MapsViewModelFactory(container.locationRepository, container.navigationCoordinator, container.geocoder)
+                factory = MapsViewModelFactory(container.locationRepository, container.navigationCoordinator, container.geocoder, container.vehicleRepository.vehicleData, container.efficiencyTracker.state)
             )
             NavigationScreen(
                 viewModel = mapsVm,

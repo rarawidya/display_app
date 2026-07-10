@@ -47,7 +47,15 @@ data class MapsUiState(
      * would freeze at the plan totals and never count down during the drive.
      */
     val remainingMeters: Int? = null,
-    val etaSeconds: Int? = null
+    val etaSeconds: Int? = null,
+    /** Current battery SoC (%), or null when disconnected / unknown. */
+    val batteryPercentNow: Int? = null,
+    /** Estimated battery (%) on arrival, or null when it can't be estimated yet. */
+    val batteryAtArrivalPct: Int? = null,
+    /** True once the rider reaches the destination (NavState.Arrived) → show the arrival card. */
+    val arrived: Boolean = false,
+    /** Destination label for the arrival card (from the active route), else empty. */
+    val destinationName: String = ""
 ) {
     /** Driver-friendly distance label — live remaining while navigating, else route total. */
     val distanceLabel: String?
@@ -62,4 +70,12 @@ data class MapsUiState(
             val m = (sec % 3600) / 60
             if (h > 0) "${h}h ${m}m" else "${m} min"
         }
+
+    /** Battery value for the ETA card: estimated arrival charge, else current SoC, else —. */
+    val batteryValue: String
+        get() = (batteryAtArrivalPct ?: batteryPercentNow)?.let { "$it%" } ?: "—%"
+
+    /** "now" only when showing the live SoC (no arrival estimate yet); "est" otherwise. */
+    val batterySuffix: String
+        get() = if (batteryAtArrivalPct == null && batteryPercentNow != null) "now" else "est"
 }

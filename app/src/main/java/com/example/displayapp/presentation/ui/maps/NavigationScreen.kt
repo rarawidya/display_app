@@ -200,9 +200,10 @@ fun NavigationScreen(
                 )
             }
 
-            // Bottom overlay — Overview button + ongoing ETA / distance (once started)
+            // Bottom overlay — ongoing ETA / distance, or the arrival card once arrived
+            // (arrival outlives `navigating`, which clears the instant the route ends).
             AnimatedVisibility(
-                visible = state.navigating,
+                visible = state.navigating || state.arrived,
                 enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
                 exit  = fadeOut() + slideOutVertically(targetOffsetY = { it }),
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -213,19 +214,32 @@ fun NavigationScreen(
                         .onGloballyPositioned { bottomCardTopPx = it.boundsInRoot().top.toInt() },
                     horizontalAlignment = Alignment.End
                 ) {
-                    OverviewPill(
-                        active = state.overviewActive,
-                        onClick = viewModel::overview,
-                        modifier = Modifier.padding(horizontal = Dim.screenGutter, vertical = Dim.xs)
-                    )
-                    EtaCard(
-                        eta = state.etaLabel.orEmpty(),
-                        distance = state.distanceLabel.orEmpty(),
-                        onCancel = viewModel::clearRoute,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(Dim.screenGutter)
-                    )
+                    if (state.arrived) {
+                        // Destination reached → swap the live ETA card for an arrival card.
+                        ArrivalCard(
+                            destinationName = state.destinationName,
+                            onDone = viewModel::clearRoute,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Dim.screenGutter)
+                        )
+                    } else {
+                        OverviewPill(
+                            active = state.overviewActive,
+                            onClick = viewModel::overview,
+                            modifier = Modifier.padding(horizontal = Dim.screenGutter, vertical = Dim.xs)
+                        )
+                        EtaCard(
+                            eta = state.etaLabel.orEmpty(),
+                            distance = state.distanceLabel.orEmpty(),
+                            battery = state.batteryValue,
+                            batterySuffix = state.batterySuffix,
+                            onCancel = viewModel::clearRoute,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Dim.screenGutter)
+                        )
+                    }
                 }
             }
         }
@@ -560,6 +574,8 @@ private fun LongPressHint(modifier: Modifier = Modifier) {
 private fun EtaCard(
     eta: String,
     distance: String,
+    battery: String,
+    batterySuffix: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -582,7 +598,7 @@ private fun EtaCard(
             ) {
                 EtaMetric(label = "ETA", value = eta, accent = EvBlue)
                 EtaMetric(label = "Distance", value = distance, accent = EvBlue)
-                EtaMetric(label = "Battery", value = "—%", accent = EvGreen, suffix = "est")
+                EtaMetric(label = "Battery", value = battery, accent = EvGreen, suffix = batterySuffix)
             }
             Spacer(Modifier.height(4.dp))
             Surface(
@@ -597,6 +613,75 @@ private fun EtaCard(
                     text = "Cancel route",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+/** Shown in place of the ETA card once [NavState.Arrived] — the "you have arrived" cue. */
+@Composable
+private fun ArrivalCard(
+    destinationName: String,
+    onDone: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        border = BorderStroke(1.dp, EvGreen.copy(alpha = 0.5f)),
+        tonalElevation = 8.dp,
+        shadowElevation = 16.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape).background(EvGreen),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✓", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "You've arrived",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (destinationName.isNotBlank()) {
+                        Text(
+                            text = destinationName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(CircleShape)
+                    .clickable(onClick = onDone),
+                shape = CircleShape,
+                color = EvGreen
+            ) {
+                Text(
+                    text = "Done",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .fillMaxWidth()

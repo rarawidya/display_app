@@ -105,7 +105,6 @@ fun HomeScreen(
     /** Last navigated route's polyline — drawn in the Last Ride map thumbnail. */
     lastRoutePoints: List<GeoLocation>? = null,
     onEditDevice: () -> Unit = onOpenSettings,
-    onOpenNotifications: () -> Unit = {},
     /** Phone hotspot (soft AP) state for the header indicator; tap → tethering settings. */
     hotspotActive: Boolean = false,
     onHotspotTap: () -> Unit = {}
@@ -123,7 +122,6 @@ fun HomeScreen(
         onOpenHistory = onOpenHistory,
         onOpenBluetooth = onOpenBluetooth,
         onEditDevice = onEditDevice,
-        onOpenNotifications = onOpenNotifications,
         onResetTripA = viewModel::resetTripOdometer,
         onResetTripB = viewModel::resetTripB
     )
@@ -143,8 +141,7 @@ private fun HomeContent(
     onOpenSettings: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenBluetooth: () -> Unit,
-    onEditDevice: () -> Unit,
-    onOpenNotifications: () -> Unit
+    onEditDevice: () -> Unit
 ) {
     val connected = state.connectionState == ConnectionState.CONNECTED
     Surface(
@@ -169,7 +166,6 @@ private fun HomeContent(
                     connectionState = state.connectionState,
                     onOpenBluetooth = onOpenBluetooth,
                     onEditDevice = onEditDevice,
-                    onOpenNotifications = onOpenNotifications,
                     onOpenSettings = onOpenSettings,
                     hotspotActive = hotspotActive,
                     onHotspotTap = onHotspotTap
@@ -219,7 +215,6 @@ private fun GreetingHeader(
     connectionState: ConnectionState,
     onOpenBluetooth: () -> Unit,
     onEditDevice: () -> Unit,
-    onOpenNotifications: () -> Unit,
     onOpenSettings: () -> Unit,
     hotspotActive: Boolean = false,
     onHotspotTap: () -> Unit = {}
@@ -266,11 +261,6 @@ private fun GreetingHeader(
                 contentDescription = if (hotspotActive) "Hotspot on" else "Hotspot off",
                 tint = if (hotspotActive) EvGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                 onClick = onHotspotTap
-            )
-            SquareIconButton(
-                icon = EvIcons.Bell,
-                contentDescription = "Notifications",
-                onClick = onOpenNotifications
             )
             SquareIconButton(
                 icon = EvIcons.Settings,

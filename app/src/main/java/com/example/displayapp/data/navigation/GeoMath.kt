@@ -61,4 +61,31 @@ internal object GeoMath {
         }
         return best
     }
+
+    /**
+     * The portion of [polyline] still ahead of [current] — the travelled part removed
+     * (Google-Maps style). [current] is projected onto its nearest segment; the result
+     * starts at that projection and continues to the destination. Returns the polyline
+     * unchanged if it has < 2 points, and a single point (→ nothing drawn) once arrived.
+     */
+    fun remainingAhead(polyline: List<GeoLocation>, current: GeoLocation): List<GeoLocation> {
+        if (polyline.size < 2) return polyline
+        val cum = cumulativeDistances(polyline)
+        val along = snapToPolyline(polyline, cum, current).alongMeters
+        // Segment [i, i+1] that contains the projected distance.
+        var i = 0
+        while (i < cum.size - 2 && cum[i + 1] < along) i++
+        val seg = cum[i + 1] - cum[i]
+        val t = if (seg <= 0.0) 0.0 else ((along - cum[i]) / seg).coerceIn(0.0, 1.0)
+        val a = polyline[i]
+        val b = polyline[i + 1]
+        val proj = GeoLocation(
+            latitude = a.latitude + (b.latitude - a.latitude) * t,
+            longitude = a.longitude + (b.longitude - a.longitude) * t,
+        )
+        return buildList(polyline.size - i) {
+            add(proj)
+            for (j in i + 1 until polyline.size) add(polyline[j])
+        }
+    }
 }

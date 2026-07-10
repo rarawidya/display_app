@@ -4,10 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.displayapp.data.navigation.NavigationCoordinator
+import com.example.displayapp.data.energy.EfficiencyTracker
+import com.example.displayapp.data.navigation.GeoMath
 import com.example.displayapp.domain.model.GeoLocation
 import com.example.displayapp.domain.model.GeoPlace
 import com.example.displayapp.domain.model.NavProgress
+import com.example.displayapp.domain.model.NavState
 import com.example.displayapp.domain.model.Route
+import com.example.displayapp.domain.model.VehicleData
+import kotlin.math.roundToInt
 import com.example.displayapp.domain.model.RoutePlan
 import com.example.displayapp.domain.repository.Geocoder
 import com.example.displayapp.domain.repository.LocationRepository
@@ -20,6 +25,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.stateIn
@@ -41,6 +48,8 @@ class MapsViewModel(
     private val locationRepository: LocationRepository,
     private val coordinator: NavigationCoordinator,
     private val geocoder: Geocoder,
+    private val vehicleData: StateFlow<VehicleData>,
+    private val efficiency: StateFlow<EfficiencyTracker.State>,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -79,11 +88,24 @@ class MapsViewModel(
 
     // Name/address of the pending (previewed) destination, for the confirmation sheet.
     private val _pendingPlace = MutableStateFlow<GeoPlace?>(null)
+    // Latched arrival: null = not arrived; non-null = arrived, value is the destination
+    // label. Needed because the provider clears its active route the instant it reaches
+    // NavState.Arrived (to end the BLE session), so arrival can't be derived from the
+    // now-null active route — it's captured here and held until the user taps Done.
+    private val _arrival = MutableStateFlow<String?>(null)
     // Bumps to request a fresh camera fit (new destination / Overview); pan doesn't.
     private val _fitToken = MutableStateFlow(0)
     // Temporary route Overview during active navigation (auto-reverts to follow).
     private val _overviewActive = MutableStateFlow(false)
     private var overviewJob: Job? = null
+
+    init {
+        // Capture the arrival the moment the tracker reports it, before the provider
+        // tears the session down. Cleared when the user starts/cancels a route.
+        coordinator.progress
+            .onEach { p -> if (p?.state == NavState.Arrived) _arrival.value = p.destinationName }
+            .launchIn(viewModelScope)
+    }
 
     private data class RouteCore(
         val preview: RoutePlan?,
@@ -100,18 +122,28 @@ class MapsViewModel(
         val fitToken: Int,
         val overview: Boolean,
         val progress: NavProgress?,
+        val batteryPercent: Int,
+        val rangeKm: Float?,
+        val arrivedName: String?,
     )
 
-    // Fold the live NavProgress in with the route/preview state so the ETA card can
-    // count down (combine's typed overload caps at 5 flows, hence the nested combine).
+    // Fold the live NavProgress + battery/range + latched arrival in with the route/
+    // preview state so the ETA card can count down, show an estimated arrival charge, and
+    // swap to the arrival card (combine's typed overload caps at 5 flows, hence nesting).
     private val routeStateFlow = combine(
         combine(
             coordinator.previewRoute, coordinator.previewFailed, coordinator.activeRoute,
             _fitToken, _overviewActive,
         ) { p, f, a, t, o -> RouteCore(p, f, a, t, o) },
         coordinator.progress,
-    ) { core, prog ->
-        RouteState(core.preview, core.previewFailed, core.active, core.fitToken, core.overview, prog)
+        vehicleData,
+        efficiency,
+        _arrival,
+    ) { core, prog, vd, eff, arrivedName ->
+        RouteState(
+            core.preview, core.previewFailed, core.active, core.fitToken, core.overview,
+            prog, vd.batteryPercent, eff.rangeKm, arrivedName,
+        )
     }
 
     val uiState: StateFlow<MapsUiState> = combine(
@@ -123,8 +155,14 @@ class MapsViewModel(
     ) { loc, query, place, pendingDest, rs ->
         val navigating = rs.active != null
         val previewing = pendingDest != null && !navigating
-        // Draw the active route once navigating, otherwise the preview route.
-        val drawn = (rs.active ?: rs.preview)?.toRoute()
+        // Draw the active route once navigating, otherwise the preview route. While
+        // navigating, trim the already-travelled part so only the road ahead stays drawn
+        // (Google-Maps style); the preview shows the whole route.
+        val drawn = (rs.active ?: rs.preview)?.toRoute()?.let { route ->
+            if (navigating && loc != null && route.polyline.size >= 2) {
+                route.copy(polyline = GeoMath.remainingAhead(route.polyline, loc))
+            } else route
+        }
         MapsUiState(
             currentLocation = loc,
             searchQuery = query,
@@ -143,6 +181,18 @@ class MapsViewModel(
             // (labels then fall back to the route's static totals).
             remainingMeters = rs.progress?.distanceRemainingM?.takeIf { navigating },
             etaSeconds = rs.progress?.etaSeconds?.takeIf { navigating },
+            // Battery: current SoC (null = disconnected) + estimated charge on arrival.
+            batteryPercentNow = rs.batteryPercent.takeIf { it > 0 },
+            batteryAtArrivalPct = estimateArrivalBattery(
+                socNow = rs.batteryPercent,
+                rangeKm = rs.rangeKm,
+                remainingMeters = rs.progress?.distanceRemainingM?.takeIf { navigating }
+                    ?: (rs.active ?: rs.preview)?.distanceMeters,
+            ),
+            // Arrival: swaps the ETA card for a "You've arrived" card. Latched (see
+            // _arrival) because the active route is cleared the instant arrival fires.
+            arrived = rs.arrivedName != null,
+            destinationName = rs.arrivedName.orEmpty(),
         )
     }.stateIn(
         scope = viewModelScope,
@@ -162,6 +212,7 @@ class MapsViewModel(
     /** Pick a searched place → PREVIEW it (plan + show the confirmation sheet). */
     fun selectPlace(place: GeoPlace) {
         _searchQuery.value = ""
+        _arrival.value = null // clear any prior arrival
         _pendingPlace.value = place
         _fitToken.value += 1 // frame the new route once
         coordinator.preview(place.location)
@@ -173,6 +224,7 @@ class MapsViewModel(
      */
     fun dropPin(location: GeoLocation) {
         _searchQuery.value = ""
+        _arrival.value = null // clear any prior arrival
         _pendingPlace.value = GeoPlace(
             name = "Dropped pin",
             detail = "%.5f, %.5f".format(location.latitude, location.longitude),
@@ -195,6 +247,7 @@ class MapsViewModel(
         // RouteSummary.destinationName.
         coordinator.startPending(destinationName = _pendingPlace.value?.name.orEmpty())
         _pendingPlace.value = null
+        _arrival.value = null
         _overviewActive.value = false
     }
 
@@ -228,6 +281,7 @@ class MapsViewModel(
         _overviewActive.value = false
         _pendingPlace.value = null
         _searchQuery.value = ""
+        _arrival.value = null
     }
 
     private fun RoutePlan.toRoute() = Route(
@@ -238,6 +292,20 @@ class MapsViewModel(
         durationSeconds = durationSeconds,
     )
 
+    /**
+     * Estimated battery % on arrival: the current charge minus the share of the current
+     * range the remaining trip consumes. `rangeKm` is how far the present charge can go,
+     * so `remaining / rangeKm` is the fraction of that charge the drive uses. Returns
+     * null (→ falls back to current SoC / "—") until SoC, range, and a distance exist —
+     * range needs a little driving history before `EfficiencyTracker` can estimate it.
+     */
+    private fun estimateArrivalBattery(socNow: Int, rangeKm: Float?, remainingMeters: Int?): Int? {
+        if (socNow <= 0 || rangeKm == null || rangeKm <= 0f || remainingMeters == null) return null
+        val remainingKm = remainingMeters / 1000f
+        val arrival = socNow * (1f - remainingKm / rangeKm)
+        return arrival.coerceIn(0f, socNow.toFloat()).roundToInt()
+    }
+
     private companion object {
         const val OVERVIEW_REVERT_MS = 5_000L
     }
@@ -247,12 +315,14 @@ class MapsViewModelFactory(
     private val locationRepository: LocationRepository,
     private val coordinator: NavigationCoordinator,
     private val geocoder: Geocoder,
+    private val vehicleData: StateFlow<VehicleData>,
+    private val efficiency: StateFlow<EfficiencyTracker.State>,
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MapsViewModel::class.java)) {
-            return MapsViewModel(locationRepository, coordinator, geocoder) as T
+            return MapsViewModel(locationRepository, coordinator, geocoder, vehicleData, efficiency) as T
         }
         throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
