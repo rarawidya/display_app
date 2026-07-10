@@ -49,6 +49,7 @@ import com.example.displayapp.presentation.ui.maps.MiniMapCard
 import com.example.displayapp.presentation.viewmodel.DashboardViewModel
 import com.example.displayapp.presentation.viewmodel.MapsViewModel
 import com.example.displayapp.ui.theme.Dim
+import kotlin.math.roundToInt
 
 @Composable
 fun DashboardScreen(
@@ -313,20 +314,21 @@ private fun TitledMiniMap(
 private fun SpeedometerSection(state: DashboardUiState) {
     val app = LocalAppSettings.current
     // Gauge scales match the vehicle cluster: speed 0..180 km/h drives the arc,
-    // rpm 0..5000 fills the center. RPM is derived in TelemetryMapper (single
+    // rpm 0..5000 the secondary readout. RPM is derived in TelemetryMapper (single
     // source of truth) — the only UI math here is clamping into those ranges so
-    // the arc never overshoots and the readout never exceeds the dial.
-    val progress = state.speed.coerceIn(0, GAUGE_MAX_SPEED_KMH).toFloat() / GAUGE_MAX_SPEED_KMH
+    // the arc never overshoots and the readouts never exceed the dial.
+    val clampedSpeedKmh = state.speed.coerceIn(0, GAUGE_MAX_SPEED_KMH)
+    val progress = clampedSpeedKmh.toFloat() / GAUGE_MAX_SPEED_KMH
     val rpm = state.rpm.coerceIn(0, GAUGE_MAX_RPM)
 
-    // Secondary readout honors the user's speed-unit preference (km/h ↔ mph).
-    val secondary = app.speedUnit.formatSpeed(state.speed.toFloat()).uppercase()
+    // Hero = speed (honors the km/h ↔ mph preference); secondary = rpm.
+    val speedDisplay = app.speedUnit.convertFromKmh(clampedSpeedKmh.toFloat()).roundToInt()
 
     SpeedometerGauge(
-        heroValue = rpm,
-        heroUnit = "RPM",
+        heroValue = speedDisplay,
+        heroUnit = app.speedUnit.suffix.uppercase(),
         progressFraction = progress,
-        secondaryText = secondary,
+        secondaryText = "%,d RPM".format(rpm),
         modifier = Modifier.fillMaxWidth()
     )
 }

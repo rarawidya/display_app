@@ -139,7 +139,14 @@ object NotificationClassifier {
         if (n.category == Notification.CATEGORY_CALL) return true
         val pkg = sbn.packageName.orEmpty()
         if (pkg in DIALER) return true
-        return (pkg in WHATSAPP || pkg in TELEGRAM) && n.fullScreenIntent != null
+        if (pkg !in WHATSAPP && pkg !in TELEGRAM) return false
+        // Incoming ring → full-screen intent; answered/active → ongoing + Hang up.
+        // Recognizing the active state keeps the current hang-up intent captured so
+        // a board End press works, not the stale ring-phase Decline (no-op when
+        // connected) — the "End doesn't work" bug (docs/CALL-ACTION-INTEGRATION.md).
+        if (n.fullScreenIntent != null) return true
+        val ongoing = sbn.isOngoing || n.flags and Notification.FLAG_ONGOING_EVENT != 0
+        return ongoing && CallNotificationActions.hasHangUp(n)
     }
 
     /**

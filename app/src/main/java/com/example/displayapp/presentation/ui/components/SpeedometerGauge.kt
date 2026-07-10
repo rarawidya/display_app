@@ -30,12 +30,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.displayapp.ui.theme.GaugeMagenta
-import com.example.displayapp.ui.theme.GaugePink
-import com.example.displayapp.ui.theme.GaugePurple
 import com.example.displayapp.ui.theme.GaugeTrack
 import com.example.displayapp.ui.theme.GaugeTrackLight
-import com.example.displayapp.ui.theme.GaugeViolet
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -64,11 +60,13 @@ fun SpeedometerGauge(
     secondaryText: String? = null,
     modifier: Modifier = Modifier
 ) {
+    // Critically damped: the needle tracks the value smoothly but never overshoots
+    // or lags — the pointer stays truthful to the readout during acceleration.
     val animatedFraction by animateFloatAsState(
         targetValue = progressFraction.coerceIn(0f, 1f),
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
         ),
         label = "gaugeFraction"
     )
@@ -77,6 +75,14 @@ fun SpeedometerGauge(
     val tickColor = MaterialTheme.colorScheme.onSurfaceVariant
     val numberColor = MaterialTheme.colorScheme.onSurface
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val needleColor = MaterialTheme.colorScheme.onSurface
+    // Pivot hub follows the active theme (light/dark) rather than a fixed accent.
+    val hubColor = MaterialTheme.colorScheme.primary
+    // Progress arc gradient is derived from the theme's color roles, so it tracks
+    // the EV-blue identity, adapts to light/dark, and honors dynamic color.
+    val gaugeStart = MaterialTheme.colorScheme.primary
+    val gaugeMid = MaterialTheme.colorScheme.tertiary
+    val gaugeEnd = MaterialTheme.colorScheme.secondary
 
     // 270° sweep — three-quarter circle with a 90° gap at the bottom (45° on each side of 6 o'clock).
     val startAngle = 135f
@@ -131,10 +137,9 @@ fun SpeedometerGauge(
                 val progressSweep = sweepAngle * animatedFraction
                 val progressBrush = Brush.sweepGradient(
                     colorStops = arrayOf(
-                        0.00f to GaugeViolet,
-                        0.40f to GaugePurple,
-                        0.75f to GaugeMagenta,
-                        1.00f to GaugePink
+                        0.00f to gaugeStart,
+                        0.55f to gaugeMid,
+                        1.00f to gaugeEnd
                     ),
                     center = center
                 )
@@ -152,6 +157,31 @@ fun SpeedometerGauge(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             }
+
+            // 4) Needle — points at the EXACT value angle (same fraction as the
+            // arc), a tapered blade from a center hub to just inside the ticks.
+            // Drawn last so it rides on top of the fill; the central readout
+            // (Column below) still layers over the hub.
+            val needleAngle = startAngle + sweepAngle * animatedFraction
+            val nRad = Math.toRadians(needleAngle.toDouble())
+            val dx = cos(nRad).toFloat()
+            val dy = sin(nRad).toFloat()
+            val px = -dy // unit vector perpendicular to the needle
+            val py = dx
+            val needleLen = outerRadius - strokeWidth * 0.9f
+            val tailLen = outerRadius * 0.12f
+            val halfBase = strokeWidth * 0.13f
+            val needlePath = Path().apply {
+                moveTo(center.x + px * halfBase, center.y + py * halfBase)
+                lineTo(center.x + dx * needleLen, center.y + dy * needleLen) // tip
+                lineTo(center.x - px * halfBase, center.y - py * halfBase)
+                lineTo(center.x - dx * tailLen, center.y - dy * tailLen)     // counterweight tail
+                close()
+            }
+            drawPath(path = needlePath, color = needleColor)
+            // Pivot hub: theme-colored ring + center cap.
+            drawCircle(color = hubColor, radius = strokeWidth * 0.42f, center = center)
+            drawCircle(color = needleColor, radius = strokeWidth * 0.2f, center = center)
         }
 
         // Hero readout overlay — centered in the ring

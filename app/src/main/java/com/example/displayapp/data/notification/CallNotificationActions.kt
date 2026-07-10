@@ -58,4 +58,18 @@ object CallNotificationActions {
         if (answer == null && hangUp == null) return null
         return CallActions(answer, hangUp, packageName)
     }
+
+    /**
+     * True if [notification] exposes a hang-up / end-call action. Used to spot an
+     * **answered, still-active** VoIP call — its notification has dropped the
+     * full-screen intent and the Answer button, leaving only "End call", so this
+     * is the signal that it's a live call whose hang-up intent must be captured.
+     */
+    fun hasHangUp(notification: Notification): Boolean {
+        val actions = notification.actions ?: return false
+        return actions.any { a ->
+            val title = a.title?.toString()?.lowercase().orEmpty()
+            HANGUP.any { title.contains(it) }
+        }
+    }
 }

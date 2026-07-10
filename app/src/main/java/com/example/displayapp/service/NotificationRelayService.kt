@@ -135,7 +135,7 @@ class NotificationRelayService : NotificationListenerService() {
         Timber.tag(TAG).i("onNotificationRemoved pkg=%s key=%s", sbn?.packageName, sbn?.key)
         val n = sbn ?: return
         if (n.packageName == ownPackage) return
-        if (NotificationClassifier.isCall(n)) ActiveCallActions.clear()
+        if (NotificationClassifier.isCall(n)) ActiveCallActions.clearIfSource(n.key)
         events.trySend(Event.Removed(n))
     }
 
@@ -151,7 +151,7 @@ class NotificationRelayService : NotificationListenerService() {
         if (!NotificationClassifier.isCall(sbn)) return
         val n = sbn.notification ?: return
         CallNotificationActions.extract(n, sbn.packageName.orEmpty())?.let { actions ->
-            ActiveCallActions.set(actions)
+            ActiveCallActions.set(actions, sbn.key)
             Timber.tag(TAG).i(
                 "call actions captured pkg=%s answer=%b hangUp=%b",
                 sbn.packageName, actions.answer != null, actions.hangUp != null

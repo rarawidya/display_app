@@ -19,16 +19,28 @@ object ActiveCallActions {
     private const val TTL_MS = 60_000L
 
     @Volatile private var actions: CallActions? = null
+    @Volatile private var sourceKey: String? = null
     @Volatile private var stampMs: Long = 0L
 
-    fun set(a: CallActions) {
+    fun set(a: CallActions, key: String?) {
         actions = a
+        sourceKey = key
         stampMs = SystemClock.elapsedRealtime()
     }
 
     fun clear() {
         actions = null
+        sourceKey = null
         stampMs = 0L
+    }
+
+    /**
+     * Clear only when [key] is the notification that populated the current actions.
+     * A call goes ring → answered as separate notifications; removing the
+     * superseded ring banner must not wipe the active call's captured hang-up.
+     */
+    fun clearIfSource(key: String?) {
+        if (key != null && key == sourceKey) clear()
     }
 
     /** The current call actions if still fresh, else null (and cleared). */

@@ -14,6 +14,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.Path
+import androidx.core.graphics.PathParser
 import com.example.displayapp.domain.model.GeoLocation
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -22,10 +29,11 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -83,6 +91,12 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
                     setAllGesturesEnabled(interactive)
                 }
                 m.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
+                    // Marker pin bitmaps (drawn in code — no drawable assets). The tip of
+                    // each teardrop sits on its coordinate via ICON_ANCHOR_BOTTOM.
+                    val density = context.resources.displayMetrics.density
+                    style.addImage(PUCK_ICON, buildRiderBadge(density, PUCK_COLOR))
+                    style.addImage(DEST_ICON, buildPin(density, DEST_COLOR))
+
                     style.addSource(GeoJsonSource(ROUTE_SRC))
                     style.addLayer(
                         LineLayer(ROUTE_LAYER, ROUTE_SRC).withProperties(
@@ -92,23 +106,34 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
                             PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
                         ),
                     )
+                    // Rider position — blue badge with a white motorbike glyph, rotated
+                    // to the heading. Rotation is MAP-aligned + driven by the per-fix
+                    // "bearing" property: the glyph faces east (right) by default, so the
+                    // −90° offset points it north-up at bearing 0. Because the follow
+                    // camera rotates by the same bearing (see CockpitMap), the bike reads
+                    // "up" during heading-up nav and points along travel on the north-up
+                    // overview.
                     style.addSource(GeoJsonSource(PUCK_SRC))
                     style.addLayer(
-                        CircleLayer(PUCK_LAYER, PUCK_SRC).withProperties(
-                            PropertyFactory.circleColor(PUCK_COLOR),
-                            PropertyFactory.circleRadius(7f),
-                            PropertyFactory.circleStrokeColor("#FFFFFF"),
-                            PropertyFactory.circleStrokeWidth(3f),
+                        SymbolLayer(PUCK_LAYER, PUCK_SRC).withProperties(
+                            PropertyFactory.iconImage(PUCK_ICON),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_CENTER),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true),
+                            PropertyFactory.iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+                            PropertyFactory.iconRotate(
+                                Expression.subtract(Expression.get(PROP_BEARING), Expression.literal(90f)),
+                            ),
                         ),
                     )
-                    // Destination marker (dropped pin / picked place).
+                    // Destination — red location pin (dropped pin / picked place).
                     style.addSource(GeoJsonSource(DEST_SRC))
                     style.addLayer(
-                        CircleLayer(DEST_LAYER, DEST_SRC).withProperties(
-                            PropertyFactory.circleColor(DEST_COLOR),
-                            PropertyFactory.circleRadius(8f),
-                            PropertyFactory.circleStrokeColor("#FFFFFF"),
-                            PropertyFactory.circleStrokeWidth(2f),
+                        SymbolLayer(DEST_LAYER, DEST_SRC).withProperties(
+                            PropertyFactory.iconImage(DEST_ICON),
+                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                            PropertyFactory.iconAllowOverlap(true),
+                            PropertyFactory.iconIgnorePlacement(true),
                         ),
                     )
                     map = m
@@ -193,9 +218,11 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
             }
             m.style?.getSourceAs<GeoJsonSource>(ROUTE_SRC)?.setGeoJson(routeFc)
 
-            // Location puck.
+            // Location puck — carry the heading so the motorbike glyph rotates to it.
             val puckFc = if (content.showLocationPuck && content.location != null) {
-                FeatureCollection.fromFeature(Feature.fromGeometry(content.location.toPoint()))
+                val f = Feature.fromGeometry(content.location.toPoint())
+                f.addNumberProperty(PROP_BEARING, content.location.bearingDeg ?: 0f)
+                FeatureCollection.fromFeature(f)
             } else {
                 FeatureCollection.fromFeatures(emptyArray<Feature>())
             }
@@ -213,16 +240,100 @@ class MapLibreMapProvider(private val styleUrl: String) : MapProvider {
 
     private fun GeoLocation.toPoint(): Point = Point.fromLngLat(longitude, latitude)
 
+    /**
+     * Draw a classic teardrop location pin in [colorHex] with a white halo + inner dot,
+     * so both markers read as "location icons" against any basemap. Sized in dp (scaled
+     * by [density]); the tip is at the bottom center — pair with ICON_ANCHOR_BOTTOM so it
+     * lands on the coordinate.
+     */
+    private fun buildPin(density: Float, colorHex: String): Bitmap {
+        val w = (28f * density)
+        val h = (40f * density)
+        val bmp = Bitmap.createBitmap(w.toInt(), h.toInt(), Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val cx = w / 2f
+        val headR = w * 0.34f
+        val cy = headR + 2f * density              // top margin leaves room for the halo
+        val tipY = h - 1f * density
+
+        // A teardrop = head circle unioned with a triangle down to the tip.
+        fun pinPath(radius: Float): Path = Path().apply {
+            addCircle(cx, cy, radius, Path.Direction.CW)
+            val flank = radius * 0.80f
+            val shoulder = cy + radius * 0.55f
+            val tri = Path().apply {
+                moveTo(cx - flank, shoulder)
+                lineTo(cx + flank, shoulder)
+                lineTo(cx, tipY)
+                close()
+            }
+            op(tri, Path.Op.UNION)
+        }
+
+        paint.color = Color.WHITE                  // halo / outline
+        canvas.drawPath(pinPath(headR + 2f * density), paint)
+        paint.color = Color.parseColor(colorHex)   // colored body
+        canvas.drawPath(pinPath(headR), paint)
+        paint.color = Color.WHITE                  // inner dot
+        canvas.drawCircle(cx, cy, headR * 0.42f, paint)
+        return bmp
+    }
+
+    /**
+     * Draw the rider marker: a filled [colorHex] disc with a white ring and a white
+     * motorbike glyph (Material "two_wheeler", the same 24×24 path used by
+     * [com.example.displayapp.presentation.ui.icons.EvIcons.Motorcycle]) centered inside.
+     * A round badge stays upright and legible for a moving position; pair with
+     * ICON_ANCHOR_CENTER so it sits on the coordinate.
+     */
+    private fun buildRiderBadge(density: Float, colorHex: String): Bitmap {
+        val size = (34f * density).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val c = size / 2f
+        val r = c - 1f * density
+        paint.color = Color.WHITE                  // ring
+        canvas.drawCircle(c, c, r, paint)
+        paint.color = Color.parseColor(colorHex)   // disc
+        canvas.drawCircle(c, c, r - 2f * density, paint)
+
+        // Fit the 24×24 glyph into ~64% of the disc and center it.
+        val glyph = PathParser.createPathFromPathData(MOTORBIKE_PATH)
+        val target = (r - 2f * density) * 2f * 0.64f
+        val scale = target / 24f
+        Matrix().apply {
+            setScale(scale, scale)
+            postTranslate(c - target / 2f, c - target / 2f)
+        }.let { glyph.transform(it) }
+        paint.color = Color.WHITE
+        canvas.drawPath(glyph, paint)
+        return bmp
+    }
+
     private companion object {
         const val ROUTE_SRC = "route-src"
         const val ROUTE_LAYER = "route-layer"
         const val PUCK_SRC = "puck-src"
         const val PUCK_LAYER = "puck-layer"
+        const val PUCK_ICON = "puck-icon"
+        const val PROP_BEARING = "bearing"  // per-fix heading → motorbike icon rotation
         const val DEST_SRC = "dest-src"
         const val DEST_LAYER = "dest-layer"
+        const val DEST_ICON = "dest-icon"
         const val ROUTE_COLOR = "#2563EB"
-        const val PUCK_COLOR = "#3B82F6"
+        const val PUCK_COLOR = "#3B82F6"  // blue rider badge
         const val DEST_COLOR = "#EF4444"  // red destination pin
+        // Material Icons "two_wheeler" (Apache 2.0), 24×24 — matches EvIcons.Motorcycle.
+        const val MOTORBIKE_PATH =
+            "M20,11c-0.18,0-0.36,0.03-0.53,0.05L17.41,9H20V6l-3.72,1.86L13.41,5H9v2h3.59l2,2H11l-4,2L5,9H0v2h4" +
+                "c-2.21,0-4,1.79-4,4c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4l2,2h3l3.49-6.1l1.01,1.01" +
+                "C16.59,12.64,16,13.75,16,15c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4C24,12.79,22.21,11,20,11z" +
+                "M4,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2c1.1,0,2,0.9,2,2C6,16.1,5.1,17,4,17z" +
+                "M20,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2s2,0.9,2,2C22,16.1,21.1,17,20,17z"
         const val CAMERA_ANIM_MS = 700
         const val MIN_CAMERA_MOVE_M = 8.0   // don't re-center for sub-8 m GPS jitter
         const val MIN_BEARING_DELTA = 4f    // …or sub-4° heading wobble

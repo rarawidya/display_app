@@ -35,6 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.graphics.Matrix
+import android.graphics.Paint
+import androidx.core.graphics.PathParser
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -42,7 +45,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -666,7 +673,8 @@ private fun RouteMini(points: List<GeoLocation>? = null, modifier: Modifier = Mo
     val roadMinor = MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)
     val bg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
     val marker = MaterialTheme.colorScheme.surface
-    val startDot = EvGreen
+    val riderDot = EvBlue   // rider start — matches the map's blue rider marker
+    val destColor = EvRed   // destination — matches the map's red location pin
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(Dim.md))
@@ -701,14 +709,60 @@ private fun RouteMini(points: List<GeoLocation>? = null, modifier: Modifier = Mo
                 style = Stroke(width = px(3.5f), cap = StrokeCap.Round, join = StrokeJoin.Round)
             )
 
-            // Start (green) + end (blue) markers, ringed in the card color for contrast.
+            // Rider start (blue motorbike badge) + destination (red pin, tip on the
+            // route end) — matching the map's marker language.
             val (start, end) = endpoints
-            drawCircle(marker, px(5f), start)
-            drawCircle(startDot, px(3.2f), start)
-            drawCircle(marker, px(5f), end)
-            drawCircle(route, px(3.2f), end)
+            drawRiderBadge(start, disc = riderDot, halo = marker)
+            drawDestinationPin(end, fill = destColor, halo = marker)
         }
     }
+}
+
+/** Material Icons "two_wheeler" (Apache 2.0), 24×24 — matches EvIcons.Motorcycle. */
+private const val MOTORBIKE_PATH =
+    "M20,11c-0.18,0-0.36,0.03-0.53,0.05L17.41,9H20V6l-3.72,1.86L13.41,5H9v2h3.59l2,2H11l-4,2L5,9H0v2h4" +
+        "c-2.21,0-4,1.79-4,4c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4l2,2h3l3.49-6.1l1.01,1.01" +
+        "C16.59,12.64,16,13.75,16,15c0,2.21,1.79,4,4,4c2.21,0,4-1.79,4-4C24,12.79,22.21,11,20,11z" +
+        "M4,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2c1.1,0,2,0.9,2,2C6,16.1,5.1,17,4,17z" +
+        "M20,17c-1.1,0-2-0.9-2-2c0-1.1,0.9-2,2-2s2,0.9,2,2C22,16.1,21.1,17,20,17z"
+
+/**
+ * Rider marker: a [disc]-filled circle badge with a [halo] ring and a white motorbike
+ * glyph — the thumbnail echo of the map's blue motorbike rider marker.
+ */
+private fun DrawScope.drawRiderBadge(center: Offset, disc: Color, halo: Color) {
+    val r = 7f.dp.toPx()
+    drawCircle(halo, r + 1.2f.dp.toPx(), center)  // ring
+    drawCircle(disc, r, center)                    // disc
+    val box = r * 2f * 0.62f                        // glyph fits ~62% of the disc
+    val glyph = PathParser.createPathFromPathData(MOTORBIKE_PATH).apply {
+        transform(Matrix().apply {
+            setScale(box / 24f, box / 24f)
+            postTranslate(center.x - box / 2f, center.y - box / 2f)
+        })
+    }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.White.toArgb() }
+    drawIntoCanvas { it.nativeCanvas.drawPath(glyph, paint) }
+}
+
+/**
+ * A small teardrop location pin whose tip sits on [tip] — the thumbnail echo of the
+ * map's red destination pin. Drawn as a [halo]-ringed head + triangle with a [halo]
+ * center dot, so it reads on any basemap tone at thumbnail scale.
+ */
+private fun DrawScope.drawDestinationPin(tip: Offset, fill: Color, halo: Color) {
+    val headR = 4.2f.dp.toPx()
+    val head = Offset(tip.x, tip.y - 6f.dp.toPx())
+    val triangle = Path().apply {
+        moveTo(tip.x - headR * 0.7f, head.y + headR * 0.5f)
+        lineTo(tip.x + headR * 0.7f, head.y + headR * 0.5f)
+        lineTo(tip.x, tip.y)
+        close()
+    }
+    drawCircle(halo, headR + 1.4f.dp.toPx(), head)  // white halo behind the head
+    drawPath(triangle, fill)                        // colored tip
+    drawCircle(fill, headR, head)                   // colored head
+    drawCircle(halo, headR * 0.42f, head)           // inner white dot
 }
 
 /**

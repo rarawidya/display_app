@@ -17,12 +17,9 @@ val EvBlueCyan        = Color(0xFF22D3EE)
 val EvBlueCyanDeep    = Color(0xFF0891B2)
 
 // ---------------------------------------------------------------------------
-// Gauge gradient — violet → magenta progress arc (matches the mockup).
+// Gauge track — the unfilled trailing arc. The progress-arc gradient is derived
+// from the theme's color roles (see SpeedometerGauge), not fixed literals.
 // ---------------------------------------------------------------------------
-val GaugeViolet       = Color(0xFF3B5BFF)   // start of the arc (deep electric blue)
-val GaugePurple       = Color(0xFF7C3AED)   // mid (violet)
-val GaugeMagenta      = Color(0xFFD946EF)   // mid-right (magenta)
-val GaugePink         = Color(0xFFEC4899)   // end of progress (pink)
 val GaugeTrack        = Color(0xFF3F3F46)   // unfilled trailing arc (dark gray)
 val GaugeTrackLight   = Color(0xFFE4E7EB)   // unfilled arc in light mode
 

@@ -11,6 +11,8 @@ import com.example.displayapp.data.bluetooth.controller.BluetoothController
 import com.example.displayapp.data.diagnostics.DiagnosticsRepository
 import com.example.displayapp.data.energy.EfficiencyTracker
 import com.example.displayapp.data.location.FusedLocationRepository
+import com.example.displayapp.data.location.SimulatedLocationRepository
+import com.example.displayapp.data.location.SwitchableLocationRepository
 import com.example.displayapp.data.navigation.GraphHopperNavigationProvider
 import com.example.displayapp.data.navigation.NavigationCoordinator
 import com.example.displayapp.data.navigation.RouteNavigator
@@ -57,6 +59,7 @@ import com.example.displayapp.domain.repository.VehicleRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AppContainer(private val context: Context) {
 
@@ -121,9 +124,36 @@ class AppContainer(private val context: Context) {
         HotspotStateMonitor(context)
     }
 
-    val locationRepository: LocationRepository by lazy {
+    /** Real GPS — Play Services fused provider. Active whenever the simulator is off. */
+    private val fusedLocationRepository: LocationRepository by lazy {
         FusedLocationRepository(context)
     }
+
+    /**
+     * Hardware-free location: the "driver" walks the active route (see
+     * [SimulatedLocationRepository]). Paced by the live simulated vehicle speed so the
+     * Drive gauge and the map move together. Wired to the nav session's active route by
+     * [navigationCoordinator].
+     */
+    val simulatedLocationRepository: SimulatedLocationRepository by lazy {
+        SimulatedLocationRepository(
+            scope = appScope,
+            speedKmh = { vehicleRepository.vehicleData.value.speed.toFloat() },
+        )
+    }
+
+    /**
+     * Stable location facade — swaps fused ↔ simulated with the data source so the map,
+     * nav provider, and coordinator (which capture this once) always read the source
+     * that matches the current simulator toggle. See [SwitchableLocationRepository].
+     */
+    private val switchableLocationRepository: SwitchableLocationRepository by lazy {
+        SwitchableLocationRepository(
+            if (useSimulator) simulatedLocationRepository else fusedLocationRepository
+        )
+    }
+
+    val locationRepository: LocationRepository get() = switchableLocationRepository
 
     /**
      * Active map renderer (MapLibre). Behind the renderer-neutral
@@ -183,7 +213,17 @@ class AppContainer(private val context: Context) {
             locations = locationRepository.location.filterNotNull(),
             scope = appScope,
             lastRouteStore = lastRouteStore,
-        )
+        ).also { coordinator ->
+            // In simulator mode, walk the phone's location along the confirmed route so
+            // the map puck + nav progress advance without real GPS. In real mode the
+            // simulated source isn't the active delegate, so we skip it (setRoute(null))
+            // to avoid running an unseen walk coroutine.
+            appScope.launch {
+                coordinator.activeRoute.collect { plan ->
+                    simulatedLocationRepository.setRoute(if (useSimulator) plan else null)
+                }
+            }
+        }
     }
 
     /** Last navigated route, persisted for the Home page's Last Ride thumbnail. */
@@ -322,6 +362,11 @@ class AppContainer(private val context: Context) {
         if (alreadyMatches) return
         useSimulator = simulator
         switchableDataSource.swap(createDelegate())
+        // Keep the location source in lock-step: simulated (route-walking) in sim mode,
+        // real fused GPS otherwise.
+        switchableLocationRepository.swap(
+            if (simulator) simulatedLocationRepository else fusedLocationRepository
+        )
     }
 
     /**
