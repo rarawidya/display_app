@@ -1,8 +1,15 @@
 package com.example.displayapp.data.persistence.export
 
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
+import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import com.example.displayapp.data.protocol.TelemetryDerivations
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +17,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.BufferedWriter
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,39 +66,7 @@ class CsvExporter(
             val samples = telemetryDao.getByTrip(tripId)
             Timber.i("Exporting trip $tripId: ${samples.size} samples to $fileName")
 
-            file.bufferedWriter().use { writer ->
-                writeSummaryBlock(writer, trip, samples.size.toLong())
-                writer.appendLine(CSV_HEADER)
-
-                // Each row goes through the canonical entity→VehicleData decode
-                // so rpm and power match what Drive/Charts/Trip Detail show for
-                // the same wire frame. speed_kmh is formatted with one decimal
-                // because the wire carries int10 precision (e.g. 45.2 km/h =
-                // 452); the rest follow the wire precision contract documented
-                // in TelemetryEntity.
-                for (sample in samples) {
-                    val vd = TelemetryDerivations.decodeEntity(sample)
-                    val speedKmh = sample.speed / 10f
-                    // Pin Locale.US on every float: a comma-decimal locale (id-ID, de-DE,
-                    // …) would emit "45,2" and split one field into two, shifting every
-                    // column and corrupting the machine-readable CSV.
-                    writer.append(sample.timestamp.toString()).append(',')
-                    writer.append("%.1f".format(Locale.US, speedKmh)).append(',')
-                    writer.append(vd.rpm.toString()).append(',')
-                    writer.append(vd.batteryPercent.toString()).append(',')
-                    writer.append("%.2f".format(Locale.US, vd.voltage)).append(',')
-                    writer.append("%.2f".format(Locale.US, vd.current)).append(',')
-                    writer.append("%.1f".format(Locale.US, vd.power)).append(',')
-                    writer.append(vd.temperature.toString()).append(',')
-                    writer.append(vd.batteryTemperature.toString()).append(',')
-                    writer.append(vd.controllerTemperature.toString()).append(',')
-                    writer.append(sample.mode.toString()).append(',')
-                    // v7 wire status fields, persisted so the export matches the
-                    // recorded frame (0 for pre-v7 rows).
-                    writer.append(vd.faultCode.toString()).append(',')
-                    writer.appendLine(vd.flags.toString())
-                }
-            }
+            file.bufferedWriter().use { writeCsv(it, trip, samples) }
 
             Timber.i("Export complete: ${file.absolutePath} (${file.length()} bytes)")
             file
@@ -98,6 +74,112 @@ class CsvExporter(
             Timber.e(e, "CSV export failed for trip $tripId")
             file.delete()
             null
+        }
+    }
+
+    /** A saved CSV: its user-visible file name + a URI to open or share it. */
+    data class CsvExportResult(val displayName: String, val uri: Uri)
+
+    /**
+     * Export a trip's telemetry to the phone's public **Downloads** folder so it
+     * shows up as a real, user-visible file (not app-private storage the user
+     * can't browse to). Uses MediaStore on API 29+ (no storage permission); on
+     * older devices it falls back to the app's external files dir + a
+     * FileProvider URI (still openable/shareable, just not in public Downloads).
+     * Returns the file name + a URI, or null on failure.
+     */
+    suspend fun exportTripToDownloads(tripId: Long): CsvExportResult? = withContext(Dispatchers.IO) {
+        val trip = tripDao.getById(tripId) ?: run {
+            Timber.e("Trip $tripId not found")
+            return@withContext null
+        }
+        val samples = telemetryDao.getByTrip(tripId)
+        val fileName = "ev_trip_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(trip.startTime))}.csv"
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveToDownloadsMediaStore(fileName, trip, samples)
+            } else {
+                saveToAppFiles(fileName, trip, samples)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "CSV download export failed for trip $tripId")
+            null
+        }
+    }
+
+    /** API 29+: insert into MediaStore Downloads and stream the CSV into it. */
+    private fun saveToDownloadsMediaStore(
+        fileName: String,
+        trip: TripEntity,
+        samples: List<TelemetryEntity>,
+    ): CsvExportResult? {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            // IS_PENDING hides the row until we finish writing, so a reader never
+            // sees a half-written file.
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+        return try {
+            resolver.openOutputStream(uri)?.bufferedWriter()?.use { writeCsv(it, trip, samples) }
+                ?: throw IOException("null output stream for $uri")
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            Timber.i("Exported trip ${trip.id} to Downloads/$fileName")
+            CsvExportResult(fileName, uri)
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null) // don't leave a pending stub
+            throw e
+        }
+    }
+
+    /** API < 29 fallback: app external files + a FileProvider URI (no permission). */
+    private fun saveToAppFiles(
+        fileName: String,
+        trip: TripEntity,
+        samples: List<TelemetryEntity>,
+    ): CsvExportResult {
+        val dir = File(context.getExternalFilesDir(null), "exports").apply { mkdirs() }
+        val file = File(dir, fileName)
+        file.bufferedWriter().use { writeCsv(it, trip, samples) }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        return CsvExportResult(fileName, uri)
+    }
+
+    /**
+     * Writes the full CSV (summary block + header + one row per sample) to
+     * [writer]. Single source of the file shape, shared by every export target.
+     * Every value flows through [TelemetryDerivations.decodeEntity] so a column
+     * never disagrees with what the user saw live on Drive / Charts / Trip Detail.
+     */
+    private fun writeCsv(writer: BufferedWriter, trip: TripEntity, samples: List<TelemetryEntity>) {
+        writeSummaryBlock(writer, trip, samples.size.toLong())
+        writer.appendLine(CSV_HEADER)
+        for (sample in samples) {
+            val vd = TelemetryDerivations.decodeEntity(sample)
+            val speedKmh = sample.speed / 10f
+            // Pin Locale.US on every float: a comma-decimal locale (id-ID, de-DE,
+            // …) would emit "45,2" and split one field into two, shifting every
+            // column and corrupting the machine-readable CSV.
+            writer.append(sample.timestamp.toString()).append(',')
+            writer.append("%.1f".format(Locale.US, speedKmh)).append(',')
+            writer.append(vd.rpm.toString()).append(',')
+            writer.append(vd.batteryPercent.toString()).append(',')
+            writer.append("%.2f".format(Locale.US, vd.voltage)).append(',')
+            writer.append("%.2f".format(Locale.US, vd.current)).append(',')
+            writer.append("%.1f".format(Locale.US, vd.power)).append(',')
+            writer.append(vd.temperature.toString()).append(',')
+            writer.append(vd.batteryTemperature.toString()).append(',')
+            writer.append(vd.controllerTemperature.toString()).append(',')
+            writer.append(sample.mode.toString()).append(',')
+            // v7 wire status fields, persisted so the export matches the recorded
+            // frame (0 for pre-v7 rows).
+            writer.append(vd.faultCode.toString()).append(',')
+            writer.appendLine(vd.flags.toString())
         }
     }
 

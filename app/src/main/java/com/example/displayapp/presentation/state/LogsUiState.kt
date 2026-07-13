@@ -60,9 +60,10 @@ data class LogsUiState(
     val sortBy: SortBy = SortBy.NEWEST,
     val pendingDeleteIds: Set<Long> = emptySet(),
 
-    // Export feedback
+    // Export feedback — URI + display name of the CSV saved to Downloads.
     val isExporting: Boolean = false,
-    val lastExportPath: String? = null,
+    val lastExportUri: String? = null,
+    val lastExportName: String? = null,
     val lastExportError: String? = null,
 
     // Undo feedback

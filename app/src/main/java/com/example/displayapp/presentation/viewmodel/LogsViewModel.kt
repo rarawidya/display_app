@@ -68,7 +68,8 @@ class LogsViewModel(
             sortBy = c.sortBy,
             pendingDeleteIds = c.pendingDeleteIds,
             isExporting = export.inProgress,
-            lastExportPath = export.lastPath,
+            lastExportUri = export.lastUri,
+            lastExportName = export.lastName,
             lastExportError = export.lastError,
             pendingUndoTripId = pendingUndo
         )
@@ -140,11 +141,12 @@ class LogsViewModel(
         viewModelScope.launch {
             _exportState.value = _exportState.value.copy(inProgress = true, lastError = null)
             try {
-                val file = withContext(Dispatchers.IO) { exporter.exportTrip(id) }
+                val result = withContext(Dispatchers.IO) { exporter.exportTripToDownloads(id) }
                 _exportState.value = ExportState(
                     inProgress = false,
-                    lastPath = file?.absolutePath,
-                    lastError = if (file == null) "Export returned no file" else null
+                    lastUri = result?.uri?.toString(),
+                    lastName = result?.displayName,
+                    lastError = if (result == null) "Export returned no file" else null
                 )
             } catch (t: Throwable) {
                 Timber.e(t, "exportTrip failed")
@@ -154,7 +156,7 @@ class LogsViewModel(
     }
 
     fun consumeExportResult() {
-        _exportState.value = _exportState.value.copy(lastPath = null, lastError = null)
+        _exportState.value = _exportState.value.copy(lastUri = null, lastName = null, lastError = null)
     }
 
     /* ---------------------------------------------------------------------- */
@@ -171,7 +173,8 @@ class LogsViewModel(
 
     private data class ExportState(
         val inProgress: Boolean = false,
-        val lastPath: String? = null,
+        val lastUri: String? = null,
+        val lastName: String? = null,
         val lastError: String? = null
     )
 

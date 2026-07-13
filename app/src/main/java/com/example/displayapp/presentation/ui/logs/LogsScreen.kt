@@ -55,6 +55,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
 import com.example.displayapp.data.sharing.ShareHelper
 import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.data.energy.EnergyFormatter
@@ -73,7 +74,6 @@ import com.example.displayapp.presentation.viewmodel.LogsViewModel
 import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvBlue
 import com.example.displayapp.ui.theme.EvRed
-import java.io.File
 
 @Composable
 fun LogsScreen(
@@ -141,20 +141,19 @@ fun LogsContent(
         )
     }
 
-    // Export feedback — "Share" action opens the system share sheet.
-    LaunchedEffect(state.lastExportPath, state.lastExportError) {
+    // Export feedback — the CSV is saved to the phone's Downloads folder; the
+    // "Open" action views it in Files / a spreadsheet app.
+    LaunchedEffect(state.lastExportUri, state.lastExportError) {
         when {
             state.lastExportError != null -> {
                 snackbar.showSnackbar("Export failed: ${state.lastExportError}")
                 onExportConsumed()
             }
-            state.lastExportPath != null -> {
-                val result = snackbar.showSnackbar(
-                    message = "CSV saved",
-                    actionLabel = "Share"
-                )
+            state.lastExportUri != null -> {
+                val label = state.lastExportName?.let { "Saved to Downloads · $it" } ?: "Saved to Downloads"
+                val result = snackbar.showSnackbar(message = label, actionLabel = "Open")
                 if (result == SnackbarResult.ActionPerformed) {
-                    ShareHelper.shareFile(context, File(state.lastExportPath))
+                    ShareHelper.openFile(context, Uri.parse(state.lastExportUri))
                 }
                 onExportConsumed()
             }
