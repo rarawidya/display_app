@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
 import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.data.sharing.ShareHelper
 import com.example.displayapp.domain.model.TimeFormat
@@ -58,7 +59,6 @@ import com.example.displayapp.ui.theme.Dim
 import com.example.displayapp.ui.theme.EvAmber
 import com.example.displayapp.ui.theme.EvRed
 import com.example.displayapp.ui.theme.seriesColor
-import java.io.File
 
 /**
  * Full Trip Detail screen.
@@ -129,24 +129,18 @@ private fun TripDetailContent(
         )
     }
 
-    // Show export feedback Snackbar. The Share action launches the system share sheet.
-    LaunchedEffect(state.exportedFilePath, state.exportError) {
+    // The CSV is saved to the phone's Downloads folder; the "Open" action views it.
+    LaunchedEffect(state.exportedUri, state.exportError) {
         when {
             state.exportError != null -> {
                 snackbar.showSnackbar("Export failed: ${state.exportError}")
                 onExportConsumed()
             }
-            state.exportedFilePath != null -> {
-                val result = snackbar.showSnackbar(
-                    message = "CSV saved",
-                    actionLabel = "Share"
-                )
+            state.exportedUri != null -> {
+                val label = state.exportedName?.let { "Saved to Downloads · $it" } ?: "Saved to Downloads"
+                val result = snackbar.showSnackbar(message = label, actionLabel = "Open")
                 if (result == SnackbarResult.ActionPerformed) {
-                    ShareHelper.shareFile(
-                        context = context,
-                        file = File(state.exportedFilePath),
-                        subject = "EV Trip ${Formatters.shortDate(state.startMs)}"
-                    )
+                    ShareHelper.openFile(context, Uri.parse(state.exportedUri))
                 }
                 onExportConsumed()
             }

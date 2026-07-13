@@ -36,46 +36,16 @@ import java.util.Locale
  *      Trip Detail use — so a CSV column never disagrees with what the
  *      user saw live on Drive / Charts / Logs.
  *
- * Files are written to the app's external files directory (shareable via
- * Intent). Uses streaming write to handle large trips without loading
- * all data into memory.
+ * [exportTripToDownloads] writes to the phone's public **Downloads** folder
+ * (MediaStore on API 29+, app-files fallback below) so the CSV is a real,
+ * user-visible file. Streaming write handles large trips without loading all
+ * data into memory.
  */
 class CsvExporter(
     private val context: Context,
     private val telemetryDao: TelemetryDao,
     private val tripDao: TripDao
 ) {
-
-    /**
-     * Exports a trip's telemetry to a CSV file.
-     * Returns the File if successful, null on failure.
-     */
-    suspend fun exportTrip(tripId: Long): File? = withContext(Dispatchers.IO) {
-        val trip = tripDao.getById(tripId) ?: run {
-            Timber.e("Trip $tripId not found")
-            return@withContext null
-        }
-
-        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-        val fileName = "ev_trip_${dateFormat.format(Date(trip.startTime))}.csv"
-        val exportDir = File(context.getExternalFilesDir(null), "exports")
-        exportDir.mkdirs()
-        val file = File(exportDir, fileName)
-
-        try {
-            val samples = telemetryDao.getByTrip(tripId)
-            Timber.i("Exporting trip $tripId: ${samples.size} samples to $fileName")
-
-            file.bufferedWriter().use { writeCsv(it, trip, samples) }
-
-            Timber.i("Export complete: ${file.absolutePath} (${file.length()} bytes)")
-            file
-        } catch (e: Exception) {
-            Timber.e(e, "CSV export failed for trip $tripId")
-            file.delete()
-            null
-        }
-    }
 
     /** A saved CSV: its user-visible file name + a URI to open or share it. */
     data class CsvExportResult(val displayName: String, val uri: Uri)

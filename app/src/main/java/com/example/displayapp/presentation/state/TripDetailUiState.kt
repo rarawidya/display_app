@@ -74,7 +74,8 @@ data class TripDetailUiState(
 
     // Export feedback
     val exportInProgress: Boolean = false,
-    val exportedFilePath: String? = null,
+    val exportedUri: String? = null,
+    val exportedName: String? = null,
     val exportError: String? = null
 ) {
     /**
@@ -118,7 +119,8 @@ data class TripDetailUiState(
             batteryTempSeries.size == other.batteryTempSeries.size &&
             controllerTempSeries.size == other.controllerTempSeries.size &&
             exportInProgress == other.exportInProgress &&
-            exportedFilePath == other.exportedFilePath &&
+            exportedUri == other.exportedUri &&
+            exportedName == other.exportedName &&
             exportError == other.exportError
     }
 
@@ -155,7 +157,8 @@ data class TripDetailUiState(
         h = 31 * h + batteryTempSeries.size
         h = 31 * h + controllerTempSeries.size
         h = 31 * h + exportInProgress.hashCode()
-        h = 31 * h + (exportedFilePath?.hashCode() ?: 0)
+        h = 31 * h + (exportedUri?.hashCode() ?: 0)
+        h = 31 * h + (exportedName?.hashCode() ?: 0)
         h = 31 * h + (exportError?.hashCode() ?: 0)
         return h
     }

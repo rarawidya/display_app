@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
-import java.io.File
 
 /**
  * Owns the Trip Detail screen state.
@@ -76,23 +75,24 @@ class TripDetailViewModel(
         if (tripId < 0) return
         viewModelScope.launch {
             _state.value = _state.value.copy(exportInProgress = true, exportError = null)
-            val file: File? = try {
-                withContext(Dispatchers.IO) { exporter.exportTrip(tripId) }
+            val result = try {
+                withContext(Dispatchers.IO) { exporter.exportTripToDownloads(tripId) }
             } catch (t: Throwable) {
                 Timber.e(t, "exportTrip failed")
                 null
             }
             _state.value = _state.value.copy(
                 exportInProgress = false,
-                exportedFilePath = file?.absolutePath,
-                exportError = if (file == null) "Export failed" else null
+                exportedUri = result?.uri?.toString(),
+                exportedName = result?.displayName,
+                exportError = if (result == null) "Export failed" else null
             )
         }
     }
 
     /** Clears one-shot export-result fields after the UI has consumed them. */
     fun consumeExportResult() {
-        _state.value = _state.value.copy(exportedFilePath = null, exportError = null)
+        _state.value = _state.value.copy(exportedUri = null, exportedName = null, exportError = null)
     }
 
     fun delete(onDone: () -> Unit) {
