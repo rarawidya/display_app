@@ -6,25 +6,26 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// MapLibre renders whatever tile *style* you point it at. The style URL (with
-// any provider key baked in — MapTiler/Stadia/Protomaps, or a self-hosted
-// style.json) comes from local.properties (gitignored) so it never lands in
-// version control. Falls back to empty — the UI shows a placeholder gate then.
-val mapStyleUrl: String = run {
-    val props = Properties()
+// Per-machine config + secrets from local.properties (gitignored) so they never land
+// in version control. CI supplies the same keys via environment variables, so
+// [secret] checks local.properties first, then the environment.
+val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use(props::load)
-    (props.getProperty("MAP_STYLE_URL") ?: "").trim()
+    if (file.exists()) file.inputStream().use(::load)
 }
+fun secret(key: String): String =
+    (localProps.getProperty(key) ?: System.getenv(key) ?: "").trim()
 
-// GraphHopper hosted Directions API key (routing). Same pattern: from local.properties,
-// gitignored; blank → the RoutePlanner reports not-configured and routing is disabled.
-val graphHopperApiKey: String = run {
-    val props = Properties()
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use(props::load)
-    (props.getProperty("GRAPHHOPPER_API_KEY") ?: "").trim()
-}
+// MapLibre style URL (any provider key baked in). Blank → the UI shows a placeholder gate.
+val mapStyleUrl = secret("MAP_STYLE_URL")
+// GraphHopper hosted Directions/Geocoding key. Blank → routing/search report not-configured.
+val graphHopperApiKey = secret("GRAPHHOPPER_API_KEY")
+
+// Release signing material (gitignored keystore + passwords, or CI env vars). When
+// unset, the release build falls back to the debug key so `assembleRelease` still
+// produces an installable APK for local smoke-testing — CI/production must set these
+// four keys to ship a properly-signed build.
+val releaseStoreFile = secret("RELEASE_STORE_FILE").ifBlank { null }
 
 android {
     namespace = "com.example.displayapp"
@@ -38,8 +39,8 @@ android {
         applicationId = "com.example.displayapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -50,13 +51,32 @@ android {
         buildConfigField("String", "GRAPHHOPPER_API_KEY", "\"${graphHopperApiKey}\"")
     }
 
+    signingConfigs {
+        // Only declare a real release config when a keystore is actually provided,
+        // so a plain checkout still builds (falling back to debug signing below).
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = secret("RELEASE_STORE_PASSWORD")
+                keyAlias = secret("RELEASE_KEY_ALIAS")
+                keyPassword = secret("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: shrink + obfuscate + strip unused resources for the shipped build.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Real keystore when configured; else the debug key so a local
+            // `assembleRelease` still yields an installable APK for smoke-testing.
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

@@ -1,0 +1,64 @@
+# GitLab CI — build + unit-test DisplayApp on every push / merge request.
+#
+# Runner requirements: an Android SDK image with JDK 17 (AGP 9 requires it) and the
+# platform/build-tools for compileSdk 36 (Android 16). The image below ships a recent
+# SDK; `before_script` accepts licenses and fetches any missing platform.
+#
+# Release signing (for a future signed-build job) is supplied via masked CI/CD
+# variables — never commit a keystore: RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD,
+# RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD. app/build.gradle.kts reads them from the
+# environment when local.properties doesn't define them.
+
+image: mingc/android-build-box:latest
+
+variables:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+
+# Cache Gradle's dependency + wrapper caches across pipelines (keyed per branch).
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .gradle/caches/
+    - .gradle/wrapper/
+
+before_script:
+  - chmod +x ./gradlew
+  - yes | sdkmanager --licenses > /dev/null || true
+
+stages:
+  - test
+  - build
+
+unit-tests:
+  stage: test
+  script:
+    - ./gradlew --no-daemon testDebugUnitTest
+  artifacts:
+    when: always
+    paths:
+      - app/build/reports/tests/
+    reports:
+      junit: app/build/test-results/testDebugUnitTest/**/TEST-*.xml
+    expire_in: 1 week
+
+# Android lint — informational for now (no baseline yet), so it never blocks a pipeline.
+lint:
+  stage: test
+  allow_failure: true
+  script:
+    - ./gradlew --no-daemon lintDebug
+  artifacts:
+    when: always
+    paths:
+      - app/build/reports/lint-results-debug.html
+    expire_in: 1 week
+
+assemble-debug:
+  stage: build
+  script:
+    - ./gradlew --no-daemon assembleDebug
+  artifacts:
+    paths:
+      - app/build/outputs/apk/debug/*.apk
+    expire_in: 1 week
