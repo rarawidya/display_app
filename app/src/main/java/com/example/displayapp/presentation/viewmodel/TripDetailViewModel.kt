@@ -10,6 +10,7 @@ import com.example.displayapp.data.protocol.TelemetryDerivations
 import com.example.displayapp.domain.model.VehicleMode
 import com.example.displayapp.domain.repository.TripRepository
 import com.example.displayapp.presentation.state.TripDetailUiState
+import com.example.displayapp.presentation.state.TripFaultRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,7 +57,17 @@ class TripDetailViewModel(
             val samples = withContext(Dispatchers.IO) {
                 repository.getDownsampledTelemetry(tripId, sampleEvery)
             }
-            _state.value = buildState(trip, samples)
+            val faults = withContext(Dispatchers.IO) {
+                repository.getTripFaults(tripId).map {
+                    TripFaultRow(
+                        timestampMs = it.timestamp,
+                        severity = it.severity,
+                        type = it.type,
+                        message = it.message
+                    )
+                }
+            }
+            _state.value = buildState(trip, samples, faults)
         }
     }
 
@@ -97,7 +108,11 @@ class TripDetailViewModel(
     /*  State assembly                                                        */
     /* ---------------------------------------------------------------------- */
 
-    private fun buildState(trip: TripEntity, samples: List<TelemetryEntity>): TripDetailUiState {
+    private fun buildState(
+        trip: TripEntity,
+        samples: List<TelemetryEntity>,
+        faults: List<TripFaultRow>
+    ): TripDetailUiState {
         val durationSec = ((trip.endTime ?: System.currentTimeMillis()) - trip.startTime) / 1000L
 
         // Chart series stay in SI; the UI converts at the label site only.
@@ -149,6 +164,7 @@ class TripDetailViewModel(
             dominantMode = dominantMode,
             sampleCount = trip.sampleCount,
             isActive = trip.endTime == null,
+            faults = faults,
             speedSeries = speedSeries,
             rpmSeries = rpmSeries,
             voltageSeries = voltageSeries,

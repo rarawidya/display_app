@@ -43,8 +43,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.displayapp.data.format.Formatters
 import com.example.displayapp.data.sharing.ShareHelper
+import com.example.displayapp.domain.model.TimeFormat
 import com.example.displayapp.presentation.state.TelemetryMetric
 import com.example.displayapp.presentation.state.TripDetailUiState
+import com.example.displayapp.presentation.state.TripFaultRow
 import com.example.displayapp.presentation.ui.common.GlassCard
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
 import com.example.displayapp.presentation.ui.components.mode.ModeBadge
@@ -322,6 +324,13 @@ private fun DetailBody(state: TripDetailUiState) {
         ratePerKwh = state.ratePerKwh,
     )
 
+    // Faults recorded during the ride (over-temp, low battery, controller
+    // faults). Hidden entirely for a clean ride so a fault-free trip reads
+    // uncluttered; only surfaces when something actually happened.
+    if (state.faults.isNotEmpty()) {
+        FaultSection(faults = state.faults, timeFormat = app.timeFormat)
+    }
+
     // Trip Detail charts only real controller channels (capnp.md). Current & Power
     // are back now that `currentMotor` (@1) is calibrated signed deci-amps. Battery
     // Temp stays absent from the v1 wire, so its chart is still omitted.
@@ -384,6 +393,76 @@ private fun DetailBody(state: TripDetailUiState) {
         latestFormat = TelemetryMetric.ControllerTemp.format,
         displayConverter = tempConverter
     )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Faults                                                                    */
+/* -------------------------------------------------------------------------- */
+
+@Composable
+private fun FaultSection(faults: List<TripFaultRow>, timeFormat: TimeFormat) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(Dim.lg),
+            verticalArrangement = Arrangement.spacedBy(Dim.md)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+            ) {
+                Icon(
+                    imageVector = EvIcons.Warning,
+                    contentDescription = null,
+                    tint = EvAmber,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Faults",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = faults.size.toString(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            faults.forEach { FaultRow(fault = it, timeFormat = timeFormat) }
+        }
+    }
+}
+
+@Composable
+private fun FaultRow(fault: TripFaultRow, timeFormat: TimeFormat) {
+    val (accent, icon) = when (fault.severity) {
+        2 -> EvRed to EvIcons.Warning
+        1 -> EvAmber to EvIcons.Warning
+        else -> MaterialTheme.colorScheme.onSurfaceVariant to EvIcons.InfoOutline
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.size(18.dp).padding(top = 2.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = fault.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = Formatters.time(fault.timestampMs, timeFormat),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable

@@ -240,7 +240,7 @@ class AppContainer(private val context: Context) {
     val lastRouteStore: LastRouteStore by lazy { LastRouteStore(context) }
 
     val tripRepository: TripRepository by lazy {
-        TripRepositoryImpl(tripDao, telemetryDao)
+        TripRepositoryImpl(tripDao, telemetryDao, faultEventDao)
     }
 
     val tripReplaySource: TripReplaySource by lazy {
@@ -286,7 +286,7 @@ class AppContainer(private val context: Context) {
      * skips when the trips table already has rows.
      */
     val sampleTripSeeder: SampleTripSeeder by lazy {
-        SampleTripSeeder(tripDao, telemetryDao)
+        SampleTripSeeder(tripDao, telemetryDao, faultEventDao)
     }
 
     // Bluetooth data source.

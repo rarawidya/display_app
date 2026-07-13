@@ -1,5 +1,6 @@
 package com.example.displayapp.domain.repository
 
+import com.example.displayapp.data.persistence.entity.FaultEventEntity
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,9 @@ interface TripRepository {
      * @param sampleEvery 1 = all rows, 20 ≈ 1 Hz from 20 Hz raw.
      */
     suspend fun getDownsampledTelemetry(tripId: Long, sampleEvery: Int): List<TelemetryEntity>
+
+    /** Fault/warning events recorded during a trip, newest first. */
+    suspend fun getTripFaults(tripId: Long): List<FaultEventEntity>
 
     suspend fun deleteTrip(tripId: Long)
 }

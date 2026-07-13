@@ -1,7 +1,10 @@
 package com.example.displayapp.data.simulator
 
+import com.example.displayapp.data.fault.FaultDetector
+import com.example.displayapp.data.persistence.dao.FaultEventDao
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
+import com.example.displayapp.data.persistence.entity.FaultEventEntity
 import com.example.displayapp.data.persistence.entity.TelemetryEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import com.example.displayapp.data.protocol.TelemetryDerivations
@@ -28,6 +31,7 @@ import timber.log.Timber
 class SampleTripSeeder(
     private val tripDao: TripDao,
     private val telemetryDao: TelemetryDao,
+    private val faultEventDao: FaultEventDao,
     private val now: () -> Long = { System.currentTimeMillis() }
 ) {
 
@@ -65,6 +69,19 @@ class SampleTripSeeder(
             )
             val tripId = tripDao.insert(trip)
             telemetryDao.insertBatch(samples.map { it.copy(tripId = tripId) })
+            // A few demo trips carry illustrative fault rows so the Trip Detail
+            // "Faults" section has something to render; the rest stay clean.
+            d.faults.forEach { f ->
+                faultEventDao.insert(
+                    FaultEventEntity(
+                        timestamp = startMs + f.offsetMs,
+                        tripId = tripId,
+                        type = f.type,
+                        severity = f.severity,
+                        message = f.message
+                    )
+                )
+            }
         }
         Timber.tag("SampleTripSeeder").i("Seeded ${DEMOS.size} demo trips")
     }
@@ -193,11 +210,19 @@ class SampleTripSeeder(
         return samples to agg
     }
 
+    private data class SeedFault(
+        val offsetMs: Long,
+        val type: String,
+        val severity: Int,
+        val message: String
+    )
+
     private data class Demo(
         val endedAgoMs: Long,
         val durationMs: Long,
         val startBattery: Int,
-        val endBattery: Int
+        val endBattery: Int,
+        val faults: List<SeedFault> = emptyList()
     )
 
     private companion object {
@@ -213,7 +238,24 @@ class SampleTripSeeder(
         private val DEMOS = listOf(
             Demo(endedAgoMs = 2 * HOUR,           durationMs = 18 * MIN, startBattery = 78, endBattery = 66),
             Demo(endedAgoMs = 1 * DAY + 3 * HOUR, durationMs = 9 * MIN,  startBattery = 71, endBattery = 65),
-            Demo(endedAgoMs = 2 * DAY + 5 * HOUR, durationMs = 47 * MIN, startBattery = 85, endBattery = 55),
+            Demo(
+                endedAgoMs = 2 * DAY + 5 * HOUR, durationMs = 47 * MIN,
+                startBattery = 85, endBattery = 55,
+                faults = listOf(
+                    SeedFault(
+                        offsetMs = 16 * MIN,
+                        type = FaultDetector.TYPE_MOTOR_TEMP,
+                        severity = FaultDetector.SEVERITY_WARNING,
+                        message = "Motor temperature high (54°C)"
+                    ),
+                    SeedFault(
+                        offsetMs = 31 * MIN,
+                        type = FaultDetector.TYPE_CONTROLLER_TEMP,
+                        severity = FaultDetector.SEVERITY_CRITICAL,
+                        message = "Controller temperature critical (72°C)"
+                    )
+                )
+            ),
             Demo(endedAgoMs = 3 * DAY + 8 * HOUR, durationMs = 14 * MIN, startBattery = 60, endBattery = 51),
             Demo(endedAgoMs = 5 * DAY + 2 * HOUR, durationMs = 33 * MIN, startBattery = 82, endBattery = 61),
             Demo(endedAgoMs = 7 * DAY + 6 * HOUR, durationMs = 6 * MIN,  startBattery = 70, endBattery = 66)

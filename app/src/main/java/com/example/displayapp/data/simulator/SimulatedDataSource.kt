@@ -129,10 +129,13 @@ class SimulatedDataSource(
         val currentMotor = (sf.currentA * 10).toInt().coerceIn(-32768, 32767).toShort()
 
         // flags: engineRunning while connected, moving when there's road speed,
-        // brake when the pack is taking regen current (decelerating).
+        // brake when the pack is taking regen current (decelerating), lowBattery
+        // (bit6) when SoC ≤ 15% — matches the firmware-confirmed semantic so the
+        // LOW_BATTERY scenario exercises the fault pipeline like real hardware.
         var flags = 0x01
         if (sf.speedKmh > 0.5) flags = flags or 0x04
         if (sf.currentA < -1.0) flags = flags or 0x02
+        if (sf.battery <= 15) flags = flags or 0x40
 
         // Integrate distance at the 20 Hz emit rate (50 ms/frame) so odometer +
         // trip climb realistically with speed.

@@ -57,6 +57,9 @@ data class TripDetailUiState(
     val sampleCount: Long = 0L,
     val isActive: Boolean = false,
 
+    /** Fault/warning events recorded during this trip, newest first. */
+    val faults: List<TripFaultRow> = emptyList(),
+
     // Chart series (downsampled, float arrays for cheap draw loops).
     // All units stay SI — the UI converts at the label site via LocalAppSettings.
     val speedSeries: FloatArray = FloatArray(0),
@@ -104,6 +107,7 @@ data class TripDetailUiState(
             dominantMode == other.dominantMode &&
             sampleCount == other.sampleCount &&
             isActive == other.isActive &&
+            faults == other.faults &&
             speedSeries.size == other.speedSeries.size &&
             rpmSeries.size == other.rpmSeries.size &&
             voltageSeries.size == other.voltageSeries.size &&
@@ -140,6 +144,7 @@ data class TripDetailUiState(
         h = 31 * h + dominantMode.hashCode()
         h = 31 * h + sampleCount.hashCode()
         h = 31 * h + isActive.hashCode()
+        h = 31 * h + faults.hashCode()
         h = 31 * h + speedSeries.size
         h = 31 * h + rpmSeries.size
         h = 31 * h + voltageSeries.size
@@ -155,3 +160,16 @@ data class TripDetailUiState(
         return h
     }
 }
+
+/**
+ * A single fault/warning row for the Trip Detail "Faults" section. A flat,
+ * pre-shaped presentation model so the composable never touches the persistence
+ * entity. `severity` matches FaultEventEntity: 0 = info, 1 = warning, 2 = critical.
+ */
+@Immutable
+data class TripFaultRow(
+    val timestampMs: Long,
+    val severity: Int,
+    val type: String,
+    val message: String
+)

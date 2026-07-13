@@ -1,16 +1,21 @@
 package com.example.displayapp.data.persistence
 
 import com.example.displayapp.data.energy.EnergyAccumulator
+import com.example.displayapp.data.fault.FaultDetector
 import com.example.displayapp.data.persistence.dao.FaultEventDao
 import com.example.displayapp.data.persistence.dao.TelemetryDao
 import com.example.displayapp.data.persistence.dao.TripDao
 import com.example.displayapp.data.persistence.entity.FaultEventEntity
 import com.example.displayapp.data.persistence.entity.TripEntity
 import com.example.displayapp.domain.model.VehicleData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -32,7 +37,10 @@ class TripSessionManager(
     private val tripDao: TripDao,
     private val telemetryDao: TelemetryDao,
     private val faultEventDao: FaultEventDao,
-    private val telemetryLogger: TelemetryLogger
+    private val telemetryLogger: TelemetryLogger,
+    private val faultDetector: FaultDetector = FaultDetector(),
+    // Fault inserts are fire-and-forget off the telemetry callback thread.
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 ) {
     private val _activeTrip = MutableStateFlow<TripEntity?>(null)
     val activeTrip: StateFlow<TripEntity?> = _activeTrip.asStateFlow()
@@ -138,6 +146,11 @@ class TripSessionManager(
      * Called by the repository on every telemetry update during recording.
      */
     fun onTelemetryUpdate(data: VehicleData) {
+        // Fault detection runs on every frame, recording or not — a fault that
+        // occurs while idle (no active trip) is still worth logging; the event
+        // just carries a null tripId.
+        detectFaults(data)
+
         if (!isRecording) return
 
         telemetryLogger.log(data)
@@ -179,6 +192,39 @@ class TripSessionManager(
         lastSampleTimestampMs = timestampMs
     }
 
+    /**
+     * Runs the pure [FaultDetector] over the sample and persists any faults it
+     * raises on the rising edge. Off the caller's telemetry thread — inserts go
+     * to Room on [scope]. Faults are stamped with the sample timestamp (wall
+     * clock at decode) so they line up with the telemetry timeline, and linked
+     * to the active trip when one is recording.
+     */
+    private fun detectFaults(data: VehicleData) {
+        val faults = faultDetector.onSample(data)
+        if (faults.isEmpty()) return
+        val tripId = _activeTrip.value?.id
+        val timestamp = data.timestamp
+        scope.launch {
+            faults.forEach { fault ->
+                faultEventDao.insert(
+                    FaultEventEntity(
+                        timestamp = timestamp,
+                        tripId = tripId,
+                        type = fault.type,
+                        severity = fault.severity,
+                        message = fault.message
+                    )
+                )
+                Timber.w("Fault logged: [${fault.type}] ${fault.message}")
+            }
+        }
+    }
+
+    /**
+     * Logs a fault raised outside the telemetry stream (e.g. connection loss).
+     * Stamped with the current wall clock since there is no sample to source a
+     * timestamp from.
+     */
     suspend fun logFault(type: String, severity: Int, message: String) {
         val event = FaultEventEntity(
             timestamp = System.currentTimeMillis(),
