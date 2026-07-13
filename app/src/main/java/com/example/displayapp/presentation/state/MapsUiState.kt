@@ -29,6 +29,8 @@ data class MapsUiState(
     val previewPlanning: Boolean = false,
     /** Preview planning failed (routing/network/no fix) → sheet shows error + Retry. */
     val previewFailed: Boolean = false,
+    /** Human-readable failure reason (typed GraphHopper error / no fix); shown on the sheet. */
+    val previewErrorMessage: String? = null,
     /** Destination name + address for the confirmation sheet. */
     val previewName: String = "",
     val previewDetail: String = "",

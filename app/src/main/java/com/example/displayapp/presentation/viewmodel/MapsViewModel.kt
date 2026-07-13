@@ -109,7 +109,7 @@ class MapsViewModel(
 
     private data class RouteCore(
         val preview: RoutePlan?,
-        val previewFailed: Boolean,
+        val previewError: String?,
         val active: RoutePlan?,
         val fitToken: Int,
         val overview: Boolean,
@@ -117,7 +117,7 @@ class MapsViewModel(
 
     private data class RouteState(
         val preview: RoutePlan?,
-        val previewFailed: Boolean,
+        val previewError: String?,
         val active: RoutePlan?,
         val fitToken: Int,
         val overview: Boolean,
@@ -132,16 +132,16 @@ class MapsViewModel(
     // swap to the arrival card (combine's typed overload caps at 5 flows, hence nesting).
     private val routeStateFlow = combine(
         combine(
-            coordinator.previewRoute, coordinator.previewFailed, coordinator.activeRoute,
+            coordinator.previewRoute, coordinator.previewError, coordinator.activeRoute,
             _fitToken, _overviewActive,
-        ) { p, f, a, t, o -> RouteCore(p, f, a, t, o) },
+        ) { p, e, a, t, o -> RouteCore(p, e, a, t, o) },
         coordinator.progress,
         vehicleData,
         efficiency,
         _arrival,
     ) { core, prog, vd, eff, arrivedName ->
         RouteState(
-            core.preview, core.previewFailed, core.active, core.fitToken, core.overview,
+            core.preview, core.previewError, core.active, core.fitToken, core.overview,
             prog, vd.batteryPercent, eff.rangeKm, arrivedName,
         )
     }
@@ -169,8 +169,9 @@ class MapsViewModel(
             destination = rs.active?.destination ?: pendingDest,
             route = drawn,
             previewing = previewing,
-            previewPlanning = previewing && rs.preview == null && !rs.previewFailed,
-            previewFailed = previewing && rs.previewFailed,
+            previewPlanning = previewing && rs.preview == null && rs.previewError == null,
+            previewFailed = previewing && rs.previewError != null,
+            previewErrorMessage = rs.previewError?.takeIf { previewing },
             previewName = place?.name.orEmpty(),
             previewDetail = place?.detail.orEmpty(),
             navigating = navigating,

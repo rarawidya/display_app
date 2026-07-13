@@ -8,8 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import timber.log.Timber
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 
 /**
@@ -28,6 +26,10 @@ class GraphHopperGeocoder(
 
     override val isConfigured: Boolean get() = apiKey.isNotBlank()
 
+    @Volatile
+    private var lastErrorMessage: String? = null
+    override val lastError: String? get() = lastErrorMessage
+
     override suspend fun search(query: String, near: GeoLocation?): List<GeoPlace> {
         if (!isConfigured || query.isBlank()) return emptyList()
         val url = buildString {
@@ -36,41 +38,34 @@ class GraphHopperGeocoder(
             if (near != null) append("&point=${near.latitude},${near.longitude}")
             append("&key=$apiKey")
         }
-        return withContext(io) {
-            runCatching { fetch(url) }
-                .onFailure { Timber.w(it, "GraphHopper geocode failed") }
-                .getOrDefault(emptyList())
-        }
+        return withContext(io) { runCatchingGeocode("geocode") { fetch(url) } ?: emptyList() }
     }
 
     override suspend fun reverse(location: GeoLocation): GeoPlace? {
         if (!isConfigured) return null
         val url = "$baseUrl/geocode?reverse=true&point=${location.latitude},${location.longitude}" +
             "&limit=1&locale=en&key=$apiKey"
-        return withContext(io) {
-            runCatching { fetch(url).firstOrNull() }
-                .onFailure { Timber.w(it, "GraphHopper reverse geocode failed") }
-                .getOrNull()
+        return withContext(io) { runCatchingGeocode("reverse geocode") { fetch(url).firstOrNull() } }
+    }
+
+    /** Run a geocode request, classifying + recording any error into [lastError]. */
+    private inline fun <T> runCatchingGeocode(what: String, block: () -> T): T? {
+        lastErrorMessage = null
+        return try {
+            block()
+        } catch (e: GraphHopperException) {
+            lastErrorMessage = e.error.userMessage
+            Timber.w("GraphHopper $what failed: ${e.error.userMessage}")
+            null
+        } catch (e: Exception) {
+            lastErrorMessage = GraphHopperError.Unknown(e.message).userMessage
+            Timber.w(e, "GraphHopper $what failed")
+            null
         }
     }
 
-    private fun fetch(url: String): List<GeoPlace> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8_000
-            readTimeout = 10_000
-        }
-        return try {
-            if (conn.responseCode !in 200..299) {
-                Timber.w("GraphHopper geocode HTTP ${conn.responseCode}")
-                emptyList()
-            } else {
-                parse(conn.inputStream.bufferedReader().use { it.readText() })
-            }
-        } finally {
-            conn.disconnect()
-        }
-    }
+    private suspend fun fetch(url: String): List<GeoPlace> =
+        parse(GraphHopperHttp.getJson(url, connectTimeoutMs = 8_000, readTimeoutMs = 10_000))
 
     private fun parse(json: String): List<GeoPlace> {
         val hits = JSONObject(json).optJSONArray("hits") ?: return emptyList()

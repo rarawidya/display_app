@@ -66,14 +66,15 @@ class NavigationCoordinator(
     /** Planned preview route (distance/ETA/geometry); null while planning or none. */
     val previewRoute: StateFlow<RoutePlan?> = _previewRoute.asStateFlow()
 
-    private val _previewFailed = MutableStateFlow(false)
+    private val _previewError = MutableStateFlow<String?>(null)
 
     /**
-     * Preview planning failed (routing request failed/offline, or no GPS fix to plan
-     * from). Without this the sheet spins on "Calculating route…" forever with Start
-     * disabled — the UI shows an error + Retry instead.
+     * Non-null when preview planning failed — carries the human-readable reason
+     * (typed GraphHopper error, or "no GPS fix"). Without this the sheet spins on
+     * "Calculating route…" forever with Start disabled; the UI shows the reason +
+     * Retry instead. Null means "planning" or "succeeded".
      */
-    val previewFailed: StateFlow<Boolean> = _previewFailed.asStateFlow()
+    val previewError: StateFlow<String?> = _previewError.asStateFlow()
 
     @Volatile private var lastLocation: GeoLocation? = null
     @Volatile private var activeDestinationName: String = ""
@@ -96,17 +97,23 @@ class NavigationCoordinator(
     fun preview(destination: GeoLocation) {
         _previewDestination.value = destination
         _previewRoute.value = null // "planning…"
-        _previewFailed.value = false
+        _previewError.value = null
         previewJob?.cancel()
         previewJob = scope.launch {
             val origin = lastLocation
             if (origin == null) {
                 // No fix to plan from — fail visibly instead of spinning forever.
-                _previewFailed.value = true
+                _previewError.value = "Waiting for a GPS fix — try again in a moment."
                 return@launch
             }
             val plan = routePlanner.plan(origin, destination)
-            if (plan == null) _previewFailed.value = true else _previewRoute.value = plan
+            if (plan == null) {
+                // Prefer the planner's specific reason (bad key / quota / offline);
+                // a null lastError with a null plan means "no route found".
+                _previewError.value = routePlanner.lastError ?: "Couldn't find a route to there."
+            } else {
+                _previewRoute.value = plan
+            }
         }
     }
 
@@ -144,6 +151,6 @@ class NavigationCoordinator(
         previewJob?.cancel()
         _previewDestination.value = null
         _previewRoute.value = null
-        _previewFailed.value = false
+        _previewError.value = null
     }
 }

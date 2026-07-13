@@ -19,8 +19,16 @@ interface RoutePlanner {
     val isConfigured: Boolean
 
     /**
+     * Human-readable reason the most recent [plan] returned null due to an error
+     * (bad key, quota, offline, …), or null when the last call succeeded or found
+     * no route. Provider-neutral so the UI can surface *why* without knowing the SDK.
+     */
+    val lastError: String? get() = null
+
+    /**
      * Plan a route from [origin] to [destination]. Returns null when unconfigured or the
-     * request fails (no route, network error) — callers surface that as "can't route".
+     * request fails (no route, network error) — callers surface that as "can't route",
+     * and can read [lastError] for the specific reason.
      */
     suspend fun plan(origin: GeoLocation, destination: GeoLocation): RoutePlan?
 }

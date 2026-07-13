@@ -191,6 +191,7 @@ fun NavigationScreen(
                     eta = state.etaLabel,
                     planning = state.previewPlanning,
                     failed = state.previewFailed,
+                    errorMessage = state.previewErrorMessage,
                     onStart = viewModel::startNavigation,
                     onRetry = viewModel::retryPreview,
                     onDismiss = viewModel::dismissPreview,
@@ -414,6 +415,7 @@ private fun DestinationConfirmSheet(
     eta: String?,
     planning: Boolean,
     failed: Boolean,
+    errorMessage: String? = null,
     onStart: () -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
@@ -489,9 +491,10 @@ private fun DestinationConfirmSheet(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Couldn't calculate a route",
+                        text = errorMessage ?: "Couldn't calculate a route",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     Text(
                         text = "Retry",

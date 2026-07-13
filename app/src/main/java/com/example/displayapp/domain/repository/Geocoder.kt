@@ -14,6 +14,12 @@ interface Geocoder {
     val isConfigured: Boolean
 
     /**
+     * Human-readable reason the most recent [search]/[reverse] failed due to an
+     * error (bad key, quota, offline), or null on success / no matches.
+     */
+    val lastError: String? get() = null
+
+    /**
      * Search for places matching [query], optionally biased toward [near] (the current
      * location). Returns an ordered list of candidates, or empty when unconfigured,
      * blank, or on error.

@@ -11,8 +11,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * [RoutePlanner] backed by the **GraphHopper hosted Directions API**
@@ -39,16 +37,29 @@ class GraphHopperRoutePlanner(
 
     override val isConfigured: Boolean get() = apiKey.isNotBlank()
 
+    @Volatile
+    private var lastErrorMessage: String? = null
+    override val lastError: String? get() = lastErrorMessage
+
     override suspend fun plan(origin: GeoLocation, destination: GeoLocation): RoutePlan? {
         if (!isConfigured) return null
         return withContext(io) {
-            runCatching { request(origin, destination) }
-                .onFailure { Timber.w(it, "GraphHopper route request failed") }
-                .getOrNull()
+            lastErrorMessage = null
+            try {
+                request(origin, destination)
+            } catch (e: GraphHopperException) {
+                lastErrorMessage = e.error.userMessage
+                Timber.w("GraphHopper route failed: ${e.error.userMessage}")
+                null
+            } catch (e: Exception) {
+                lastErrorMessage = GraphHopperError.Unknown(e.message).userMessage
+                Timber.w(e, "GraphHopper route request failed")
+                null
+            }
         }
     }
 
-    private fun request(origin: GeoLocation, destination: GeoLocation): RoutePlan? {
+    private suspend fun request(origin: GeoLocation, destination: GeoLocation): RoutePlan? {
         val url = buildString {
             append("$baseUrl/route")
             append("?point=${origin.latitude},${origin.longitude}")
@@ -56,21 +67,8 @@ class GraphHopperRoutePlanner(
             append("&profile=$profile&locale=en&points_encoded=false&instructions=true")
             append("&key=$apiKey")
         }
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 10_000
-            readTimeout = 15_000
-        }
-        return try {
-            if (conn.responseCode !in 200..299) {
-                Timber.w("GraphHopper HTTP ${conn.responseCode}")
-                null
-            } else {
-                parse(origin, destination, conn.inputStream.bufferedReader().use { it.readText() })
-            }
-        } finally {
-            conn.disconnect()
-        }
+        val body = GraphHopperHttp.getJson(url, connectTimeoutMs = 10_000, readTimeoutMs = 15_000)
+        return parse(origin, destination, body)
     }
 
     private fun parse(origin: GeoLocation, destination: GeoLocation, json: String): RoutePlan? {
