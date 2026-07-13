@@ -543,7 +543,9 @@ private fun LastRideCard(
     val distDisplay = if (app.speedUnit == com.example.displayapp.domain.model.SpeedUnit.MPH)
         distanceKm * 0.621371f else distanceKm
     val distanceValue = if (lastRide != null) "%.1f".format(distDisplay) else "—"
-    val durationValue = if (lastRide != null) "${lastRide.durationSec / 60}" else "—"
+    // Round to the nearest minute (+30 s before integer-dividing) so a 6 m 51 s
+    // ride reads "7 min", not a floored "6".
+    val durationValue = if (lastRide != null) "${(lastRide.durationSec + 30) / 60}" else "—"
     val dateText = lastRide?.let { Formatters.dateTime(it.startMs, app.timeFormat) } ?: "No rides yet"
 
     Surface(
