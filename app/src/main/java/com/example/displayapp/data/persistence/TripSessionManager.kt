@@ -111,6 +111,17 @@ class TripSessionManager(
         // One last trapezoidal step so the final sample contributes.
         accumulateDistance(finalData.speed, finalData.timestamp)
         val distance = distanceMeters.toLong()
+
+        // Discard trivial trips (a few metres of parking-lot roll) rather than
+        // surface them as an "0.0 km" Last Ride. Deleting cascades the trip's
+        // telemetry rows via the ForeignKey.
+        if (distance < MIN_RECORDED_TRIP_METERS) {
+            tripDao.deleteById(trip.id)
+            _activeTrip.value = null
+            Timber.i("Trip ${trip.id} discarded (${distance}m < ${MIN_RECORDED_TRIP_METERS}m)")
+            return
+        }
+
         val avgSpeed = if (sampleCount > 0) (speedSum / sampleCount).toInt() else 0
 
         val avgPowerW100 = if (sampleCount > 0) (powerW100Sum / sampleCount).toInt() else 0
@@ -237,6 +248,18 @@ class TripSessionManager(
         Timber.w("Fault logged: [$type] $message")
     }
 
+    /**
+     * Drops trips a previous process left in-progress (killed mid-ride). Their
+     * in-memory aggregates are gone, so an incomplete row would show as a
+     * perpetual "Recording…" in Logs and never surface as a Last Ride. Call once
+     * at startup **before** any new recording can begin, or it would delete the
+     * freshly started trip (telemetry rows cascade on delete).
+     */
+    suspend fun discardDanglingTrips() {
+        val dropped = tripDao.deleteDangling()
+        if (dropped > 0) Timber.i("Discarded $dropped dangling in-progress trip(s) at startup")
+    }
+
     fun observeTrips(): Flow<List<TripEntity>> = tripDao.observeAll()
 
     suspend fun getTrip(id: Long): TripEntity? = tripDao.getById(id)
@@ -248,5 +271,10 @@ class TripSessionManager(
 
     fun release() {
         telemetryLogger.release()
+    }
+
+    companion object {
+        /** Trips shorter than this (integrated metres) are discarded on stop. */
+        const val MIN_RECORDED_TRIP_METERS = 50L
     }
 }

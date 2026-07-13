@@ -31,6 +31,10 @@ interface TripDao {
     @Query("DELETE FROM trips WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    /** Drop trips left in-progress (endTime NULL) by a killed process. */
+    @Query("DELETE FROM trips WHERE endTime IS NULL")
+    suspend fun deleteDangling(): Int
+
     @Query("DELETE FROM trips WHERE startTime < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int
 }

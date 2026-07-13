@@ -65,6 +65,11 @@ class DisplayApp : Application() {
         // map shows the simulated fixed location and demo trips leak in before any
         // device connects.
         appScope.launch {
+            // Clean up any trip a previous process left in-progress, BEFORE opening
+            // a session — auto-recording could otherwise start a new trip first and
+            // this would delete it.
+            appContainer.tripSessionManager.discardDanglingTrips()
+
             val simulatorMode = appContainer.appPreferencesRepository.settings.first().simulatorMode
             if (simulatorMode) {
                 // Open the simulated session so telemetry streams immediately (a freshly

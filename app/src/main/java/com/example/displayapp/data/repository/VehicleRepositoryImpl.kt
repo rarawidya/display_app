@@ -44,6 +44,7 @@ class VehicleRepositoryImpl(
             if (mapped != null) {
                 _vehicleData.value = mapped
                 diagnostics.reportFrame()
+                maybeAutoStartTrip(mapped)
                 tripSessionManager.onTelemetryUpdate(mapped)
             }
         },
@@ -51,10 +52,45 @@ class VehicleRepositoryImpl(
         onSyncLoss = { diagnostics.reportSyncLoss() }
     )
 
+    // Guards the async startTrip() against a burst of frames opening duplicate
+    // trips before the first insert flips isRecording.
+    @Volatile
+    private var startingTrip = false
+
     init {
         scope.launch {
             dataSource.incomingData.collect { chunk ->
                 frameDecoder.feed(chunk)
+            }
+        }
+        // Finalize the active trip when the link drops for good. RECONNECTING is
+        // left alone so a transient stall (watchdog re-scan) doesn't split a ride
+        // into two; only a real DISCONNECTED ends recording.
+        scope.launch {
+            dataSource.connectionState.collect { state ->
+                if (state == ConnectionState.DISCONNECTED && tripSessionManager.isRecording) {
+                    tripSessionManager.stopTrip(_vehicleData.value)
+                }
+            }
+        }
+    }
+
+    /**
+     * Auto-record: open a trip the moment the vehicle starts moving on a live
+     * link, so the Last Ride card and Logs reflect real rides (nothing else
+     * calls [TripSessionManager.startTrip]). Waiting for movement avoids opening
+     * an empty trip every time the app merely connects while parked.
+     */
+    private fun maybeAutoStartTrip(data: VehicleData) {
+        if (tripSessionManager.isRecording || startingTrip) return
+        if (data.speed <= 0) return
+        if (dataSource.connectionState.value != ConnectionState.CONNECTED) return
+        startingTrip = true
+        scope.launch {
+            try {
+                tripSessionManager.startTrip(data)
+            } finally {
+                startingTrip = false
             }
         }
     }
