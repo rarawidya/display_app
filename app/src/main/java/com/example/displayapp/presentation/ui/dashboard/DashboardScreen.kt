@@ -36,9 +36,24 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalView
+import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.presentation.state.AlertLevel
 import com.example.displayapp.presentation.state.DashboardUiState
+import com.example.displayapp.presentation.state.batteryAlertLevel
 import com.example.displayapp.presentation.state.temperatureAlertLevel
 import com.example.displayapp.presentation.ui.common.LocalAppSettings
+import com.example.displayapp.ui.theme.EvRed
 import com.example.displayapp.presentation.ui.components.DiagnosticsOverlay
 import com.example.displayapp.presentation.ui.components.PremiumMetricTile
 import com.example.displayapp.presentation.ui.components.SpeedometerGauge
@@ -67,6 +82,17 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val showDiagnostics by viewModel.showDiagnostics.collectAsStateWithLifecycle()
+
+    // Keep the screen awake while the vehicle is connected so the cockpit never
+    // sleeps mid-ride. Scoped to the Drive route and gated on CONNECTED so a
+    // disconnected/backgrounded page doesn't hold the display on — released
+    // automatically when Drive leaves composition or the link drops.
+    val view = LocalView.current
+    val keepAwake = uiState.connectionState == ConnectionState.CONNECTED
+    DisposableEffect(keepAwake) {
+        view.keepScreenOn = keepAwake
+        onDispose { view.keepScreenOn = false }
+    }
 
     LocationPermissionEffect(onGranted = {
         // Restart the VM's own puck stream AND the shared source, so the app-scoped
@@ -119,6 +145,73 @@ private fun LocationPermissionEffect(onGranted: () -> Unit) {
                 )
             )
         }
+    }
+}
+
+/**
+ * Critical-battery warning banner for the Drive page. Renders nothing unless the
+ * vehicle is connected, the pack SoC is known and not charging, and the battery
+ * is in the CRITICAL band (≤ 20 %, via [batteryAlertLevel]). Shows the rolling
+ * range estimate as context when available.
+ *
+ * Dismiss is sticky per 5 % bucket: hiding it at 20 % keeps it hidden until the
+ * pack drops to the next bucket (15 %, 10 %, …), so a worsening situation nags
+ * again; recovery / charging / disconnect resets the dismissal entirely.
+ */
+@Composable
+private fun LowBatteryBanner(state: DashboardUiState) {
+    val active = state.connectionState == ConnectionState.CONNECTED &&
+        state.batteryKnown && !state.charging &&
+        batteryAlertLevel(state.batteryPercent) == AlertLevel.CRITICAL
+
+    val bucket = state.batteryPercent / 5
+    var dismissedBucket by rememberSaveable { mutableIntStateOf(Int.MAX_VALUE) }
+    LaunchedEffect(active) { if (!active) dismissedBucket = Int.MAX_VALUE }
+    if (!active || bucket >= dismissedBucket) return
+
+    val app = LocalAppSettings.current
+    val rangeText = state.efficiency.rangeKm
+        ?.takeIf { it > 0f }
+        ?.let { " · ~${app.speedUnit.formatDistance((it * 1000).toLong())} left" }
+        .orEmpty()
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(EvRed.copy(alpha = 0.14f))
+            .padding(horizontal = Dim.md, vertical = Dim.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+    ) {
+        Icon(
+            imageVector = EvIcons.Warning,
+            contentDescription = null,
+            tint = EvRed,
+            modifier = Modifier.size(20.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "Battery critical",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "${state.batteryPercent}% remaining$rangeText",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = "✕",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable { dismissedBucket = bucket }
+                .padding(horizontal = Dim.sm, vertical = Dim.xxs)
+        )
     }
 }
 
@@ -211,6 +304,9 @@ private fun DashboardPortrait(
             hotspotActive = hotspotActive,
             onHotspotTap = onHotspotTap
         )
+        // Critical-battery alert sits above everything so a low pack is the first
+        // thing the rider sees; renders nothing when the pack is healthy.
+        LowBatteryBanner(state = state)
         // Warning-lamp strip mirrors the physical cluster's top telltale row.
         TelltaleRow(state = state)
         SpeedometerSection(state = state)
@@ -261,6 +357,7 @@ private fun DashboardLandscape(
             hotspotActive = hotspotActive,
             onHotspotTap = onHotspotTap
         )
+        LowBatteryBanner(state = state)
         TelltaleRow(state = state)
         Row(
             modifier = Modifier.fillMaxWidth(),
