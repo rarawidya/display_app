@@ -9,6 +9,8 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
+import com.example.displayapp.domain.model.DeviceInfo
+import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -34,7 +36,9 @@ class BleGattClient(
     private val onDisconnected: () -> Unit,
     private val onRssi: (Int) -> Unit = {},
     /** Frames from the optional control uplink (0xAF05, board→phone button events). */
-    private val onControlBytes: (ByteArray) -> Unit = {}
+    private val onControlBytes: (ByteArray) -> Unit = {},
+    /** Device Information Service read result (model / firmware), once per connect. */
+    private val onDeviceInfo: (DeviceInfo) -> Unit = {}
 ) {
     private var gatt: BluetoothGatt? = null
 
@@ -53,6 +57,38 @@ class BleGattClient(
     @SuppressLint("MissingPermission")
     suspend fun connect(device: BluetoothDevice, timeoutMs: Long = 15_000): Boolean {
         val ready = CompletableDeferred<Boolean>()
+
+        // Device Information Service reads run as the final handshake step (after
+        // the CCCD subscribes, before completing `ready`) so no app-initiated write
+        // can collide with them — the caller is still suspended in connect() and the
+        // connection state hasn't flipped to CONNECTED yet. Absent service/chars or a
+        // failed read are skipped; DIS is optional metadata, never a connect blocker.
+        val disValues = HashMap<UUID, String>()
+        val disQueue = ArrayDeque(listOf(BleConstants.DIS_MODEL_UUID, BleConstants.DIS_FIRMWARE_UUID))
+
+        fun finishDeviceInfo() {
+            if (disValues.isNotEmpty()) {
+                onDeviceInfo(
+                    DeviceInfo(
+                        modelNumber = disValues[BleConstants.DIS_MODEL_UUID],
+                        firmwareRevision = disValues[BleConstants.DIS_FIRMWARE_UUID]
+                    )
+                )
+            }
+            if (!ready.isCompleted) ready.complete(true)
+        }
+
+        fun readNextDeviceInfo(g: BluetoothGatt) {
+            val next = disQueue.removeFirstOrNull() ?: run { finishDeviceInfo(); return }
+            val ch = g.getService(BleConstants.DIS_SERVICE_UUID)?.getCharacteristic(next)
+            // Skip an absent char or a read the stack refuses to start.
+            if (ch == null || !g.readCharacteristic(ch)) readNextDeviceInfo(g)
+        }
+
+        fun beginDeviceInfo(g: BluetoothGatt) {
+            if (g.getService(BleConstants.DIS_SERVICE_UUID) == null) { finishDeviceInfo(); return }
+            readNextDeviceInfo(g)
+        }
 
         val cb = object : BluetoothGattCallback() {
             private fun deliver(c: BluetoothGattCharacteristic, v: ByteArray) {
@@ -137,7 +173,7 @@ class BleGattClient(
                                 g.writeDescriptor(ctrlCccd)
                             }
                         } else {
-                            if (!ready.isCompleted) ready.complete(true)
+                            beginDeviceInfo(g)
                         }
                     }
                     BleConstants.CONTROL_CHAR_UUID -> {
@@ -147,7 +183,7 @@ class BleGattClient(
                         } else {
                             Timber.i("BLE: control uplink ${BleConstants.CONTROL_CHAR_UUID} subscribed")
                         }
-                        if (!ready.isCompleted) ready.complete(true)
+                        beginDeviceInfo(g)
                     }
                 }
             }
@@ -163,6 +199,23 @@ class BleGattClient(
             override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) onRssi(rssi)
             }
+
+            private fun handleDeviceInfoRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, v: ByteArray, status: Int) {
+                if (status == BluetoothGatt.GATT_SUCCESS && v.isNotEmpty()) {
+                    // DIS strings are UTF-8; strip surrounding whitespace and NUL padding.
+                    val s = v.toString(Charsets.UTF_8).trim { it.isWhitespace() || it.code == 0 }
+                    if (s.isNotEmpty()) disValues[c.uuid] = s
+                }
+                readNextDeviceInfo(g)
+            }
+
+            // Android 13+ delivers the value directly; older devices read it off the char.
+            override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray, status: Int) =
+                handleDeviceInfoRead(g, c, value, status)
+
+            @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+            override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) =
+                handleDeviceInfoRead(g, c, c.value ?: ByteArray(0), status)
 
             override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
                 // Writes are serialized by writeMutex, so there is at most one in-flight

@@ -815,13 +815,16 @@ private fun VehicleInfoCard(
     val dash = "—"
     var confirmReset by remember { mutableStateOf<TripReset?>(null) }
 
-    // Odometer + Trip A/B are live; Model + Firmware are static vehicle metadata
-    // until a BLE Device Information Service (0x180A) read exposes them.
+    // Odometer + Trip A/B are live. Model + Firmware come from the vehicle's BLE
+    // Device Information Service (0x180A), read once on connect; "—" until read or
+    // when the board doesn't expose them.
     // Trip A is the vehicle's own wire trip; Trip B is app-tracked (odometer − baseline).
     fun km(value: Float) = app.speedUnit.formatDistance((value * 1000).toLong())
     val odometerValue = if (state.odometer > 0f) km(state.odometer) else dash
     val tripAValue = if (connected) km(state.tripOdometer) else dash
     val tripBValue = if (connected) km(state.tripBOdometer) else dash
+    val firmwareValue = state.firmware?.takeIf { it.isNotBlank() } ?: dash
+    val modelValue = state.model?.takeIf { it.isNotBlank() } ?: dash
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -855,13 +858,13 @@ private fun VehicleInfoCard(
 
                 // Vehicle metadata — two stats across.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    VehicleStat(EvIcons.Cpu, EvViolet, VEHICLE_FIRMWARE, "Firmware", Modifier.weight(1f))
+                    VehicleStat(EvIcons.Cpu, EvViolet, firmwareValue, "Firmware", Modifier.weight(1f))
                     VDivider()
-                    VehicleStat(EvIcons.Motorcycle, EvAmber, VEHICLE_MODEL, "Model", Modifier.weight(1f))
+                    VehicleStat(EvIcons.Motorcycle, EvAmber, modelValue, "Model", Modifier.weight(1f))
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
-                OtaUpdateEntry(currentFirmware = VEHICLE_FIRMWARE, connected = connected)
+                OtaUpdateEntry(currentFirmware = firmwareValue, connected = connected)
             }
         }
     }
@@ -974,11 +977,6 @@ private fun TripRow(
         }
     }
 }
-
-/** Static vehicle identity — placeholders until a BLE Device Information Service
- *  (0x180A: Model Number / Firmware Revision) read exposes them from the controller. */
-private const val VEHICLE_MODEL = "GESITS G-1"
-private const val VEHICLE_FIRMWARE = "v1.0.0"
 
 @Composable
 private fun VehicleStat(

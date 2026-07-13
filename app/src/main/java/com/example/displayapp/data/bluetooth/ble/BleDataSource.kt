@@ -12,6 +12,7 @@ import com.example.displayapp.data.bluetooth.BluetoothDataSource
 import com.example.displayapp.data.bluetooth.connection.ReconnectPolicy
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.DeviceInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,6 +84,10 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private val _rssi = MutableStateFlow<Int?>(null)
     override val rssi: StateFlow<Int?> = _rssi.asStateFlow()
 
+    // Vehicle metadata read from DIS (0x180A) once per connect; null until read.
+    private val _deviceInfo = MutableStateFlow<DeviceInfo?>(null)
+    override val deviceInfo: StateFlow<DeviceInfo?> = _deviceInfo.asStateFlow()
+
     /* ---- adapter-off awareness: drop straight to DISCONNECTED when BT turns off ---- */
 
     private var adapterReceiverRegistered = false
@@ -128,6 +133,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         gattClient?.close()
         gattClient = null
         _rssi.value = null
+        _deviceInfo.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
@@ -176,7 +182,8 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
                 },
                 onDisconnected = { scope.launch { handleConnectionLost() } },
                 onRssi = { _rssi.value = it },
-                onControlBytes = { _controlFrames.tryEmit(it) }
+                onControlBytes = { _controlFrames.tryEmit(it) },
+                onDeviceInfo = { _deviceInfo.value = it }
             )
             gattClient = client
 
@@ -249,6 +256,7 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
         gattClient?.close()
         gattClient = null
         _rssi.value = null
+        _deviceInfo.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 

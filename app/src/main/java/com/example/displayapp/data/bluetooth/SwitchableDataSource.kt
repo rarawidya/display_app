@@ -2,6 +2,7 @@ package com.example.displayapp.data.bluetooth
 
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.DeviceInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,6 +59,9 @@ class SwitchableDataSource(
     private val _rssi = MutableStateFlow<Int?>(null)
     override val rssi: StateFlow<Int?> = _rssi.asStateFlow()
 
+    private val _deviceInfo = MutableStateFlow<DeviceInfo?>(null)
+    override val deviceInfo: StateFlow<DeviceInfo?> = _deviceInfo.asStateFlow()
+
     init {
         wire(initialDelegate)
     }
@@ -86,6 +90,7 @@ class SwitchableDataSource(
         _connectionState.value = ConnectionState.DISCONNECTED
         _discoveredDevices.value = emptyList()
         _rssi.value = null
+        _deviceInfo.value = null
         wire(newDelegate)
     }
 
@@ -95,6 +100,7 @@ class SwitchableDataSource(
         mirrorJobs.add(scope.launch { d.controlFrames.collect { _controlFrames.emit(it) } })
         mirrorJobs.add(scope.launch { d.discoveredDevices.collect { _discoveredDevices.value = it } })
         mirrorJobs.add(scope.launch { d.rssi.collect { _rssi.value = it } })
+        mirrorJobs.add(scope.launch { d.deviceInfo.collect { _deviceInfo.value = it } })
     }
 
     override fun startDiscovery() = delegate.startDiscovery()

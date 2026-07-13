@@ -10,6 +10,7 @@ import com.example.displayapp.data.protocol.PhoneNotificationSchema
 import com.example.displayapp.data.protocol.TelemetryConstants
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.DeviceInfo
 import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.repository.AppPreferencesRepository
 import com.example.displayapp.domain.repository.VehicleRepository
@@ -51,9 +52,17 @@ class DashboardViewModel(
     private var tripBBaselineKm = 0f
     private var lastOdometerKm = 0f
 
+    // Latest DIS metadata (model / firmware). Read as a plain field rather than a
+    // 6th combine input: it changes only on connect, and the combine re-emits on
+    // every ~10 Hz frame, so the UI picks it up within one frame.
+    private var deviceInfo: DeviceInfo? = null
+
     init {
         viewModelScope.launch {
             appPreferences.settings.collect { tripBBaselineKm = it.tripBBaselineKm }
+        }
+        viewModelScope.launch {
+            repository.deviceInfo.collect { deviceInfo = it }
         }
     }
 
@@ -168,6 +177,8 @@ class DashboardViewModel(
             batteryKnown = data.batteryKnown,
             connectionState = connectionState,
             rssi = rssi,
+            firmware = deviceInfo?.firmwareRevision,
+            model = deviceInfo?.modelNumber,
             diagnostics = DiagnosticsState(
                 framesPerSecond = diag.framesPerSecond,
                 framesDecoded = diag.framesDecoded,

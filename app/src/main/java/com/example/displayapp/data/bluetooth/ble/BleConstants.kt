@@ -45,6 +45,14 @@ object BleConstants {
     /** Standard Client Characteristic Configuration Descriptor. */
     val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
+    /* --- Standard Device Information Service (read once on connect for metadata) --- */
+    /** Device Information Service. Absent on firmware that doesn't implement it. */
+    val DIS_SERVICE_UUID: UUID = uuid16("180A")
+    /** Model Number String characteristic (`0x2A24`). */
+    val DIS_MODEL_UUID: UUID = uuid16("2A24")
+    /** Firmware Revision String characteristic (`0x2A26`). */
+    val DIS_FIRMWARE_UUID: UUID = uuid16("2A26")
+
     /** MTU we request on connect — 247 → 244 B payload, a whole frame per notification. */
     const val PREFERRED_MTU = 247
 

@@ -5,6 +5,7 @@ import com.example.displayapp.data.protocol.FrameEncoder
 import com.example.displayapp.data.protocol.TelemetrySchema
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.DeviceInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +46,11 @@ class SimulatedDataSource(
     private val _rssi = MutableStateFlow<Int?>(null)
     override val rssi: StateFlow<Int?> = _rssi.asStateFlow()
 
+    // Mock DIS metadata — proves the Home card reads real device info end to end
+    // (distinct firmware string from the old hardcoded "v1.0.0" so the wiring shows).
+    private val _deviceInfo = MutableStateFlow<DeviceInfo?>(null)
+    override val deviceInfo: StateFlow<DeviceInfo?> = _deviceInfo.asStateFlow()
+
     private var tick = 0L
     private var bootTimeMs = 0L
 
@@ -78,6 +84,8 @@ class SimulatedDataSource(
         bootTimeMs = System.currentTimeMillis()
         tick = 0L
         _rssi.value = -55
+        // Mimic the DIS read that a real board answers on connect.
+        _deviceInfo.value = DeviceInfo(modelNumber = "GESITS G-1", firmwareRevision = "1.4.0")
         Timber.i("Simulator connected [scenario=${scenario.name}]")
         startEmitting()
     }
@@ -86,6 +94,7 @@ class SimulatedDataSource(
         emitJob?.cancel()
         emitJob = null
         _rssi.value = null
+        _deviceInfo.value = null
         _connectionState.value = ConnectionState.DISCONNECTED
         Timber.i("Simulator disconnected")
     }

@@ -47,6 +47,9 @@ data class DashboardUiState(
     val batteryKnown: Boolean = true,         // SoC (false while wire sends 255)
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val rssi: Int? = null,                       // connected-link signal strength (dBm)
+    // Vehicle metadata from the Device Information Service (0x180A); null until read.
+    val firmware: String? = null,
+    val model: String? = null,
     val diagnostics: DiagnosticsState = DiagnosticsState(),
     val tripStats: TripStatsState = TripStatsState(),
     val efficiency: EfficiencyState = EfficiencyState()

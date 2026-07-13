@@ -7,6 +7,7 @@ import com.example.displayapp.data.protocol.FrameDecoder
 import com.example.displayapp.data.protocol.TelemetryMapper
 import com.example.displayapp.domain.model.BluetoothDeviceInfo
 import com.example.displayapp.domain.model.ConnectionState
+import com.example.displayapp.domain.model.DeviceInfo
 import com.example.displayapp.domain.model.VehicleData
 import com.example.displayapp.domain.repository.VehicleRepository
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,7 @@ class VehicleRepositoryImpl(
     override val connectionState: StateFlow<ConnectionState> = dataSource.connectionState
     override val availableDevices: StateFlow<List<BluetoothDeviceInfo>> = dataSource.discoveredDevices
     override val rssi: StateFlow<Int?> = dataSource.rssi
+    override val deviceInfo: StateFlow<DeviceInfo?> = dataSource.deviceInfo
 
     // FrameDecoder is the natural choke point for live protocol diagnostics —
     // every byte off the SPP pipe flows through here. Feeding the counters
