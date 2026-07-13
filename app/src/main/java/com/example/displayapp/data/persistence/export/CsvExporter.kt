@@ -84,7 +84,11 @@ class CsvExporter(
                     writer.append(vd.temperature.toString()).append(',')
                     writer.append(vd.batteryTemperature.toString()).append(',')
                     writer.append(vd.controllerTemperature.toString()).append(',')
-                    writer.appendLine(sample.mode.toString())
+                    writer.append(sample.mode.toString()).append(',')
+                    // v7 wire status fields, persisted so the export matches the
+                    // recorded frame (0 for pre-v7 rows).
+                    writer.append(vd.faultCode.toString()).append(',')
+                    writer.appendLine(vd.flags.toString())
                 }
             }
 
@@ -175,6 +179,6 @@ class CsvExporter(
     companion object {
         private const val CSV_HEADER =
             "timestamp_ms,speed_kmh,rpm,battery_pct,voltage_V,current_A,power_W," +
-                "motor_temp_C,battery_temp_C,controller_temp_C,mode"
+                "motor_temp_C,battery_temp_C,controller_temp_C,mode,fault_code,flags"
     }
 }

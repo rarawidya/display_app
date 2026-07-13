@@ -47,8 +47,8 @@ class TelemetryDatabaseMigrationTest {
     // ── full chain 1 → 6 ────────────────────────────────────────────────────
 
     @Test
-    fun fullChain_v1_to_v6_preservesRowsAndAppliesEveryMigration() {
-        val name = "migration-chain-1-to-6.db"
+    fun fullChain_v1_to_v7_preservesRowsAndAppliesEveryMigration() {
+        val name = "migration-chain-1-to-7.db"
         val helper = openWithDdl(name, V1_DDL)
         helper.writableDatabase.use { db ->
             // Seed v1-shaped data: one trip, one telemetry row, one fault.
@@ -89,10 +89,10 @@ class TelemetryDatabaseMigrationTest {
                 assertEquals(0L, c.getLong(6))
             }
 
-            // Telemetry row survived rebuild (3→4) and gained v3/v6 columns.
+            // Telemetry row survived rebuild (3→4) and gained v3/v6/v7 columns.
             db.query(
                 "SELECT id, speed, batteryTemperature, controllerTemperature, " +
-                    "rpm, powerW FROM telemetry WHERE id = 1"
+                    "rpm, powerW, faultCode, flags FROM telemetry WHERE id = 1"
             ).use { c ->
                 assertTrue(c.moveToFirst())
                 assertEquals(1L, c.getLong(0))
@@ -101,6 +101,8 @@ class TelemetryDatabaseMigrationTest {
                 assertEquals(0L, c.getLong(3))     // v3 default
                 assertTrue("rpm should be NULL for legacy rows", c.isNull(4))
                 assertTrue("powerW should be NULL for legacy rows", c.isNull(5))
+                assertEquals(0L, c.getLong(6))     // v7 faultCode default
+                assertEquals(0L, c.getLong(7))     // v7 flags default
             }
 
             // v3→v4 dropped odometer + indicators — querying them must fail now.
@@ -148,6 +150,45 @@ class TelemetryDatabaseMigrationTest {
                 assertTrue(c.moveToFirst())
                 assertEquals(5000L, c.getLong(0))
                 assertEquals(612.0, c.getDouble(1), 0.001)
+            }
+        }
+    }
+
+    // ── v6 → v7 focused test (newest migration) ─────────────────────────────
+
+    @Test
+    fun migration_6_7_addsFaultCodeAndFlagsColumnsDefaultingZero() {
+        val name = "migration-6-7.db"
+        val helper = openWithDdl(name, V6_DDL)
+        helper.writableDatabase.use { db ->
+            db.execSQL(
+                "INSERT INTO telemetry (id, tripId, timestamp, speed, battery, voltage, " +
+                    "current, temperature, mode, batteryTemperature, controllerTemperature, " +
+                    "rpm, powerW) " +
+                    "VALUES (1, 1, 1500, 452, 75, 7250, 800, 38, 2, 26, 31, 5000, 612.0)"
+            )
+
+            TelemetryDatabase.MIGRATION_6_7.migrate(db)
+
+            // Legacy row reads 0 for both new NOT NULL columns.
+            db.query("SELECT faultCode, flags FROM telemetry WHERE id = 1").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(0L, c.getLong(0))
+                assertEquals(0L, c.getLong(1))
+            }
+
+            // New rows round-trip the wire status fields exactly (faultCode is a
+            // UInt32 → stored as 64-bit INTEGER, flags an 8-bit bitfield).
+            db.execSQL(
+                "INSERT INTO telemetry (id, tripId, timestamp, speed, battery, voltage, " +
+                    "current, temperature, mode, batteryTemperature, controllerTemperature, " +
+                    "rpm, powerW, faultCode, flags) " +
+                    "VALUES (2, 1, 2000, 500, 74, 7200, 850, 40, 2, 27, 32, 5000, 612.0, 305419896, 69)"
+            )
+            db.query("SELECT faultCode, flags FROM telemetry WHERE id = 2").use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(305419896L, c.getLong(0)) // 0x12345678
+                assertEquals(69L, c.getLong(1))        // 0x45 = run|moving|park bits
             }
         }
     }
@@ -277,6 +318,63 @@ class TelemetryDatabaseMigrationTest {
                 mode INTEGER NOT NULL,
                 batteryTemperature INTEGER NOT NULL DEFAULT 0,
                 controllerTemperature INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(tripId) REFERENCES trips(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+            "CREATE INDEX index_telemetry_tripId_timestamp ON telemetry(tripId, timestamp)",
+            "CREATE INDEX index_telemetry_timestamp ON telemetry(timestamp)",
+            """
+            CREATE TABLE fault_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                tripId INTEGER,
+                timestamp INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                severity INTEGER NOT NULL,
+                message TEXT NOT NULL
+            )
+            """.trimIndent(),
+            "CREATE INDEX index_fault_events_timestamp ON fault_events(timestamp)"
+        )
+
+        // ── V6 schema — telemetry at v6, post 5→6 (pre 6→7). ─────────────────
+        // Same as V5 plus the nullable rpm / powerW columns. Trips + fault_events
+        // are unchanged from v5 (5→6 only touched telemetry).
+        private val V6_DDL = listOf(
+            """
+            CREATE TABLE trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                startTime INTEGER NOT NULL,
+                endTime INTEGER,
+                distanceMeters INTEGER NOT NULL DEFAULT 0,
+                maxSpeedKmh10 INTEGER NOT NULL DEFAULT 0,
+                avgSpeedKmh10 INTEGER NOT NULL DEFAULT 0,
+                startBattery INTEGER NOT NULL DEFAULT 0,
+                endBattery INTEGER,
+                sampleCount INTEGER NOT NULL DEFAULT 0,
+                energyUsedWh REAL NOT NULL DEFAULT 0,
+                energyRegenWh REAL NOT NULL DEFAULT 0,
+                avgPowerW100 INTEGER NOT NULL DEFAULT 0,
+                maxPowerW100 INTEGER NOT NULL DEFAULT 0,
+                peakMotorTempC INTEGER NOT NULL DEFAULT 0,
+                peakBatteryTempC INTEGER NOT NULL DEFAULT 0,
+                peakControllerTempC INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+            """
+            CREATE TABLE telemetry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                tripId INTEGER NOT NULL,
+                timestamp INTEGER NOT NULL,
+                speed INTEGER NOT NULL,
+                battery INTEGER NOT NULL,
+                voltage INTEGER NOT NULL,
+                current INTEGER NOT NULL,
+                temperature INTEGER NOT NULL,
+                mode INTEGER NOT NULL,
+                batteryTemperature INTEGER NOT NULL DEFAULT 0,
+                controllerTemperature INTEGER NOT NULL DEFAULT 0,
+                rpm INTEGER DEFAULT NULL,
+                powerW REAL DEFAULT NULL,
                 FOREIGN KEY(tripId) REFERENCES trips(id) ON DELETE CASCADE
             )
             """.trimIndent(),

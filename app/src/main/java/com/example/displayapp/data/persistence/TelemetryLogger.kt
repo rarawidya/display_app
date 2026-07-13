@@ -89,7 +89,11 @@ class TelemetryLogger(
             // Detail read the value that was recorded, not one recomputed
             // by a (possibly evolved) formula.
             rpm = data.rpm,
-            powerW = data.power
+            powerW = data.power,
+            // v7: persist wire status fields so replay shows the recorded
+            // telltales/faults.
+            faultCode = data.faultCode,
+            flags = data.flags
         )
 
         // Write to ring buffer

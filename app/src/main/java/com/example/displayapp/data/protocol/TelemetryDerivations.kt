@@ -91,7 +91,10 @@ object TelemetryDerivations {
             vehicleMode = VehicleMode.entries.getOrElse(entity.mode) { VehicleMode.PARK },
             timestamp = entity.timestamp,
             rpm = entity.rpm ?: rpmFromSpeedKmh(speedKmh),
-            power = entity.powerW ?: powerFromVoltsAmps(voltageV, currentA)
+            power = entity.powerW ?: powerFromVoltsAmps(voltageV, currentA),
+            // v7 wire status fields; pre-v7 rows carry 0 (no fault / no flags).
+            faultCode = entity.faultCode,
+            flags = entity.flags
         )
     }
 }

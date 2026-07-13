@@ -56,5 +56,16 @@ data class TelemetryEntity(
     // (TelemetryDerivations.decodeEntity) falls back to recomputing from
     // the wire fields for backward compatibility.
     val rpm: Int? = null,
-    val powerW: Float? = null
+    val powerW: Float? = null,
+
+    // ── v7: persisted wire status fields ─────────────────────────────────────
+    // `faultCode` (controller fault bitfield) and `flags` (run/brake/moving/
+    // reverse/park/lowBattery/regen bits) are independent wire channels — they
+    // can't be recomputed from other columns, so unlike rpm/power they're stored
+    // NOT NULL with a 0 default. Pre-v7 rows read 0 (no fault, no flags set),
+    // matching what decodeEntity produced before they were persisted. Persisting
+    // them lets replay / Trip Detail show the same telltales + faults the live
+    // Drive page showed for the recorded frames.
+    val faultCode: Long = 0,
+    val flags: Int = 0
 )

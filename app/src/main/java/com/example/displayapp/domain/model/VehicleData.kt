@@ -46,8 +46,8 @@ data class VehicleData(
     /** Resettable trip odometer in km (`tripMeters/1000`). */
     val tripKm: Float = 0f,
     // ── VotolTelemetry wire fields (capnp.md §3) ─────────────────────────────
-    // Carried live from the frame. Not yet persisted — decodeEntity leaves them
-    // at their defaults for replayed samples until a Room migration adds columns.
+    // Carried live from the frame and persisted since schema v7, so decodeEntity
+    // restores them for replayed samples (pre-v7 rows read 0).
     /** Controller fault bitfield (`@7 faultCode`); 0 = no fault. */
     val faultCode: Long = 0,
     /** Status bitfield (`@8 flags`): bit0 engineRunning, bit1 brake, bit2 moving, bit3 reverse. */
