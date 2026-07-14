@@ -65,7 +65,7 @@ BLE therefore only ever carries the ~1 s credential push.
 ## 2. The user-facing flow (Settings → Vehicle internet)
 
 All UI lives in the **"Vehicle internet"** section of the Settings screen:
-[`SettingsScreen.kt` → `VehicleInternetSection`](../app/src/main/java/com/example/displayapp/presentation/ui/settings/SettingsScreen.kt) (line 528+).
+[`SettingsScreen.kt` → `VehicleInternetSection`](../app/src/main/java/com/innodrive/evdash/presentation/ui/settings/SettingsScreen.kt) (line 528+).
 
 | Row | What it does | Backing call |
 |---|---|---|
@@ -96,10 +96,10 @@ flips the hotspot on manually.
 Entered credentials are persisted in DataStore so the user doesn't re-type them:
 
 - Storage keys `KEY_HOTSPOT_SSID` / `KEY_HOTSPOT_PSK` in
-  [`AppPreferences.kt`](../app/src/main/java/com/example/displayapp/data/preferences/AppPreferences.kt)
+  [`AppPreferences.kt`](../app/src/main/java/com/innodrive/evdash/data/preferences/AppPreferences.kt)
   (lines 111–112; read at 50–51; write via `setHotspotCredentials()` at line 90).
 - Surfaced on the domain model as `AppSettings.hotspotSsid` / `hotspotPassword`
-  ([`AppSettings.kt`](../app/src/main/java/com/example/displayapp/domain/model/AppSettings.kt) lines 106–107).
+  ([`AppSettings.kt`](../app/src/main/java/com/innodrive/evdash/domain/model/AppSettings.kt) lines 106–107).
 - Written through `AppPreferencesRepository.setHotspotCredentials()`.
 
 > **Security note:** the passphrase is stored in the app's private DataStore as
@@ -114,7 +114,7 @@ sends **three** control commands over the `0xAF07` control characteristic, each 
 separate BLE write, in order. All three must succeed for the board to commit.
 
 ### 4.1 The command builder
-[`BoardWifiCommands.kt`](../app/src/main/java/com/example/displayapp/data/notification/BoardWifiCommands.kt):
+[`BoardWifiCommands.kt`](../app/src/main/java/com/innodrive/evdash/data/notification/BoardWifiCommands.kt):
 
 ```kotlin
 BoardWifiCommands.joinSequence(ssid, passphrase) = [
@@ -142,7 +142,7 @@ means "rejoin with persisted credentials". The commands are idempotent — the a
 resend the whole sequence safely.
 
 ### 4.2 The send path (ViewModel → radio)
-[`SettingsViewModel.sendWifiCredentialsToBoard()`](../app/src/main/java/com/example/displayapp/presentation/viewmodel/SettingsViewModel.kt) (line 192):
+[`SettingsViewModel.sendWifiCredentialsToBoard()`](../app/src/main/java/com/innodrive/evdash/presentation/viewmodel/SettingsViewModel.kt) (line 192):
 
 ```kotlin
 val ok = BoardWifiCommands.joinSequence(ssid, password)
@@ -159,8 +159,8 @@ PhoneNotification
   → GATT write to characteristic 0xAF07 (RX_CHAR_UUID)
 ```
 
-- Sender: [`PhoneNotificationSender.send()`](../app/src/main/java/com/example/displayapp/data/notification/PhoneNotificationSender.kt) — logs `writing 0xAF07 frame len=…` and records the push/drop in `DiagnosticsRepository`.
-- Characteristic: `RX_CHAR_UUID = uuid16("AF07")` in [`BleConstants.kt`](../app/src/main/java/com/example/displayapp/data/bluetooth/ble/BleConstants.kt) line 28.
+- Sender: [`PhoneNotificationSender.send()`](../app/src/main/java/com/innodrive/evdash/data/notification/PhoneNotificationSender.kt) — logs `writing 0xAF07 frame len=…` and records the push/drop in `DiagnosticsRepository`.
+- Characteristic: `RX_CHAR_UUID = uuid16("AF07")` in [`BleConstants.kt`](../app/src/main/java/com/innodrive/evdash/data/bluetooth/ble/BleConstants.kt) line 28.
 
 The wire framing is **byte-identical to the verified `ODO_RESET_TRIP` frame** — no new
 encoder work on either side. On failure (board not connected, or on the simulator),
@@ -205,12 +205,12 @@ needs no breaking app change. See §4 of the contract doc.
 The app has two monitors that observe Wi-Fi state (used for status/UI hints; they do
 **not** control the board):
 
-- [`HotspotStateMonitor.kt`](../app/src/main/java/com/example/displayapp/data/system/HotspotStateMonitor.kt)
+- [`HotspotStateMonitor.kt`](../app/src/main/java/com/innodrive/evdash/data/system/HotspotStateMonitor.kt)
   — emits whether the phone's **soft-AP hotspot** is on. Android has no public hotspot-
   state API, so it stacks three signals: the `WIFI_AP_STATE_CHANGED` broadcast, an
   initial `getWifiApState()` reflection call, and an interface-name heuristic
   (`swlan0`/`ap0`/`softap0`/`wlan1`).
-- [`WifiStateMonitor.kt`](../app/src/main/java/com/example/displayapp/data/system/WifiStateMonitor.kt)
+- [`WifiStateMonitor.kt`](../app/src/main/java/com/innodrive/evdash/data/system/WifiStateMonitor.kt)
   — emits whether the phone itself is connected to a Wi-Fi network
   (`ConnectivityManager` + `TRANSPORT_WIFI`).
 
@@ -241,7 +241,7 @@ The app has two monitors that observe Wi-Fi state (used for status/UI hints; the
 5. App: long-press / **Clear Wi-Fi from display** → board wipes creds, restores AP, phone
    can rejoin the board's AP.
 
-App-side unit coverage: [`BoardWifiCommandsTest.kt`](../app/src/test/java/com/example/displayapp/data/notification/BoardWifiCommandsTest.kt).
+App-side unit coverage: [`BoardWifiCommandsTest.kt`](../app/src/test/java/com/innodrive/evdash/data/notification/BoardWifiCommandsTest.kt).
 
 ---
 
@@ -272,12 +272,12 @@ User picks destination on map
 ```
 
 - **Route geometry** is downsampled (≤200 pts, 40 pts/chunk), delta-encoded, and sent as
-  `RouteChunk` frames — [`RouteNavigator.sendRoute()`/`routeChunks()`](../app/src/main/java/com/example/displayapp/data/navigation/RouteNavigator.kt) (lines 202, 209).
+  `RouteChunk` frames — [`RouteNavigator.sendRoute()`/`routeChunks()`](../app/src/main/java/com/innodrive/evdash/data/navigation/RouteNavigator.kt) (lines 202, 209).
 - **Turn-by-turn** `NavInstruction` frames stream at ≤1 Hz with a heartbeat so the
   board's liveness window doesn't lapse; the session re-seeds the route on BLE reconnect.
 - **Encoders** are hand-built and byte-exact vs the `capnp` CLI —
-  [`NavigationSchema.kt`](../app/src/main/java/com/example/displayapp/data/protocol/NavigationSchema.kt),
-  verified in [`NavigationFrameTest.kt`](../app/src/test/java/com/example/displayapp/data/protocol/NavigationFrameTest.kt).
+  [`NavigationSchema.kt`](../app/src/main/java/com/innodrive/evdash/data/protocol/NavigationSchema.kt),
+  verified in [`NavigationFrameTest.kt`](../app/src/test/java/com/innodrive/evdash/data/protocol/NavigationFrameTest.kt).
 - **Schema**: [`navigation.capnp`](../app/schema/navigation.capnp).
 
 **The only thing gating real-hardware delivery** is that the firmware must expose the

@@ -28,7 +28,7 @@ val graphHopperApiKey = secret("GRAPHHOPPER_API_KEY")
 val releaseStoreFile = secret("RELEASE_STORE_FILE").ifBlank { null }
 
 android {
-    namespace = "com.example.displayapp"
+    namespace = "com.innodrive.evdash"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -36,7 +36,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.displayapp"
+        applicationId = "com.innodrive.evdash"
         minSdk = 24
         targetSdk = 36
         versionCode = 2

@@ -15,7 +15,7 @@
 # VehicleMode (and friends) are reconstructed from stored ordinals via `entries` /
 # `values()`; keep enum members so R8 can't rename/strip values it doesn't see
 # referenced by name.
--keepclassmembers enum com.example.displayapp.** {
+-keepclassmembers enum com.innodrive.evdash.** {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
@@ -23,7 +23,7 @@
 # ── Room ─────────────────────────────────────────────────────────────────────
 # Room generates its own code + ships consumer rules; keep entities as an extra guard
 # (schema columns are matched by field name).
--keep class com.example.displayapp.data.persistence.entity.** { *; }
+-keep class com.innodrive.evdash.data.persistence.entity.** { *; }
 
 # BluetoothGatt#refresh() is invoked by name via reflection, but the target is a
 # framework class (android.bluetooth.BluetoothGatt) which R8 never touches — no keep

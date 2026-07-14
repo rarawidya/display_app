@@ -107,10 +107,10 @@ Board-side expectations that follow:
 
 | Behavior | File |
 |---|---|
-| Cadence, seq, reconnect re-seed, cancel | `app/src/main/java/com/example/displayapp/data/navigation/RouteNavigator.kt` |
-| `streetName` extraction (`street_name` only) | `app/src/main/java/com/example/displayapp/data/navigation/graphhopper/GraphHopperRoutePlanner.kt` |
+| Cadence, seq, reconnect re-seed, cancel | `app/src/main/java/com/innodrive/evdash/data/navigation/RouteNavigator.kt` |
+| `streetName` extraction (`street_name` only) | `app/src/main/java/com/innodrive/evdash/data/navigation/graphhopper/GraphHopperRoutePlanner.kt` |
 | `destinationName` hand-off (UI → session) | `presentation/viewmodel/MapsViewModel.kt` → `data/navigation/NavigationCoordinator.kt` |
-| Wire encoders (byte-exact vs §9 goldens, unchanged) | `app/src/main/java/com/example/displayapp/data/protocol/NavigationSchema.kt` + `NavigationFrameTest` |
+| Wire encoders (byte-exact vs §9 goldens, unchanged) | `app/src/main/java/com/innodrive/evdash/data/protocol/NavigationSchema.kt` + `NavigationFrameTest` |
 
 Anything that looks off on the bench: grab the `DOWNLINK raw len=… hex=…` line
 from `/var/log/ble-gatt.log` and send it over — the app team will decode it

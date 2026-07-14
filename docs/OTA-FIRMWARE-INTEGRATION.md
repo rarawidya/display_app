@@ -1,7 +1,7 @@
 # EVdisplay — OTA Firmware Update Integration (proposal v0, to align with firmware team)
 
 **Status:** DRAFT / not implemented. The app ships an OTA *UX shell*
-([`OtaUpdateSheet.kt`](../app/src/main/java/com/example/displayapp/presentation/ui/home/OtaUpdateSheet.kt))
+([`OtaUpdateSheet.kt`](../app/src/main/java/com/innodrive/evdash/presentation/ui/home/OtaUpdateSheet.kt))
 whose check is a placeholder (`delay(1_800)` → always "up to date"). This
 document proposes the wire contract + division of labour so we can replace the
 placeholder with a real flow. **Nothing here is final** — the ⭐ sections are
@@ -105,15 +105,22 @@ requirement.
 
 The app must show the true running version and detect when a reboot landed the
 new one. **Preferred:** append to the frozen-but-extensible `VotolTelemetry`
-(new fields append at `@15+`, `LEN` grows — see `capnpble.md §3`):
+(new fields append at the next free ordinal, `LEN` grows — see `capnpble.md §3`):
+
+> ✅ **RESOLVED — firmware team assigned `@17/@18/@19`, NOT `@15/@16/@17`.**
+> This proposal assumed `@15+` was free; it wasn't — `tripAMeters @15` /
+> `tripBMeters @16` were already appended on 2026-07-07. Per
+> `OTA-FIRMWARE-INTEGRATION-RESPONSE.md §1` and `capnpble_new.md §3` the OTA
+> fields take `@17/@18/@19`. The app decodes them there (see
+> `TelemetrySchema.kt` / `telemetry.capnp`). Frame grew to LEN `0x48` (72-byte
+> payload) with the later multi-motor `@20..@23` append.
 
 ```capnp
 struct VotolTelemetry {
-  # … @0..@14 FROZEN …
-  fwVersion  @15 :UInt32;   # packed semver: (major<<16)|(minor<<8)|patch  e.g. 0x010203 = 1.2.3
-  # optional, only if we do in-band OTA status (§5, Option A):
-  otaState    @16 :UInt8;   # enum below; 0 = idle
-  otaProgress @17 :UInt8;   # 0..100, meaningful while downloading/applying
+  # … @0..@16 FROZEN (incl. tripAMeters @15 / tripBMeters @16) …
+  fwVersion   @17 :UInt32;   # packed semver: (major<<16)|(minor<<8)|patch  e.g. 0x010203 = 1.2.3
+  otaState    @18 :UInt8;    # enum below; 0 = idle
+  otaProgress @19 :UInt8;    # 0..100, meaningful while downloading/applying
 }
 ```
 
@@ -273,7 +280,7 @@ No new dependencies; no Room changes; reuses `0xAF07` + the frame codec.
 |---|---|---|
 | 1 | firmware | Target(s): board / VOTOL controller / both? |
 | 2 | firmware | Transport: network-pull (Option A) confirmed? BLE-push needed? |
-| 3 | firmware | Version source: append `fwVersion@15` to telemetry, or read characteristic? |
+| 3 | firmware | Version source: append `fwVersion` to telemetry, or read characteristic? — ✅ RESOLVED: `fwVersion@17` on telemetry (see §3) |
 | 4 | firmware | On-device mechanism: A/B + rollback? swupdate/RAUC/custom? |
 | 5 | firmware | Signing scheme + where the public key lives |
 | 6 | release | Manifest + image hosting URL; signing key custody |

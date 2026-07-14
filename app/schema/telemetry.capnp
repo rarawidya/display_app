@@ -11,6 +11,16 @@
 # payload 40→48 bytes (LEN 0x30). Ordinals @0..@14 are now FROZEN — new
 # telemetry is APPENDED at @15+, which grows the frame LEN.
 #
+# APPEND-ONLY EXTENSIONS (docs/capnpble_new.md §3, all @0..@23 now FROZEN):
+#   2026-07-07  trip A/B  : tripAMeters @15, tripBMeters @16  (data 32→40 B / LEN 0x38)
+#   2026-07-13  OTA       : fwVersion @17, otaState @18, otaProgress @19 (→ 48 B / LEN 0x40)
+#   2026-07-14  multi-motor: phaseA @20, phaseC @21, power @22, controllerType @23
+#                           (data 48→56 B / LEN 0x48, framed 76 B)
+# `tripMeters` @13 is now a LEGACY ALIAS that always mirrors `tripAMeters` @15.
+# @17..@23 are BOARD→app TX-only (the STM32/UART sender fills them 0). Old readers
+# that know only @0..@14/@16/@19 keep working — decode by ordinal, always honor LEN,
+# a shorter frame reads the missing trailing fields as 0.
+#
 # Board → phone, telemetry uplink (~10 Hz) over BLE GATT Notify on 0xAF08.
 # (Phone → board is the separate `PhoneNotification` schema written to 0xAF07.)
 #
@@ -70,6 +80,15 @@ struct VotolTelemetry {
   faultCode      @10 :UInt32;   # controller fault bitfield (currently 0)
   seq            @11 :UInt32;   # rolling frame counter (drop detection)
   odoMeters      @12 :UInt32;   # lifetime odometer, metres (÷1000 = km)
-  tripMeters     @13 :UInt32;   # resettable trip odometer, metres (÷1000 = km)
+  tripMeters     @13 :UInt32;   # LEGACY ALIAS: always mirrors tripAMeters @15, metres (÷1000 = km)
   flags          @14 :UInt8;    # bit0 run, 1 brake, 2 moving, 3 reverse, 4 park, 5 sideStand, 6 lowBattery, 7 regen
+  tripAMeters    @15 :UInt32;   # trip meter A, metres (÷1000 = km), resettable (appended 2026-07-07)
+  tripBMeters    @16 :UInt32;   # trip meter B, metres (÷1000 = km), independently resettable (appended 2026-07-07)
+  fwVersion      @17 :UInt32;   # board firmware, packed semver (major<<16)|(minor<<8)|patch (V1.0.0 = 65536); BOARD→app TX-only
+  otaState       @18 :UInt8;    # OTA state enum 0..8 (0 IDLE … 7 SUCCESS, 8 FAILED); BOARD→app TX-only
+  otaProgress    @19 :UInt8;    # OTA progress 0..100; BOARD→app TX-only (0 until the board's numeric producer lands)
+  phaseA         @20 :Int16;    # motor Phase-A current, deci-amps (÷10 = A), signed; NANJING only (0 on VOTOL)
+  phaseC         @21 :Int16;    # motor Phase-C current, deci-amps (÷10 = A), signed; NANJING only (0 on VOTOL)
+  power          @22 :UInt16;   # electrical power, WATTS (line current × battery volts); NANJING only (0 on VOTOL)
+  controllerType @23 :UInt8;    # 0 = VOTOL (EM-100), 1 = NANJING — the motor/controller MODEL; BOARD-sourced
 }
