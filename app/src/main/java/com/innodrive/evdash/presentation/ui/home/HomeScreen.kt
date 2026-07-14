@@ -452,12 +452,40 @@ private fun BatteryCard(
         ) {
             // Top group — title, big percentage + glyph, charge bar.
             Column(verticalArrangement = Arrangement.spacedBy(Dim.sm)) {
-                Text(
-                    text = "Battery",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Title + charging pill, grouped left and content-sized so the pill
+                // never gets compressed into a 2-line wrap on this narrow half-width
+                // card. Mirrors the Drive BatteryRowCard pill so charging reads the
+                // same across the app (pack current ≥ 1 A, hysteresis in the VM).
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dim.sm)
+                ) {
+                    Text(
+                        text = "Battery",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Icon-only bolt chip: the half-width card can't fit the word
+                    // "Charging" beside the title without clipping, so the compact
+                    // green-bolt pill carries the state (screen-reader label kept).
+                    if (state.charging) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(EvGreen.copy(alpha = 0.16f))
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = EvIcons.Bolt,
+                                contentDescription = "Charging",
+                                tint = EvGreen,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
