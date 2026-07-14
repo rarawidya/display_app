@@ -7,14 +7,16 @@ package com.innodrive.evdash.domain.model
  * `controllerTemperature` are independent wire channels added in
  * telemetry.capnp v2.
  *
- * `rpm` and `power` are **derived once** in
- * [com.innodrive.evdash.data.protocol.TelemetryDerivations] — both the
- * live mapper (`TelemetryMapper`) and the persisted-entity decoder
- * (`TelemetryReplaySource`, `CsvExporter`, `TripDetailViewModel`) call
- * the same helpers, so Drive / Charts / Logs / Trip Detail / replay / CSV
- * all read bit-identical values. No UI layer derives them locally.
+ * `rpm` is a **real wire field** (`VotolTelemetry.rpm`) read straight off the
+ * frame by `TelemetryMapper`; the legacy speed×100 proxy survives only as the
+ * `TelemetryDerivations.decodeEntity` fallback for pre-v6 persisted rows.
+ * `power` is **derived once** in
+ * [com.innodrive.evdash.data.protocol.TelemetryDerivations] — both the live
+ * mapper and the persisted-entity decoder (`TelemetryReplaySource`,
+ * `CsvExporter`, `TripDetailViewModel`) call the same helper, so Drive /
+ * Charts / Logs / Trip Detail / replay / CSV all read bit-identical values.
+ * No UI layer derives power locally.
  *
- *   rpm   = speed × 100         (display proxy, NOT true motor RPM)
  *   power = voltage × current   (Watts; sign per telemetry.capnp —
  *                                positive = discharge, negative = regen)
  *

@@ -231,12 +231,19 @@ class DashboardViewModel(
         // TripSessionManager so Drive's "session distance" and Logs' trip
         // distance use the same algorithm.
         val dtMsRaw = data.timestamp - sessionLastTimestampMs
-        if (sessionLastTimestampMs > 0L && dtMsRaw in 1..TelemetryConstants.MAX_SAMPLE_DT_MS) {
+        if (sessionLastTimestampMs > 0L && dtMsRaw > 0L) {
+            // CLAMP the gap (don't drop it): every other integrator — TripSessionManager,
+            // EnergyAccumulator, EfficiencyTracker — clamps inter-sample dt to
+            // MAX_SAMPLE_DT_MS and still integrates. Gating the whole interval out on a
+            // >1 s gap made Drive's session distance drift below the recorded trip on any
+            // BT stutter (CLAUDE.md: the two must differ only by aggregation window, never
+            // by gap policy).
+            val dtMs = dtMsRaw.coerceAtMost(TelemetryConstants.MAX_SAMPLE_DT_MS)
             // avgSpeedMs is metres/second; km = m/s × ms ÷ 1_000_000 (÷1000 ms→s,
             // ÷1000 m→km). Dividing by 3_600_000 (the km/h divisor) would apply the
             // 3.6 conversion twice and under-report distance 3.6×.
             val avgSpeedMs = ((sessionLastSpeed + data.speed) / 2.0) / 3.6
-            sessionDistanceKm += avgSpeedMs * dtMsRaw / 1_000_000.0
+            sessionDistanceKm += avgSpeedMs * dtMs / 1_000_000.0
         }
         sessionLastSpeed = data.speed
         sessionLastTimestampMs = data.timestamp

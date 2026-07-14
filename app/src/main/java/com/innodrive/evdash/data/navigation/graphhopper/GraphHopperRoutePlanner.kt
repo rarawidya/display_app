@@ -119,7 +119,7 @@ class GraphHopperRoutePlanner(
 
     /** GraphHopper instruction `sign` → domain [Maneuver]. */
     private fun signToManeuver(sign: Int): Maneuver = when (sign) {
-        -98, -8 -> Maneuver.UTurn
+        -98, -8, 8 -> Maneuver.UTurn // U_TURN_UNKNOWN / U_TURN_LEFT / U_TURN_RIGHT
         -7 -> Maneuver.KeepLeft
         -3 -> Maneuver.TurnSharpLeft
         -2 -> Maneuver.TurnLeft

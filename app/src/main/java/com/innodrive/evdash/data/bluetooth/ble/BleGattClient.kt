@@ -194,7 +194,10 @@ class BleGattClient(
 
             @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
             override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) =
-                deliver(c, c.value ?: ByteArray(0))
+                // Pre-API-33 `c.value` aliases the stack-owned buffer, which the
+                // framework may overwrite with the next notification before the async
+                // SharedFlow collector (FrameDecoder) runs — copy to detach it.
+                deliver(c, (c.value ?: ByteArray(0)).copyOf())
 
             override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) onRssi(rssi)
@@ -215,7 +218,7 @@ class BleGattClient(
 
             @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
             override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) =
-                handleDeviceInfoRead(g, c, c.value ?: ByteArray(0), status)
+                handleDeviceInfoRead(g, c, (c.value ?: ByteArray(0)).copyOf(), status)
 
             override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
                 // Writes are serialized by writeMutex, so there is at most one in-flight

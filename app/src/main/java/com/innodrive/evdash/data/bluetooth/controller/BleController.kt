@@ -87,17 +87,24 @@ class BleController(private val context: Context) : BluetoothController {
                 isBonded = runCatching { r.device.bondState == BluetoothDevice.BOND_BONDED }.getOrDefault(false),
                 rssi = r.rssi
             )
-            val existing = foundByAddress[info.address]
-            foundByAddress[info.address] = if (existing != null) {
-                existing.copy(
-                    name = info.name.takeUnless { it.startsWith("Unknown") } ?: existing.name,
-                    rssi = info.rssi ?: existing.rssi,
-                    isBonded = info.isBonded
+            // onScanResult fires on a BLE binder thread while clear() runs on the
+            // main thread (adapter-off / startScan) — guard the shared map so an
+            // interleaved clear() can't ConcurrentModificationException mid-iterate.
+            val snapshot = synchronized(foundByAddress) {
+                val existing = foundByAddress[info.address]
+                foundByAddress[info.address] = if (existing != null) {
+                    existing.copy(
+                        name = info.name.takeUnless { it.startsWith("Unknown") } ?: existing.name,
+                        rssi = info.rssi ?: existing.rssi,
+                        isBonded = info.isBonded
+                    )
+                } else info
+                foundByAddress.values.sortedWith(
+                    compareByDescending<DiscoveredDevice> { it.isBonded }
+                        .thenByDescending { it.rssi ?: -127 }
                 )
-            } else info
-            _discovered.value = foundByAddress.values
-                .sortedWith(compareByDescending<DiscoveredDevice> { it.isBonded }
-                    .thenByDescending { it.rssi ?: -127 })
+            }
+            _discovered.value = snapshot
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -117,7 +124,7 @@ class BleController(private val context: Context) : BluetoothController {
                 AdapterState.ON -> refreshPaired()
                 AdapterState.OFF, AdapterState.TURNING_OFF -> {
                     stopScan()
-                    foundByAddress.clear()
+                    synchronized(foundByAddress) { foundByAddress.clear() }
                     _discovered.value = emptyList()
                     _paired.value = emptyList()
                 }
@@ -177,7 +184,7 @@ class BleController(private val context: Context) : BluetoothController {
         }
         val scanner = a.bluetoothLeScanner ?: return
         if (_isScanning.value) return
-        foundByAddress.clear()
+        synchronized(foundByAddress) { foundByAddress.clear() }
         _discovered.value = emptyList()
         // Filter on the controller's advertised service UUID (0xAF00) so the sheet
         // lists the vehicle ("EVdisplay") rather than every BLE device nearby, and so

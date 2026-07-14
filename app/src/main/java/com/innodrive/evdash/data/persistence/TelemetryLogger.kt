@@ -51,9 +51,15 @@ class TelemetryLogger(
 
     fun startRecording(tripId: Long) {
         activeTripId = tripId
-        writePos = 0
-        readPos = 0
-        count = 0
+        // Reset the ring indices under the same lock `log()`/`flush()` hold — a
+        // back-to-back stopRecording() launches its final flush() asynchronously,
+        // and an unsynchronized reset here would race that drain and corrupt
+        // readPos/count (dropped or double-emitted tail samples).
+        synchronized(buffer) {
+            writePos = 0
+            readPos = 0
+            count = 0
+        }
         startFlushLoop()
         Timber.i("Telemetry recording started for trip $tripId")
     }

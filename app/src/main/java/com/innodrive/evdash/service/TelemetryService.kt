@@ -83,6 +83,16 @@ class TelemetryService : LifecycleService() {
                 disconnect()
                 updateNotification("Disconnected")
             }
+            else -> {
+                // A sticky restart after the OS kills the process re-invokes
+                // onStartCommand with a NULL intent (and START_STICKY guarantees
+                // that). We must still promote to foreground promptly or Android
+                // 12+ throws ForegroundServiceDidNotStartInTimeException; then try
+                // to resume the last device (autoConnect stops the service itself
+                // if there's nothing saved to reconnect to).
+                startForeground(NOTIFICATION_ID, buildNotification("Reconnecting..."))
+                autoConnect()
+            }
         }
 
         return START_STICKY

@@ -194,7 +194,7 @@ class CsvExporter(
         writer.appendLine("# peak_battery_temp_c=${peakTempLabel(trip.peakBatteryTempC)}")
         writer.appendLine("# peak_controller_temp_c=${peakTempLabel(trip.peakControllerTempC)}")
         writer.appendLine("# sign_convention=current>0 discharge, current<0 regen; power = voltage*current")
-        writer.appendLine("# rpm_semantics=display proxy (speed_kmh*100), not motor electrical frequency")
+        writer.appendLine("# rpm_semantics=real motor rpm (VotolTelemetry.rpm wire field); pre-v6 rows fall back to speed_kmh*100")
         writer.appendLine("# timestamp_semantics=wall-clock epoch millis at decode (TelemetryMapper)")
         writer.appendLine("# schema=telemetry.capnp; see CLAUDE.md 'Canonical telemetry invariants'")
     }
