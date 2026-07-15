@@ -5,10 +5,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import com.innodrive.evdash.presentation.navigation.AppNavHost
+import com.innodrive.evdash.presentation.ui.common.BrandSplash
 import com.innodrive.evdash.presentation.ui.common.ProvideAppSettings
 import com.innodrive.evdash.presentation.ui.permissions.PermissionHandler
 import com.innodrive.evdash.presentation.viewmodel.RootViewModel
@@ -51,7 +63,23 @@ class MainActivity : ComponentActivity() {
             ) {
                 ProvideAppSettings(settingsFlow = rootVm.appSettings) {
                     PermissionHandler {
-                        AppNavHost()
+                        Box(Modifier.fillMaxSize()) {
+                            AppNavHost()
+
+                            // Branded overlay carrying the tagline the OS splash
+                            // can't show; fades out after a short beat.
+                            var showSplash by remember { mutableStateOf(true) }
+                            LaunchedEffect(Unit) {
+                                delay(1400)
+                                showSplash = false
+                            }
+                            AnimatedVisibility(
+                                visible = showSplash,
+                                exit = fadeOut(animationSpec = tween(500)),
+                            ) {
+                                BrandSplash()
+                            }
+                        }
                     }
                 }
             }
