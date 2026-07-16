@@ -22,7 +22,9 @@ enum class TelemetryScenario {
     /** Stationary / parked */
     PARKED,
     /** Aggressive acceleration and mode changes */
-    SPORT_MODE
+    SPORT_MODE,
+    /** Linear speed sweep 0→180→0 km/h — drives the gauge across its full scale. */
+    GAUGE_SWEEP
 }
 
 /**
@@ -40,6 +42,7 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
             TelemetryScenario.REGEN_BRAKING -> regenBraking(t, tick)
             TelemetryScenario.PARKED -> parked(tick)
             TelemetryScenario.SPORT_MODE -> sportMode(t, tick)
+            TelemetryScenario.GAUGE_SWEEP -> gaugeSweep(t)
         }
     }
 
@@ -96,6 +99,26 @@ class ScenarioGenerator(private val scenario: TelemetryScenario) {
         tempC = 25,
         mode = 0, // PARK
     )
+
+    /**
+     * Linear speed sweep for exercising the Drive gauge over its full 0..180 km/h
+     * scale: a triangle wave that ramps 0→180 then 180→0 (24 s per full cycle, ~15
+     * km/h·s). Current tracks speed so the Current/Power tiles move with it.
+     */
+    private fun gaugeSweep(t: Double): ScenarioFrame {
+        val period = 24.0
+        val phase = (t % period) / period                                  // 0..1
+        val speed = (if (phase < 0.5) 360.0 * phase else 360.0 * (1.0 - phase))
+            .coerceIn(0.0, 180.0)                                          // 0→180→0
+        return ScenarioFrame(
+            speedKmh = speed,
+            battery = 80,
+            voltageV = 72.0,
+            currentA = speed * 0.35,
+            tempC = 40,
+            mode = 3, // SPORT
+        )
+    }
 
     private fun sportMode(t: Double, tick: Long) = ScenarioFrame(
         speedKmh = (20.0 + t * 5.0).coerceAtMost(110.0) * (0.8 + 0.2 * sin(t * 0.5)),

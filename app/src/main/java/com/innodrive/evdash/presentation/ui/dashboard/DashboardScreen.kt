@@ -416,29 +416,37 @@ private fun TitledMiniMap(
 @Composable
 private fun SpeedometerSection(state: DashboardUiState) {
     val app = LocalAppSettings.current
-    // Gauge scales match the vehicle cluster: speed 0..180 km/h drives the arc,
-    // rpm 0..5000 the secondary readout. RPM is derived in TelemetryMapper (single
-    // source of truth) — the only UI math here is clamping into those ranges so
-    // the arc never overshoots and the readouts never exceed the dial.
+    // Only the arc is range-bound: speed is clamped to 0..180 km/h so the progress
+    // fraction can't overshoot the dial. Speed and rpm are real wire fields
+    // (TelemetryMapper — single source of truth); the readouts show them verbatim.
     val clampedSpeedKmh = state.speed.coerceIn(0, GAUGE_MAX_SPEED_KMH)
     val progress = clampedSpeedKmh.toFloat() / GAUGE_MAX_SPEED_KMH
-    val rpm = state.rpm.coerceIn(0, GAUGE_MAX_RPM)
+    // rpm drives only the text readout (not the arc), so show the true value rather
+    // than capping it — a clamp here would misreport a genuine over-range rpm.
+    val rpm = state.rpm.coerceAtLeast(0)
 
     // Hero = speed (honors the km/h ↔ mph preference); secondary = rpm.
     val speedDisplay = app.speedUnit.convertFromKmh(clampedSpeedKmh.toFloat()).roundToInt()
+
+    // Dial scale numbers on the major tick lines: round km/h majors (0,20,…,180)
+    // converted into the active unit so the needle reads against a real value.
+    val scaleLabels = (0..GAUGE_MAX_SPEED_KMH step GAUGE_MAJOR_STEP_KMH).map { kmh ->
+        app.speedUnit.convertFromKmh(kmh.toFloat()).roundToInt().toString()
+    }
 
     SpeedometerGauge(
         heroValue = speedDisplay,
         heroUnit = app.speedUnit.suffix.uppercase(),
         progressFraction = progress,
         secondaryText = "%,d RPM".format(rpm),
+        scaleLabels = scaleLabels,
         modifier = Modifier.fillMaxWidth()
     )
 }
 
-/** Drive-gauge full-scale ranges — mirror the physical cluster's dial limits. */
+/** Drive-gauge arc full-scale + major-tick spacing (km/h) — mirror the cluster dial. */
 private const val GAUGE_MAX_SPEED_KMH = 180
-private const val GAUGE_MAX_RPM = 5000
+private const val GAUGE_MAJOR_STEP_KMH = 20
 
 /* -------------------------------------------------------------------------- */
 /*  EV telemetry grid — real controller channels only (capnp.md).             */

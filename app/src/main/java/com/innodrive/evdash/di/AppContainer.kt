@@ -27,6 +27,7 @@ import com.innodrive.evdash.data.notification.CallControlHandler
 import com.innodrive.evdash.data.notification.BoardWifiConnector
 import com.innodrive.evdash.data.notification.CallStateRelay
 import com.innodrive.evdash.data.notification.PhoneNotificationSender
+import com.innodrive.evdash.data.notification.TimeSyncCoordinator
 import com.innodrive.evdash.data.permissions.PermissionStatusProvider
 import com.innodrive.evdash.data.preferences.AppPreferences
 import com.innodrive.evdash.data.preferences.DevicePreferences
@@ -327,6 +328,22 @@ class AppContainer(private val context: Context) {
      */
     val boardWifiConnector: BoardWifiConnector by lazy {
         BoardWifiConnector(appPreferencesRepository, phoneNotificationSender)
+    }
+
+    /**
+     * Pushes the phone's wall clock to the board on every connect + every ~5 min +
+     * on a timezone/DST change (docs/TIME-SYNC-INTEGRATION.md). The board has no RTC,
+     * so it boots to 2018 until the phone syncs it. Started once from
+     * [com.innodrive.evdash.DisplayApp.onCreate].
+     */
+    val timeSyncCoordinator: TimeSyncCoordinator by lazy {
+        TimeSyncCoordinator(
+            context = context,
+            sender = phoneNotificationSender,
+            connectionState = vehicleRepository.connectionState,
+            prefs = appPreferencesRepository,
+            scope = appScope,
+        )
     }
 
     /**

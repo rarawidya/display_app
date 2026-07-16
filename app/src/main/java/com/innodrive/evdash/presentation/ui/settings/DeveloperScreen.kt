@@ -365,6 +365,7 @@ private fun BleDeviceRow(entry: BleGattProbe.ScanEntry, onClick: () -> Unit) {
 /* -------------------------------------------------------------------------- */
 
 private val userScenarios = listOf(
+    TelemetryScenario.GAUGE_SWEEP,
     TelemetryScenario.CITY_CRUISE,
     TelemetryScenario.HIGHWAY,
     TelemetryScenario.SPORT_MODE,
@@ -374,6 +375,7 @@ private val userScenarios = listOf(
     TelemetryScenario.PARKED
 )
 private fun scenarioLabel(s: TelemetryScenario) = when (s) {
+    TelemetryScenario.GAUGE_SWEEP   -> "Gauge sweep"
     TelemetryScenario.CITY_CRUISE   -> "City cruise"
     TelemetryScenario.HIGHWAY       -> "Highway"
     TelemetryScenario.SPORT_MODE    -> "Sport"
@@ -383,6 +385,7 @@ private fun scenarioLabel(s: TelemetryScenario) = when (s) {
     TelemetryScenario.PARKED        -> "Parked"
 }
 private fun scenarioDescription(s: TelemetryScenario) = when (s) {
+    TelemetryScenario.GAUGE_SWEEP   -> "Speed sweeps 0→180→0 across the full gauge"
     TelemetryScenario.CITY_CRUISE   -> "Stop-and-go traffic patterns"
     TelemetryScenario.HIGHWAY       -> "Sustained high-speed cruise"
     TelemetryScenario.SPORT_MODE    -> "Aggressive throttle and high RPM"

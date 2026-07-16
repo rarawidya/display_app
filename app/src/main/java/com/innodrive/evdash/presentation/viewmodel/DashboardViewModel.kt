@@ -6,7 +6,7 @@ import com.innodrive.evdash.data.diagnostics.DiagnosticsRepository
 import com.innodrive.evdash.data.diagnostics.DiagnosticsSnapshot
 import com.innodrive.evdash.data.energy.EfficiencyTracker
 import com.innodrive.evdash.data.notification.PhoneNotificationSender
-import com.innodrive.evdash.data.protocol.PhoneNotificationSchema
+import com.innodrive.evdash.data.notification.TripOdometerCommands
 import com.innodrive.evdash.data.protocol.TelemetryConstants
 import com.innodrive.evdash.domain.model.BluetoothDeviceInfo
 import com.innodrive.evdash.domain.model.ConnectionState
@@ -14,7 +14,6 @@ import com.innodrive.evdash.domain.model.DeviceInfo
 import com.innodrive.evdash.domain.model.VehicleData
 import com.innodrive.evdash.domain.model.controllerTypeName
 import com.innodrive.evdash.domain.model.firmwareVersionName
-import com.innodrive.evdash.domain.repository.AppPreferencesRepository
 import com.innodrive.evdash.domain.repository.VehicleRepository
 import com.innodrive.evdash.presentation.state.DashboardUiState
 import com.innodrive.evdash.presentation.state.DiagnosticsState
@@ -44,15 +43,8 @@ class DashboardViewModel(
     private val repository: VehicleRepository,
     private val efficiencyTracker: EfficiencyTracker,
     private val diagnosticsRepository: DiagnosticsRepository,
-    private val notificationSender: PhoneNotificationSender,
-    private val appPreferences: AppPreferencesRepository
+    private val notificationSender: PhoneNotificationSender
 ) : ViewModel() {
-
-    // Trip B is app-tracked: displayed distance = odometer − baseline. The baseline
-    // is the odometer snapshot at the last Trip B reset (persisted). `lastOdometerKm`
-    // mirrors the current displayed odometer so resetTripB() can snapshot it.
-    private var tripBBaselineKm = 0f
-    private var lastOdometerKm = 0f
 
     // Latest DIS metadata (model / firmware). Read as a plain field rather than a
     // 6th combine input: it changes only on connect, and the combine re-emits on
@@ -60,9 +52,6 @@ class DashboardViewModel(
     private var deviceInfo: DeviceInfo? = null
 
     init {
-        viewModelScope.launch {
-            appPreferences.settings.collect { tripBBaselineKm = it.tripBBaselineKm }
-        }
         viewModelScope.launch {
             repository.deviceInfo.collect { deviceInfo = it }
         }
@@ -109,7 +98,6 @@ class DashboardViewModel(
         if (connectionState == ConnectionState.CONNECTED) updateSessionStats(vehicleData)
         if (connectionState == ConnectionState.DISCONNECTED) resetSession()
         updateCharging(vehicleData, connectionState)
-        lastOdometerKm = displayedOdometerKm(vehicleData)
         mapToUiState(vehicleData, connectionState, diag, efficiency, rssi)
     }.stateIn(
         scope = viewModelScope,
@@ -162,10 +150,11 @@ class DashboardViewModel(
             // across reboots); fall back to the live session distance for firmware
             // that doesn't send it yet (odometerKm == 0).
             odometer = displayedOdometerKm(data),
-            // Trip A = the vehicle's own resettable trip (tripMeters @13).
+            // Trip A / Trip B = the vehicle's own independently-resettable trip meters
+            // (tripAMeters @15 / tripBMeters @16; tripKm @13 is the legacy alias of A).
+            // Both read straight off the wire — reset via ODO_RESET_TRIP_A/_B commands.
             tripOdometer = data.tripKm,
-            // Trip B = app-tracked trip since the last local reset.
-            tripBOdometer = (displayedOdometerKm(data) - tripBBaselineKm).coerceAtLeast(0f),
+            tripBOdometer = data.tripBKm,
             vehicleMode = data.vehicleMode,
             // Warning-lamp telltales — decode the wire `flags` bitfield and
             // `faultCode` (capnp.md §3). No UI-side bit math downstream.
@@ -287,29 +276,29 @@ class DashboardViewModel(
 
     /**
      * Reset **Trip A** — the vehicle's own trip — over BLE. Sends a `PhoneNotification`
-     * control command (`category=32`, `title="ODO_RESET_TRIP"`) to `0xAF07`
-     * (capnpble.md §5b). The lifetime odometer is untouched; `tripMeters` returns to
-     * 0 on the next uplink. No-op if not connected (write returns false).
+     * control command (`category=32`, `title="ODO_RESET_TRIP_A"`) to `0xAF07`
+     * (capnpble_new.md §5b — the current per-trip title; legacy `"ODO_RESET_TRIP"` also
+     * maps to trip A board-side but is deprecated for new apps). The lifetime odometer
+     * is untouched; `tripAMeters`/`tripMeters` return to 0 on the next uplink. No-op if
+     * not connected (write returns false).
      */
     fun resetTripOdometer() {
         viewModelScope.launch {
-            notificationSender.send(
-                PhoneNotificationSchema.PhoneNotification(
-                    id = 0,
-                    category = PhoneNotificationSchema.CATEGORY_CONTROL,
-                    appName = "EVD",
-                    title = "ODO_RESET_TRIP"
-                )
-            )
+            notificationSender.send(TripOdometerCommands.resetTripA())
         }
     }
 
     /**
-     * Reset **Trip B** — the app-tracked trip — by snapshotting the current odometer
-     * as the new baseline (persisted). Trip B then reads 0 and climbs from here.
+     * Reset **Trip B** — the vehicle's own trip B — over BLE. Sends the
+     * `ODO_RESET_TRIP_B` control command (`category=32`) to `0xAF07` (capnpble_new.md
+     * §5b) so the controller zeroes `tripBMeters` (lifetime odometer untouched); the
+     * wire `tripBKm` returns to 0 on the next uplink and the tile follows it. No-op if
+     * not connected (write returns false). Symmetric with [resetTripOdometer] (Trip A).
      */
     fun resetTripB() {
-        viewModelScope.launch { appPreferences.setTripBBaselineKm(lastOdometerKm) }
+        viewModelScope.launch {
+            notificationSender.send(TripOdometerCommands.resetTripB())
+        }
     }
 
     private companion object {

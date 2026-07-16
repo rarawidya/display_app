@@ -50,6 +50,10 @@ class DisplayApp : Application() {
         // acting on the phone call. Same toggle gates it.
         appContainer.callControlHandler.start()
 
+        // The board has no RTC (boots to 2018) — push the phone's wall clock over
+        // 0xAF07 on every connect + periodically so its on-screen clock is correct.
+        appContainer.timeSyncCoordinator.start()
+
         // Run retention policy on startup, honoring the user's preference.
         appScope.launch {
             val retentionDays = appContainer.appPreferencesRepository.settings

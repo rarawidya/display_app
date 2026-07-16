@@ -11,6 +11,7 @@ import android.content.Context
 import android.os.Build
 import com.innodrive.evdash.domain.model.DeviceInfo
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,11 +45,15 @@ class BleGattClient(
 
     @Volatile private var subscribed = false
 
-    // Command-write (phone → board, 0xAF07) serialization. GATT allows one
-    // outstanding op, so a Mutex gates concurrent writeCommand() calls and the
-    // in-flight write's completion is delivered via onCharacteristicWrite.
+    // Command-write (phone → board, 0xAF07/0xAF06) serialization. GATT allows one
+    // outstanding op, so a Mutex gates concurrent writeCommand() calls. Completions
+    // are matched to writes via a **FIFO queue** rather than a single shared slot: the
+    // stack delivers exactly one onCharacteristicWrite per submitted write, in order,
+    // so onCharacteristicWrite completes the head. This prevents a late completion for
+    // a timed-out write from resolving a *later* write with the wrong status (a shared
+    // slot would cross-talk once the abandoned write's callback finally arrived).
     private val writeMutex = Mutex()
-    @Volatile private var pendingWrite: CompletableDeferred<Boolean>? = null
+    private val pendingWrites = ConcurrentLinkedQueue<CompletableDeferred<Boolean>>()
 
     /**
      * Connect to [device] over LE and subscribe to the telemetry characteristic.
@@ -221,10 +226,12 @@ class BleGattClient(
                 handleDeviceInfoRead(g, c, (c.value ?: ByteArray(0)).copyOf(), status)
 
             override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) {
-                // Writes are serialized by writeMutex, so there is at most one in-flight
-                // op; complete it for either phone→board characteristic (notification/nav).
+                // One completion per submitted write, delivered FIFO — complete the head
+                // for either phone→board characteristic (notification/nav). Polling the
+                // queue (vs. a shared slot) keeps a stale completion tied to its own
+                // write, never a later one.
                 if (c.uuid == BleConstants.RX_CHAR_UUID || c.uuid == BleConstants.NAV_CHAR_UUID) {
-                    pendingWrite?.complete(status == BluetoothGatt.GATT_SUCCESS)
+                    pendingWrites.poll()?.complete(status == BluetoothGatt.GATT_SUCCESS)
                 }
             }
         }
@@ -287,7 +294,9 @@ class BleGattClient(
         else BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         return writeMutex.withLock {
             val done = CompletableDeferred<Boolean>()
-            pendingWrite = done
+            // Enqueue before submitting so the completion (which can race in immediately)
+            // always finds its deferred at the tail.
+            pendingWrites.add(done)
             val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeCharacteristic(ch, bytes, writeType) == BluetoothStatusCodes.SUCCESS
             } else {
@@ -297,14 +306,23 @@ class BleGattClient(
                     g.writeCharacteristic(ch)
                 }
             }
-            val ok = if (started) (withTimeoutOrNull(timeoutMs) { done.await() } ?: false) else false
-            pendingWrite = null
-            ok
+            if (!started) {
+                // Never submitted → no completion is coming; drop our entry so it can't
+                // misalign a later write's completion.
+                pendingWrites.remove(done)
+                return@withLock false
+            }
+            // On timeout the deferred stays queued: its eventual (late) completion pops
+            // and resolves *it*, keeping the queue aligned for subsequent writes.
+            withTimeoutOrNull(timeoutMs) { done.await() } ?: false
         }
     }
 
     fun close() {
         subscribed = false
+        // Fail any awaiting writes immediately (no completion is coming once we close)
+        // and clear the FIFO so a stray post-close callback resolves nothing.
+        while (true) { (pendingWrites.poll() ?: break).complete(false) }
         runCatching { gatt?.disconnect() }
         runCatching { gatt?.close() }
         gatt = null
