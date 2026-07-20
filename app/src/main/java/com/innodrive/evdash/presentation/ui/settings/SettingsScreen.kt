@@ -129,9 +129,18 @@ fun SettingsScreen(
                 batteryExempt = isIgnoringBatteryOptimizations(context)
                 // Just came back from the access screen: if it's now granted, nudge
                 // the system to bind the listener (it won't always on its own after
-                // an install/update) so relaying starts without a reboot.
+                // an install/update) so relaying starts without a reboot. If access
+                // is granted but the listener is still NOT connected — the "mirrors
+                // calls but not WhatsApp messages" case the firmware audit isolated
+                // to a dead listener (docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md) —
+                // escalate to the component-cycle force-rebind, which recovers a
+                // binding that `requestRebind` alone can't after an app update.
                 if (notificationAccess) {
-                    NotificationRelayService.requestRebindIfGranted(context)
+                    if (NotificationRelayService.isConnected) {
+                        NotificationRelayService.requestRebindIfGranted(context)
+                    } else {
+                        NotificationRelayService.forceRebind(context)
+                    }
                 }
             }
         }

@@ -15,6 +15,14 @@ class DisplayApp : Application() {
     lateinit var appContainer: AppContainer
         private set
 
+    private companion object {
+        // Grace period for the system to bind the notification listener via the
+        // lightweight requestRebind before we escalate to the component-cycle
+        // force-rebind. Long enough to avoid churning a binding that's simply
+        // mid-connect at cold start.
+        const val REBIND_ESCALATE_DELAY_MS = 5_000L
+    }
+
     // Without an explicit handler, an uncaught throwable in any appScope.launch
     // (e.g. DataStore IOException, DB locked during cold start) propagates to
     // Thread.defaultUncaughtExceptionHandler and crashes the process before
@@ -41,6 +49,19 @@ class DisplayApp : Application() {
         // install/update (it can stay dead until a reboot or an access toggle),
         // so ask it to rebind at cold start when access is already granted.
         com.innodrive.evdash.service.NotificationRelayService.requestRebindIfGranted(this)
+        // The light requestRebind above often fails to take after an app *update*
+        // — the listener stays unbound and real notifications never reach it, even
+        // though access is still granted (the firmware audit isolated exactly this
+        // "cellular calls mirror, WhatsApp/Telegram messages don't" symptom to a
+        // dead listener — docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md). Give it a
+        // few seconds to bind; if it still hasn't, escalate to the component-cycle
+        // force-rebind that recovers the binding. No-op when access isn't granted.
+        appScope.launch {
+            kotlinx.coroutines.delay(REBIND_ESCALATE_DELAY_MS)
+            if (!com.innodrive.evdash.service.NotificationRelayService.isConnected) {
+                com.innodrive.evdash.service.NotificationRelayService.forceRebind(this@DisplayApp)
+            }
+        }
 
         // Calls don't arrive through the notification listener — the telephony
         // relay follows the same "Mirror to vehicle display" toggle.

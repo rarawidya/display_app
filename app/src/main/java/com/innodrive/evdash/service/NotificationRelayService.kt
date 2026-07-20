@@ -2,6 +2,7 @@ package com.innodrive.evdash.service
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationManagerCompat
@@ -107,15 +108,18 @@ class NotificationRelayService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        isConnected = true
         Timber.tag(TAG).i("onListenerConnected — system bound the notification listener")
     }
 
     override fun onListenerDisconnected() {
+        isConnected = false
         Timber.tag(TAG).w("onListenerDisconnected — listener unbound; no notifications will relay")
         super.onListenerDisconnected()
     }
 
     override fun onDestroy() {
+        isConnected = false
         events.close()
         scope.cancel()
         super.onDestroy()
@@ -166,6 +170,17 @@ class NotificationRelayService : NotificationListenerService() {
         private const val TAG = "NotifRelay"
 
         /**
+         * True while the system has this listener bound (between
+         * [onListenerConnected] and [onListenerDisconnected]/[onDestroy]). Read by
+         * the UI to decide whether the lightweight [requestRebindIfGranted] is
+         * enough or the heavier [forceRebind] is warranted, and to surface a
+         * "granted but not connected" state to the user.
+         */
+        @Volatile
+        var isConnected: Boolean = false
+            private set
+
+        /**
          * Nudge the system to (re)bind this listener when the user has granted
          * "Notification access" but the service isn't currently connected.
          *
@@ -184,6 +199,48 @@ class NotificationRelayService : NotificationListenerService() {
             runCatching {
                 requestRebind(ComponentName(context, NotificationRelayService::class.java))
             }.onFailure { Timber.tag(TAG).w(it, "requestRebind failed") }
+        }
+
+        /**
+         * Force the framework to rebind the listener by cycling the component's
+         * enabled state, then asking for a rebind.
+         *
+         * [requestRebind] alone is unreliable after an app **update** — the OS can
+         * leave the listener permanently unbound until a reboot or a manual access
+         * off/on, so real notifications never reach [onNotificationPosted] even
+         * though access is still granted (the exact "telephony call mirrors but
+         * WhatsApp/Telegram messages don't" symptom the firmware audit isolated to
+         * a silent listener path — docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md).
+         * Toggling the component `DISABLED → ENABLED` with `DONT_KILL_APP` makes
+         * `NotificationManagerService` re-evaluate its listeners and rebind ours;
+         * the grant (stored as the enabled-listeners setting string) survives the
+         * cycle. The re-enable is issued synchronously in the same call so the
+         * component is never left disabled.
+         *
+         * Only meaningful when access is granted; a no-op otherwise. Call this from
+         * the "granted but [isConnected] == false" path so a healthy binding is
+         * never churned.
+         */
+        fun forceRebind(context: Context) {
+            val component = ComponentName(context, NotificationRelayService::class.java)
+            val granted = NotificationManagerCompat.getEnabledListenerPackages(context)
+                .contains(context.packageName)
+            if (!granted) return
+            runCatching {
+                val pm = context.packageManager
+                pm.setComponentEnabledSetting(
+                    component,
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    component,
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+                requestRebind(component)
+                Timber.tag(TAG).i("forceRebind — cycled component enabled state to rebind listener")
+            }.onFailure { Timber.tag(TAG).w(it, "forceRebind failed") }
         }
     }
 }

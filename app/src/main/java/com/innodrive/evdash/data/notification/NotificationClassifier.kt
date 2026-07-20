@@ -2,6 +2,7 @@ package com.innodrive.evdash.data.notification
 
 import android.app.Notification
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationCompat
 import com.innodrive.evdash.data.protocol.PhoneNotificationSchema
 import com.innodrive.evdash.data.protocol.PhoneNotificationSchema.PhoneNotification
 
@@ -53,9 +54,8 @@ object NotificationClassifier {
      */
     fun classify(sbn: StatusBarNotification): PhoneNotification? {
         val n = sbn.notification ?: return null
-        val extras = n.extras
-        val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
-        val body = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val title = extractTitle(n)
+        val body = extractBody(n)
 
         val pkg = sbn.packageName.orEmpty()
         val isCall = isCall(sbn)
@@ -154,4 +154,56 @@ object NotificationClassifier {
      * same alert reuses it (§4 correlation). Falls back to the numeric id pre-key.
      */
     fun stableId(sbn: StatusBarNotification): Int = sbn.key?.hashCode() ?: sbn.id
+
+    /**
+     * Resolve the banner title, tolerating notification styles that leave
+     * [Notification.EXTRA_TITLE] blank. WhatsApp/Telegram/modern SMS apps use
+     * `MessagingStyle`, whose sender/conversation lives in
+     * [Notification.EXTRA_CONVERSATION_TITLE]; without this fallback a real message
+     * can arrive with an empty title+body and get dropped as "content-less" (the
+     * empty-content filter in [classify]) even though the listener fired.
+     */
+    private fun extractTitle(n: Notification): String {
+        val extras = n.extras ?: return ""
+        return firstNonBlank(
+            extras.getCharSequence(Notification.EXTRA_TITLE),
+            extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE),
+            extras.getCharSequence(Notification.EXTRA_TITLE_BIG)
+        )
+    }
+
+    /**
+     * Resolve the banner body across the common notification styles, in order of
+     * how specific they are: plain text → BigText → the last InboxStyle line → the
+     * latest MessagingStyle message → sub-text. Guards the "listener fires but the
+     * frame is empty → dropped" path for apps that don't populate
+     * [Notification.EXTRA_TEXT] (many MessagingStyle implementations).
+     */
+    private fun extractBody(n: Notification): String {
+        val extras = n.extras ?: return ""
+        val direct = firstNonBlank(
+            extras.getCharSequence(Notification.EXTRA_TEXT),
+            extras.getCharSequence(Notification.EXTRA_BIG_TEXT)
+        )
+        if (direct.isNotBlank()) return direct
+
+        // InboxStyle: use the most recent line.
+        extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+            ?.lastOrNull { !it.isNullOrBlank() }
+            ?.let { return it.toString() }
+
+        // MessagingStyle: the latest message's text (androidx parses the parcelables).
+        runCatching {
+            NotificationCompat.MessagingStyle
+                .extractMessagingStyleFromNotification(n)
+                ?.messages
+                ?.lastOrNull { !it.text.isNullOrBlank() }
+                ?.text
+        }.getOrNull()?.let { return it.toString() }
+
+        return extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString().orEmpty()
+    }
+
+    private fun firstNonBlank(vararg candidates: CharSequence?): String =
+        candidates.firstOrNull { !it.isNullOrBlank() }?.toString().orEmpty()
 }
