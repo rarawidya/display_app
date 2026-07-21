@@ -318,7 +318,7 @@ class AppContainer(private val context: Context) {
      * reads it via the app container.
      */
     val phoneNotificationSender: PhoneNotificationSender by lazy {
-        PhoneNotificationSender(bluetoothDataSource, diagnosticsRepository)
+        PhoneNotificationSender(bluetoothDataSource, diagnosticsRepository, appScope)
     }
 
     /**
