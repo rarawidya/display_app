@@ -52,7 +52,12 @@ class BleDataSource(private val context: Context) : BluetoothDataSource {
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
     private val scanner = BleServiceScanner(bluetoothAdapter)
 
-    private var gattClient: BleGattClient? = null
+    // @Volatile: assigned on the connection coroutine (doConnect/handleConnectionLost)
+    // but read by writeCommand/writeNav from caller threads (NotificationRelayService,
+    // CallStateRelay, TimeSyncCoordinator, RouteNavigator). Without it a writer can see
+    // a stale (just-closed) or missing (just-reconnected) client right at a reconnect
+    // boundary and silently drop the frame.
+    @Volatile private var gattClient: BleGattClient? = null
     private var connectionJob: Job? = null
     private val reconnectPolicy = ReconnectPolicy()
 

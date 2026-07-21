@@ -41,9 +41,19 @@ class BleGattClient(
     /** Device Information Service read result (model / firmware), once per connect. */
     private val onDeviceInfo: (DeviceInfo) -> Unit = {}
 ) {
-    private var gatt: BluetoothGatt? = null
+    // @Volatile: written on the connection path (connect/close) and read by
+    // writeCommand from several caller coroutines; pairs with the volatile
+    // `subscribed` so a write racing a concurrent close never reads a torn/stale gatt.
+    @Volatile private var gatt: BluetoothGatt? = null
 
     @Volatile private var subscribed = false
+
+    // Negotiated ATT MTU, set from a successful onMtuChanged; -1 = unknown (never
+    // reported, so we don't enforce a size ceiling and behave as before). When known,
+    // writeCommand rejects a frame that can't fit one ATT write (MTU-3 payload) — the
+    // board does no reassembly, so an over-MTU frame would only be truncated and fail
+    // its CRC. A low MTU is why short messages relay but long ones silently don't.
+    @Volatile private var negotiatedMtu = -1
 
     // Command-write (phone → board, 0xAF07/0xAF06) serialization. GATT allows one
     // outstanding op, so a Mutex gates concurrent writeCommand() calls. Completions
@@ -127,7 +137,16 @@ class BleGattClient(
             }
 
             override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-                Timber.d("BLE MTU=$mtu (status=$status)")
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    negotiatedMtu = mtu
+                    if (mtu < BleConstants.PREFERRED_MTU) {
+                        Timber.w("BLE MTU granted $mtu < requested ${BleConstants.PREFERRED_MTU} — large notification frames may not fit one write")
+                    } else {
+                        Timber.d("BLE MTU=$mtu")
+                    }
+                } else {
+                    Timber.w("BLE MTU negotiation failed (status=$status) — link keeps prior MTU")
+                }
                 g.discoverServices()
             }
 
@@ -285,6 +304,14 @@ class BleGattClient(
     ): Boolean {
         val g = gatt ?: return false
         if (!subscribed) return false
+        // If we know the MTU and the frame can't fit one ATT write (MTU-3 payload),
+        // fail fast: the board doesn't reassemble, so sending it would only truncate
+        // and fail CRC — and stall the write mutex on a doomed op. Skip the check when
+        // the MTU is unknown (-1) so stacks that never report one behave as before.
+        if (negotiatedMtu > 0 && bytes.size > negotiatedMtu - 3) {
+            Timber.w("BLE: frame ${bytes.size} B exceeds MTU-3 (${negotiatedMtu - 3} B) — not sending")
+            return false
+        }
         val ch = g.getService(BleConstants.SERVICE_UUID)?.getCharacteristic(characteristic)
         if (ch == null) {
             Timber.w("BLE: characteristic $characteristic not found — cannot push")

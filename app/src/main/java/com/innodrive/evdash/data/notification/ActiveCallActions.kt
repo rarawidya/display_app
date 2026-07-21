@@ -18,20 +18,26 @@ object ActiveCallActions {
     // stale (removal callbacks are best-effort) and refuse to fire.
     private const val TTL_MS = 60_000L
 
-    @Volatile private var actions: CallActions? = null
-    @Volatile private var sourceKey: String? = null
-    @Volatile private var stampMs: Long = 0L
+    /**
+     * Immutable snapshot of the current call. `set()` runs on the binder thread
+     * (notification posted/removed) while `current()` runs on the `0xAF05`
+     * control-frame collector coroutine — reading `actions`, `sourceKey`, and
+     * `stampMs` as three separate `@Volatile` fields let a reader pair a fresh
+     * `actions` with a stale `stampMs` and false-expire a live call action (board
+     * Answer/End then no-ops right when it matters). Keeping all three in one
+     * `@Volatile` reference publishes them atomically, so a reader always sees a
+     * consistent triple.
+     */
+    private data class Snapshot(val actions: CallActions, val sourceKey: String?, val stampMs: Long)
+
+    @Volatile private var snapshot: Snapshot? = null
 
     fun set(a: CallActions, key: String?) {
-        actions = a
-        sourceKey = key
-        stampMs = SystemClock.elapsedRealtime()
+        snapshot = Snapshot(a, key, SystemClock.elapsedRealtime())
     }
 
     fun clear() {
-        actions = null
-        sourceKey = null
-        stampMs = 0L
+        snapshot = null
     }
 
     /**
@@ -40,16 +46,17 @@ object ActiveCallActions {
      * superseded ring banner must not wipe the active call's captured hang-up.
      */
     fun clearIfSource(key: String?) {
-        if (key != null && key == sourceKey) clear()
+        val s = snapshot ?: return
+        if (key != null && key == s.sourceKey) clear()
     }
 
     /** The current call actions if still fresh, else null (and cleared). */
     fun current(): CallActions? {
-        val a = actions ?: return null
-        if (SystemClock.elapsedRealtime() - stampMs > TTL_MS) {
+        val s = snapshot ?: return null
+        if (SystemClock.elapsedRealtime() - s.stampMs > TTL_MS) {
             clear()
             return null
         }
-        return a
+        return s.actions
     }
 }

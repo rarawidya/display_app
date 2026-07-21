@@ -18,7 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -63,12 +64,25 @@ class NotificationRelayService : NotificationListenerService() {
     // banner even when it belongs to a different notification).
     private val ongoingIds = mutableSetOf<Int>()
 
+    // Cached "Mirror to vehicle display" toggle. Reading `prefs.settings.first()` per
+    // event hit the disk on every notification and, on any transient DataStore read
+    // error, fell back to `false` and silently dropped that one event. A single
+    // resilient collector keeps the last known value, so an occasional read failure
+    // no longer costs a message.
+    @Volatile private var relayEnabledFlag = false
+
     override fun onCreate() {
         super.onCreate()
         val container = (application as DisplayApp).appContainer
         sender = container.phoneNotificationSender
         prefs = container.appPreferencesRepository
         ownPackage = packageName
+        scope.launch {
+            prefs.settings
+                .map { it.notificationRelayEnabled }
+                .catch { Timber.tag(TAG).w(it, "relay-toggle read failed — keeping last known") }
+                .collect { relayEnabledFlag = it }
+        }
         scope.launch {
             // Some OEMs (observed on Samsung/OneUI) deliver the same listener
             // callback twice back-to-back; the frames come out byte-identical
@@ -114,7 +128,14 @@ class NotificationRelayService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         isConnected = false
-        Timber.tag(TAG).w("onListenerDisconnected — listener unbound; no notifications will relay")
+        Timber.tag(TAG).w("onListenerDisconnected — listener unbound; requesting rebind")
+        // Self-heal: aggressive OEMs (Xiaomi/MIUI) and Doze silently unbind the
+        // listener mid-session, after which onNotificationPosted never fires again and
+        // nothing recovers it until the app is cold-started. requestRebind is the
+        // framework's documented recovery for exactly this callback — a no-op if
+        // access was actually revoked. Without it, "worked earlier, dead now" is the
+        // rule on MIUI (docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md).
+        requestRebindIfGranted(this)
         super.onListenerDisconnected()
     }
 
@@ -163,8 +184,7 @@ class NotificationRelayService : NotificationListenerService() {
         }
     }
 
-    private suspend fun relayEnabled(): Boolean =
-        runCatching { prefs.settings.first().notificationRelayEnabled }.getOrDefault(false)
+    private fun relayEnabled(): Boolean = relayEnabledFlag
 
     companion object {
         private const val TAG = "NotifRelay"

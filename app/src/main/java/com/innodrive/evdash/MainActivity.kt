@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
+import com.innodrive.evdash.service.NotificationRelayService
 import com.innodrive.evdash.presentation.navigation.AppNavHost
 import com.innodrive.evdash.presentation.ui.common.BrandSplash
 import com.innodrive.evdash.presentation.ui.common.ProvideAppSettings
@@ -40,6 +41,20 @@ import com.innodrive.evdash.ui.theme.DisplayAppTheme
  * whole UI tree without threading prefs through every per-screen ViewModel.
  */
 class MainActivity : ComponentActivity() {
+
+    override fun onResume() {
+        super.onResume()
+        // Recover a notification listener that an aggressive OEM (Xiaomi/MIUI) or Doze
+        // unbound while the app was backgrounded: nudge a rebind whenever the user
+        // brings the app forward, and escalate to the heavier component-cycle when the
+        // service reports it's still not connected. No-op if access isn't granted or
+        // the listener is already healthy (docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md).
+        NotificationRelayService.requestRebindIfGranted(this)
+        if (!NotificationRelayService.isConnected) {
+            NotificationRelayService.forceRebind(this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Must be called before super.onCreate so the splash theme is swapped to
         // the post-splash theme (Theme.DisplayApp) before the window is drawn.
