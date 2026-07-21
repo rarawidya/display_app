@@ -80,10 +80,7 @@ object NotificationClassifier {
             else            -> return null
         }
 
-        var flags = 0
-        if (isCall && isOngoing) {
-            flags = flags or PhoneNotificationSchema.FLAG_ONGOING
-        }
+        val flags = callFlags(isCall, isOngoing, pkg)
 
         // The board filters empty-content frames — guarantee both lines.
         val safeTitle = title.ifBlank { if (isCall) "Call" else appName }
@@ -98,6 +95,28 @@ object NotificationClassifier {
             title = safeTitle,
             body = safeBody
         )
+    }
+
+    /**
+     * The `flags` byte for a classified banner. Pure so the wire-contract rules are
+     * unit-testable without an Android [StatusBarNotification]:
+     * - [PhoneNotificationSchema.FLAG_ONGOING] for a persistent (active/incoming) call
+     *   banner the board must not auto-expire;
+     * - [PhoneNotificationSchema.FLAG_VOIP] when the call came through the notification
+     *   listener from a messaging app (WhatsApp/Telegram) — a third-party VoIP call the
+     *   board can display but Android can't answer programmatically (docs
+     *   NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md §6), so the board hides the Answer button.
+     *   Native cellular calls arrive via `CallStateRelay`/telephony or a dialer package
+     *   and stay answerable, so they are never flagged VoIP.
+     *
+     * Non-call notifications carry no flags.
+     */
+    internal fun callFlags(isCall: Boolean, isOngoing: Boolean, pkg: String): Int {
+        if (!isCall) return 0
+        var flags = 0
+        if (isOngoing) flags = flags or PhoneNotificationSchema.FLAG_ONGOING
+        if (pkg in WHATSAPP || pkg in TELEGRAM) flags = flags or PhoneNotificationSchema.FLAG_VOIP
+        return flags
     }
 
     /**

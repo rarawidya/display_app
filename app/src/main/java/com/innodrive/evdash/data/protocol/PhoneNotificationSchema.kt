@@ -50,6 +50,12 @@ object PhoneNotificationSchema {
     const val FLAG_ONGOING = 0x01   // persistent (active/incoming call); send a removed/clear when it ends
     const val FLAG_REMOVED = 0x02   // dismiss — collapses the currently-shown banner
     const val FLAG_SILENT = 0x04    // parsed by the board, not yet visually differentiated
+    // Third-party VoIP call (WhatsApp/Telegram), NOT a native cellular call. Android
+    // exposes no public API to accept another app's VoIP call, so such calls are
+    // display-only — the board suppresses the Answer button for a frame with this bit
+    // set (docs/NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md §6). Back-compat: a board that
+    // predates the bit ignores it and keeps showing Answer (which acts as dismiss).
+    const val FLAG_VOIP = 0x08
 
     /** `category` values (§3). */
     const val CATEGORY_OTHER = 0
