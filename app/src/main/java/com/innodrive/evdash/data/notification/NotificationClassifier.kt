@@ -80,7 +80,12 @@ object NotificationClassifier {
             else            -> return null
         }
 
-        val flags = callFlags(isCall, isOngoing, pkg)
+        // Can this call actually be answered from the display? Native cellular calls
+        // go through TelecomManager; a VoIP call can only be answered by firing its
+        // notification's own Answer PendingIntent, so it's answerable iff that action
+        // exists (Telegram exposes one; WhatsApp typically does not).
+        val hasAnswerAction = isCall && CallNotificationActions.extract(n, pkg)?.answer != null
+        val flags = callFlags(isCall, isOngoing, pkg, hasAnswerAction)
 
         // The board filters empty-content frames — guarantee both lines.
         val safeTitle = title.ifBlank { if (isCall) "Call" else appName }
@@ -102,20 +107,29 @@ object NotificationClassifier {
      * unit-testable without an Android [StatusBarNotification]:
      * - [PhoneNotificationSchema.FLAG_ONGOING] for a persistent (active/incoming) call
      *   banner the board must not auto-expire;
-     * - [PhoneNotificationSchema.FLAG_VOIP] when the call came through the notification
-     *   listener from a messaging app (WhatsApp/Telegram) — a third-party VoIP call the
-     *   board can display but Android can't answer programmatically (docs
-     *   NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md §6), so the board hides the Answer button.
+     * - [PhoneNotificationSchema.FLAG_VOIP] marks a **display-only** call the board
+     *   can't answer, so it hides the Answer button (docs
+     *   NOTIFICATION-DISPLAY-DEBUG-RESPONSE.md §6). Set it only for a **VoIP** call
+     *   (from a messaging app) that exposes **no** Answer action ([hasAnswerAction]
+     *   false) — e.g. WhatsApp, which Android can't accept programmatically. A VoIP
+     *   call that DOES expose an Answer action (Telegram) stays answerable via its own
+     *   notification intent, so it is left unflagged and the board keeps Answer.
      *   Native cellular calls arrive via `CallStateRelay`/telephony or a dialer package
-     *   and stay answerable, so they are never flagged VoIP.
+     *   and are answerable through `TelecomManager`, so they are never flagged.
      *
      * Non-call notifications carry no flags.
      */
-    internal fun callFlags(isCall: Boolean, isOngoing: Boolean, pkg: String): Int {
+    internal fun callFlags(
+        isCall: Boolean,
+        isOngoing: Boolean,
+        pkg: String,
+        hasAnswerAction: Boolean
+    ): Int {
         if (!isCall) return 0
         var flags = 0
         if (isOngoing) flags = flags or PhoneNotificationSchema.FLAG_ONGOING
-        if (pkg in WHATSAPP || pkg in TELEGRAM) flags = flags or PhoneNotificationSchema.FLAG_VOIP
+        val isVoip = pkg in WHATSAPP || pkg in TELEGRAM
+        if (isVoip && !hasAnswerAction) flags = flags or PhoneNotificationSchema.FLAG_VOIP
         return flags
     }
 
