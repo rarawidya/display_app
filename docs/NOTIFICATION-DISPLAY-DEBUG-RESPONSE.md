@@ -46,19 +46,17 @@ CallControl `action` codes (`0xAF05`, per `CALL-CONTROL-INTEGRATION.md` §4): **
 `2` hangUp** (`TelecomManager.endCall` ends a ringing *or* active call). `3` is
 board-local only (clears the banner, no phone-side action).
 
-| Action from dashboard | Frame | Native cellular call | WhatsApp / Business (VoIP) call |
+| Action from dashboard | Frame | Native cellular call | WhatsApp / Telegram (VoIP) call |
 |---|---|---|---|
-| Show incoming-call banner | (inbound `0xAF07` `cat=1`) | ✅ | ✅ display only |
-| **Answer / Accept** | `action=1` (`acceptRingingCall`, Android 8.0+, needs `ANSWER_PHONE_CALLS`) | ✅ verified | ❌ no 3rd-party VoIP answer API |
-| **Reject / Decline** | `action=2` hangUp (`endCall`, Android 9+) | ✅ verified | ❌ dismiss only |
-| **End / Hang-up** | `action=2` hangUp | ✅ verified | ❌ dismiss only |
+| Show incoming-call banner | (inbound `0xAF07` `cat=1`) | ✅ | ✅ |
+| **Answer / Accept** | `action=1` | ✅ verified | ❌ **`acceptRingingCall()` does NOT work on self-managed VoIP calls** — see fix below |
+| **Reject / Decline** | `action=2` hangUp | ✅ verified | ✅ **works** (`endCall` terminates the ringing VoIP call → missed call) |
+| **End / Hang-up** | `action=2` hangUp | ✅ verified | ✅ **works** (verified 2026-07-21 — Telegram call ended via board hang-up) |
 | Dismiss banner (local) | `action=3` | ✅ (no phone action) | ✅ (no phone action) |
-| Auto ring → in-call → ended updates | inbound `0xAF07` | ✅ same banner, latest-wins by id | banner only |
+| Auto ring → in-call → ended updates | inbound `0xAF07` | ✅ same banner, latest-wins by id | partial (see §6.1) |
 
-Board note: answer / hang-up(=reject) / dismiss are already implemented and **verified
-end-to-end this session** for a native dialer call — the board emits the `0xAF05`
-CallControl frame (`x3`, same seq); your `CallStateRelay` executes it via `TelecomManager`.
-VoIP-call actions are a **platform limitation**, not a board or app bug (§6).
+Live-verified 2026-07-21: **End/Reject work for VoIP calls; Accept does not** — full trace,
+root cause, and the app-side fix are in **§6**.
 
 ---
 
@@ -208,31 +206,55 @@ it. (`custom.c:749`, `:1310`.)
 
 ---
 
-## 6. "Can't accept the call" — native vs VoIP (platform limitation)
+## 6. Call Accept vs End — VoIP asymmetry (live-verified 2026-07-21)
 
-Answering a call **from the dashboard** works for one call type only:
+**End/Reject work for VoIP calls; Accept does not.** This was reproduced on the live board.
 
-| Call type | Arrives on phone as | Board can display? | Board can **answer**? |
-|---|---|---|---|
-| Native cellular (dialer) | Telephony (`CallStateRelay`) | ✅ yes | ✅ **yes** — verified: board→app `CallControl action=answer` on `0xAF05`, app answers via `TelephonyManager`/`InCallService` |
-| **WhatsApp / WhatsApp Business call (VoIP)** | Notification (NotificationListener) | ✅ yes (banner) | ❌ **no** |
+### 6.1 The clean single-call trace
 
-**Why WhatsApp calls can't be answered programmatically:** a WhatsApp voice/video call is
-delivered as a (full-screen) notification, and **Android exposes no public API for a
-third-party app to accept another app's VoIP call.** The relay can *show* the incoming
-banner, but the dashboard Answer button has nothing to invoke — at best you could fire the
-notification's full-screen answer `PendingIntent`, which is unreliable and version-fragile;
-we don't recommend shipping it.
+Telegram VoIP call (surfaced by your relay as `app="Phone"`):
 
-**Product consequence:** WhatsApp/Business calls are **display-only**; only **native
-cellular** calls are answerable from the display. For a VoIP call banner the board's
-Answer/Reject act as **dismiss** only.
+```
+DOWNLINK notif cat=1 "Incoming call"          <- ring
+CALL UPLINK action=answer(1) id=4038724133    <- rider tapped Accept
+DOWNLINK notif cat=1 "Panggilan masuk"        <- STILL RINGING: accept did not connect ❌
+CALL UPLINK action=hangup(2) id=4038724133    <- rider tapped End
+DOWNLINK notif (Telegram) "Panggilan Tak Terjawab" (missed)  <- call terminated: END WORKED ✅
+```
 
-### Optional: let the board hide the Answer button for VoIP calls
-Today both call types send `category=1`. If you set a **flag bit** on VoIP-originated call
-frames (e.g. reserved `flags` `bit3 = VOIP`), the board can suppress the Answer button for
-calls it can't actually connect. Back-compatible (old board ignores the bit). Say the word
-and we'll wire it.
+### 6.2 Root cause — Android, not the board
+
+**The asymmetry is the diagnosis.** Because **End works**, `ANSWER_PHONE_CALLS` is granted,
+your app **is** receiving and executing our `0xAF05` frames, and transport is fine — so the
+Answer failure is neither permission, nor transport, nor board. It is Android-specific:
+
+- `TelecomManager.endCall()` (our `hangUp`, `action=2`) **can** terminate a self-managed
+  `ConnectionService` (VoIP) call → **End/Reject work** for WhatsApp/Telegram.
+- `TelecomManager.acceptRingingCall()` (our `answer`, `action=1`) **does not** answer
+  self-managed VoIP calls — only the owning app or the default in-call UI may pick those up →
+  **Accept no-ops and the call keeps ringing.**
+
+(Native cellular calls: both Answer and End work — verified earlier this session.)
+
+### 6.3 Fix — app side (Answer path for VoIP)
+
+On `0xAF05 action=answer`, branch by call type:
+- **Native cellular call** → keep `TelecomManager.acceptRingingCall()` (works, verified).
+- **VoIP call (WhatsApp/Telegram)** → do **not** call `acceptRingingCall()`. Instead fire the
+  **"Answer" action `PendingIntent`** extracted from the incoming-call `StatusBarNotification`
+  (the same intent the phone's own Answer button triggers). That is the only reliable way to
+  accept a VoIP call from an external control. End/Reject can stay on `endCall()` (works).
+
+### 6.4 Two frame-flag issues we see on the wire (app side)
+
+1. **Ringing VoIP calls are sent as `flags=0x08` (bit3 only) — the `ongoing` bit0 is not
+   set.** The board decodes only bits 0/1/2 (`ongoing`/`removed`/`silent`); bit3 is currently
+   ignored. A ringing/active call should set **`ongoing` (bit0)**, i.e. send **`flags=0x09`**
+   (ongoing | your voip bit), not `0x08`. Today the ring still shows (via `category==1`), but
+   `ongoing` should be set for correctness/persistence.
+2. If you want the board to **hide the Answer button** for un-answerable VoIP calls until
+   §6.3 lands, keep setting bit3 and tell us — we'll gate the Answer button on `flags & 0x08`
+   (leaving End/Reject). Back-compatible (old board ignores the bit).
 
 ---
 
@@ -242,8 +264,9 @@ and we'll wire it.
 - Notifications now flow after the app-side preconditions were fixed.
 - **Remaining, both app/platform-side:**
   1. **Add `com.whatsapp` to the allow-list** (only Business `com.whatsapp.w4b` gets through today) → `category=3`, `appName="WhatsApp"`. Confirm regular WhatsApp then relays.
-  2. **WhatsApp calls are display-only** — no programmatic answer; only native cellular calls can be answered from the dashboard.
-- **Open questions back to you:** (a) hide the Answer button for VoIP call banners (needs the §6 flag bit), or leave it as dismiss? (b) one shared WhatsApp identity, or a separate "WhatsApp Business" icon?
+  2. **VoIP call Accept is broken; End/Reject work** (live-verified §6). Fix: for VoIP calls, answer via the notification's Answer-action `PendingIntent`, not `acceptRingingCall()` (§6.3).
+  3. **Set `ongoing` (bit0) on ringing calls** → `flags=0x09`, not `0x08` (§6.4).
+- **Open questions back to you:** (a) shall we hide the Answer button for VoIP calls (`flags & 0x08`) until §6.3 lands? (b) one shared WhatsApp identity, or a separate "WhatsApp Business" icon?
 
 ### Board source paths (for your byte-verification)
 - `EVDISPLAY/ble-gatt/ble-gatt-server.c` — `crc16_ccitt` `:199`, downlink parse/CRC/decode/route `:718-752`, IPC writer `:327`, RX char props `:1090`
