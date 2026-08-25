@@ -429,7 +429,7 @@ private fun SpeedometerSection(state: DashboardUiState) {
     val speedDisplay = app.speedUnit.convertFromKmh(clampedSpeedKmh.toFloat()).roundToInt()
 
     // Dial scale numbers on the major tick lines: round km/h majors (0,20,…,180)
-    // converted into the active unit so the needle reads against a real value.
+    // converted into the active unit so the arc tip reads against a real value.
     val scaleLabels = (0..GAUGE_MAX_SPEED_KMH step GAUGE_MAJOR_STEP_KMH).map { kmh ->
         app.speedUnit.convertFromKmh(kmh.toFloat()).roundToInt().toString()
     }

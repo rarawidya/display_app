@@ -67,8 +67,8 @@ fun SpeedometerGauge(
     scaleLabels: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
-    // Critically damped: the needle tracks the value smoothly but never overshoots
-    // or lags — the pointer stays truthful to the readout during acceleration.
+    // Critically damped: the arc tracks the value smoothly but never overshoots
+    // or lags — the sweep stays truthful to the readout during acceleration.
     val animatedFraction by animateFloatAsState(
         targetValue = progressFraction.coerceIn(0f, 1f),
         animationSpec = spring(
@@ -89,9 +89,6 @@ fun SpeedometerGauge(
     )
     val numberColor = MaterialTheme.colorScheme.onSurface
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val needleColor = MaterialTheme.colorScheme.onSurface
-    // Pivot hub follows the active theme (light/dark) rather than a fixed accent.
-    val hubColor = MaterialTheme.colorScheme.primary
     // Progress arc: a fixed blue→purple→red gradation — blue at the low end, through
     // purple mid-scale, to red at full scale. Fixed colors (not theme roles) so the
     // blue→red meaning is stable across light/dark themes.
@@ -136,7 +133,7 @@ fun SpeedometerGauge(
 
             // 2) Tick marks + scale numbers. When scaleLabels is provided, the major
             // ticks land exactly on the labeled values (evenly start→end) with 4 minor
-            // ticks between each; the number is drawn on the major line so the needle
+            // ticks between each; the number is drawn on the major line so the arc tip
             // reads against a real value. Otherwise plain decorative ticks (40, major/5).
             val tickInner = outerRadius - strokeWidth * 1.45f
             val tickOuter = outerRadius - strokeWidth * 0.6f
@@ -209,32 +206,7 @@ fun SpeedometerGauge(
                 }
             }
 
-            // 4) Needle — points at the EXACT value angle (same fraction as the
-            // arc), a tapered blade from a center hub to just inside the ticks.
-            // Drawn last so it rides on top of the fill; the central readout
-            // (Column below) still layers over the hub.
-            val needleAngle = startAngle + sweepAngle * animatedFraction
-            val nRad = Math.toRadians(needleAngle.toDouble())
-            val dx = cos(nRad).toFloat()
-            val dy = sin(nRad).toFloat()
-            val px = -dy // unit vector perpendicular to the needle
-            val py = dx
-            val needleLen = outerRadius - strokeWidth * 0.9f
-            val tailLen = outerRadius * 0.12f
-            val halfBase = strokeWidth * 0.13f
-            val needlePath = Path().apply {
-                moveTo(center.x + px * halfBase, center.y + py * halfBase)
-                lineTo(center.x + dx * needleLen, center.y + dy * needleLen) // tip
-                lineTo(center.x - px * halfBase, center.y - py * halfBase)
-                lineTo(center.x - dx * tailLen, center.y - dy * tailLen)     // counterweight tail
-                close()
-            }
-            drawPath(path = needlePath, color = needleColor)
-            // Pivot hub: theme-colored ring + center cap.
-            drawCircle(color = hubColor, radius = strokeWidth * 0.42f, center = center)
-            drawCircle(color = needleColor, radius = strokeWidth * 0.2f, center = center)
-
-            // 5) Secondary readout (e.g. RPM) — centered in the bottom gap, its vertical
+            // 4) Secondary readout (e.g. RPM) — centered in the bottom gap, its vertical
             // midpoint on the same y-level as the two arc ends (center.y + R·sin(startAngle)).
             if (!secondaryText.isNullOrBlank()) {
                 val measured = textMeasurer.measure(secondaryText, secondaryStyle)
